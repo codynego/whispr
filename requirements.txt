@@ -3,8 +3,8 @@ Django==4.2.7
 djangorestframework==3.14.0
 django-cors-headers==4.3.1
 
-# Database
-psycopg2-binary==2.9.9
+# # Database
+# psycopg2-binary==2.9.9
 
 # Authentication
 djangorestframework-simplejwt==5.3.0
