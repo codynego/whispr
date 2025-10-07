@@ -59,3 +59,4 @@ celerybeat.pid
 
 # Docker
 .dockerignore
+emails/credentials/client_secret.json
