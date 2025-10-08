@@ -52,6 +52,7 @@ class Email(models.Model):
     importance = models.CharField(max_length=20, choices=IMPORTANCE_CHOICES, default='medium')
     importance_score = models.FloatField(default=0.5)
     importance_analysis = models.TextField(blank=True, null=True)
+
     
     is_read = models.BooleanField(default=False)
     is_starred = models.BooleanField(default=False)

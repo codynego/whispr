@@ -49,11 +49,11 @@ class AssistantChatView(generics.GenericAPIView):
 
         # Call Gemini
         response_text = get_gemini_response(
-            full_prompt,
+            prompt,
+            user=request.user,
             temperature=config.temperature,
             max_output_tokens=config.max_response_length
         )
-
         # Save assistant response
         reply = AssistantMessage.objects.create(user=user, role="assistant", content=response_text)
 
