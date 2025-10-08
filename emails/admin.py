@@ -1,5 +1,13 @@
 from django.contrib import admin
-from .models import EmailAccount, Email
+from .models import EmailAccount, Email, UserEmailRule
+
+
+@admin.register(UserEmailRule)
+class UserEmailRuleAdmin(admin.ModelAdmin):
+    list_display = ('name', 'rule_type', 'importance', 'is_active', 'created_at')
+    list_filter = ('rule_type', 'importance', 'is_active')
+    search_fields = ('name', 'value')
+    readonly_fields = ('created_at', 'updated_at')
 
 
 @admin.register(EmailAccount)

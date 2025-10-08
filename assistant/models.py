@@ -2,6 +2,28 @@ from django.db import models
 from django.conf import settings
 
 
+class AssistantConfig(models.Model):
+    """Model to store AI assistant configurations"""
+    
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='assistant_configs')
+    is_enabled = models.BooleanField(default=False)
+    default_model = models.CharField(max_length=100, default='gpt-4')
+    max_response_length = models.IntegerField(default=500)
+    temperature = models.FloatField(default=0.7)
+    top_p = models.FloatField(default=1.0)
+    tone = models.CharField(max_length=50, default='professional')
+    custom_instructions = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'assistant_configs'
+        unique_together = ('user',)
+    
+    def __str__(self):
+        return f'AssistantConfig for {self.user.email}'
+
+
 class AssistantTask(models.Model):
     """Model to store AI assistant tasks"""
     

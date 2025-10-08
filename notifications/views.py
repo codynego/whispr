@@ -2,8 +2,22 @@ from rest_framework import generics, permissions, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django.utils import timezone
-from .models import Notification
-from .serializers import NotificationSerializer
+from .models import Notification, NotificationPreference
+from .serializers import NotificationSerializer, NotificationPreferenceSerializer
+
+
+class NotificationPreferenceView(generics.RetrieveUpdateAPIView):
+    """
+    Allows the authenticated user to view or update their notification preferences.
+    """
+    serializer_class = NotificationPreferenceSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self):
+        # Ensure each user has a preference record
+        obj, _ = NotificationPreference.objects.get_or_create(user=self.request.user)
+        return obj
+
 
 
 class NotificationListView(generics.ListAPIView):

@@ -73,3 +73,45 @@ class Email(models.Model):
     def __str__(self):
         return f'{self.subject[:50]} - {self.sender}'
 
+
+class UserEmailRule(models.Model):
+    RULE_TYPES = [
+        ("sender", "Sender Email"),
+        ("keyword", "Keyword in Subject/Body"),
+        ("subject", "Subject Contains"),
+        ("body", "Body Contains"),
+        ("attachment", "Has Attachment"),
+        ("reply", "Is a Reply/Forward"),
+        ("ai", "AI Context Rule"),
+    ]
+
+    IMPORTANCE_CHOICES = [
+        ("low", "Low"),
+        ("medium", "Medium"),
+        ("high", "High"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="email_rules"
+    )
+    name = models.CharField(max_length=255)
+    rule_type = models.CharField(max_length=50, choices=RULE_TYPES)
+    value = models.TextField(
+        blank=True, null=True,
+        help_text="Email, keyword(s), or pattern depending on rule type"
+    )
+    importance = models.CharField(max_length=20, choices=IMPORTANCE_CHOICES, default="medium")
+    is_active = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "User Email Rule"
+        verbose_name_plural = "User Email Rules"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.user.email} - {self.name} ({self.rule_type})"

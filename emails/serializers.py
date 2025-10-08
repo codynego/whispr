@@ -1,5 +1,8 @@
 from rest_framework import serializers
 from .models import EmailAccount, Email
+from .models import UserEmailRule
+
+
 
 
 class EmailAccountSerializer(serializers.ModelSerializer):
@@ -28,3 +31,26 @@ class EmailSyncSerializer(serializers.Serializer):
     """Serializer for email sync request"""
     provider = serializers.ChoiceField(choices=['gmail', 'outlook'])
     authorization_code = serializers.CharField()
+
+
+
+class UserEmailRuleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserEmailRule
+        fields = [
+            "id",
+            "name",
+            "rule_type",
+            "value",
+            "importance",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def validate_value(self, value):
+        rule_type = self.initial_data.get("rule_type")
+        if rule_type in ["sender", "keyword", "subject", "body"] and not value:
+            raise serializers.ValidationError("This rule type requires a value.")
+        return value

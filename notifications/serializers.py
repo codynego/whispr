@@ -1,5 +1,22 @@
 from rest_framework import serializers
-from .models import Notification
+from .models import Notification, NotificationPreference
+
+
+
+class NotificationPreferenceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NotificationPreference
+        fields = [
+            'id',
+            'email_notifications',
+            'push_notifications',
+            'sms_notifications',
+            'whatsapp_notifications',
+            'daily_summary',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
 
 
 class NotificationSerializer(serializers.ModelSerializer):

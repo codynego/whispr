@@ -2,6 +2,39 @@ from django.db import models
 from django.conf import settings
 
 
+from django.conf import settings
+from django.db import models
+
+
+class NotificationPreference(models.Model):
+    """Stores user notification preferences."""
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE, 
+        related_name='notification_preferences'
+    )
+
+    # Notification channels
+    email_notifications = models.BooleanField(default=False)
+    push_notifications = models.BooleanField(default=False)
+    sms_notifications = models.BooleanField(default=False)
+    whatsapp_notifications = models.BooleanField(default=True)
+
+    # Summaries
+    daily_summary = models.BooleanField(default=False)
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'notification_preferences'
+
+    def __str__(self):
+        return f"Notification Preferences for {self.user.email or self.user.username}"
+
+
+
 class Notification(models.Model):
     """Model to store user notifications"""
     

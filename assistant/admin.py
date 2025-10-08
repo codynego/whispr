@@ -1,5 +1,9 @@
 from django.contrib import admin
-from .models import AssistantTask
+from .models import AssistantTask, AssistantConfig
+
+@admin.register(AssistantConfig)
+class AssistantConfigAdmin(admin.ModelAdmin):
+    
 
 
 @admin.register(AssistantTask)

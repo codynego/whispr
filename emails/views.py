@@ -9,6 +9,11 @@ from urllib.parse import urlencode, parse_qs
 from django.conf import settings
 import requests
 from django.http import JsonResponse
+from rest_framework import generics, permissions
+from .models import UserEmailRule
+from .serializers import UserEmailRuleSerializer
+
+
 
 GMAIL_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 OUTLOOK_AUTH_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
@@ -233,3 +238,25 @@ def analyze_importance(request, email_id):
         'message': 'Importance analysis initiated',
         'task_id': task.id
     }, status=status.HTTP_202_ACCEPTED)
+
+
+
+class UserEmailRuleListCreateView(generics.ListCreateAPIView):
+    """List all rules for the current user or create a new one."""
+    serializer_class = UserEmailRuleSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return UserEmailRule.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class UserEmailRuleDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Retrieve, update, or delete a specific rule."""
+    serializer_class = UserEmailRuleSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return UserEmailRule.objects.filter(user=self.request.user)
