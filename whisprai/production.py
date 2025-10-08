@@ -162,6 +162,7 @@ WHATSAPP_API_URL = config('WHATSAPP_API_URL', default='https://graph.facebook.co
 WHATSAPP_ACCESS_TOKEN = config('WHATSAPP_ACCESS_TOKEN', default='')
 WHATSAPP_PHONE_NUMBER_ID = config('WHATSAPP_PHONE_NUMBER_ID', default='')
 WHATSAPP_VERIFY_TOKEN = config('WHATSAPP_VERIFY_TOKEN', default='')
+GEMINI_API_KEY = config('GEMINI_API_KEY', default='')
 
 # --- Swagger ---
 SWAGGER_SETTINGS = {

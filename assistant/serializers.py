@@ -1,5 +1,30 @@
 from rest_framework import serializers
-from .models import AssistantTask
+from .models import AssistantTask, AssistantConfig, AssistantMessage
+
+
+class AssistantMessageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AssistantMessage
+        fields = ['id', 'role', 'content', 'created_at']
+
+
+
+class AssistantConfigSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AssistantConfig
+        fields = [
+            'id',
+            'is_enabled',
+            'default_model',
+            'max_response_length',
+            'temperature',
+            'top_p',
+            'tone',
+            'custom_instructions',
+            'created_at',
+            'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
 
 
 class AssistantTaskSerializer(serializers.ModelSerializer):

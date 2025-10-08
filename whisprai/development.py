@@ -124,5 +124,6 @@ PAYSTACK_SECRET_KEY = config('PAYSTACK_SECRET_KEY', default='')
 PAYSTACK_PUBLIC_KEY = config('PAYSTACK_PUBLIC_KEY', default='')
 GMAIL_CLIENT_ID = config('GMAIL_CLIENT_ID', default='')
 GMAIL_CLIENT_SECRET = config('GMAIL_CLIENT_SECRET', default='')
-
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+GEMINI_API_KEY = config('GEMINI_API_KEY', default='')
