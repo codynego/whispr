@@ -29,8 +29,7 @@ class EmailSerializer(serializers.ModelSerializer):
 
 class EmailSyncSerializer(serializers.Serializer):
     """Serializer for email sync request"""
-    provider = serializers.ChoiceField(choices=['gmail', 'outlook'])
-    authorization_code = serializers.CharField()
+    account_id = serializers.IntegerField(required=False)
 
 
 

@@ -8,6 +8,8 @@ from .models import WhatsAppMessage, WhatsAppWebhook
 from .serializers import WhatsAppMessageSerializer, SendWhatsAppMessageSerializer
 from .tasks import send_whatsapp_message_task
 import json
+from .tasks import process_whatsapp_message, send_whatsapp_message_task
+
 
 
 class WhatsAppMessageListView(generics.ListAPIView):
@@ -58,6 +60,8 @@ def webhook(request):
         mode = request.GET.get('hub.mode')
         token = request.GET.get('hub.verify_token')
         challenge = request.GET.get('hub.challenge')
+        print("Webhook verification attempt:", mode, token, challenge)
+        print("Expected token:", settings.WHATSAPP_VERIFY_TOKEN)
         
         if mode == 'subscribe' and token == settings.WHATSAPP_VERIFY_TOKEN:
             return HttpResponse(challenge, content_type='text/plain')
@@ -73,7 +77,21 @@ def webhook(request):
                 event_type=data.get('entry', [{}])[0].get('changes', [{}])[0].get('value', {}).get('statuses', [{}])[0].get('status', 'unknown'),
                 payload=data
             )
-            
+            # Process with Gemin
+
+            try:
+                print("Processing incoming message with Gemini...")
+                reply_msg = process_whatsapp_message(data)
+            except Exception as e:
+                return HttpResponse(f'Error processing message: {str(e)}', status=400)
+            print("Generated reply message:", reply_msg)
+
+            # Send via WhatsApp
+            if reply_msg:
+                print("Sending reply message via WhatsApp:", reply_msg)
+                send_whatsapp_message_task(reply_msg.id)
+                print("Reply message sent.")
+                        
             # TODO: Process webhook events (status updates, etc.)
             
             return HttpResponse('OK', status=200)

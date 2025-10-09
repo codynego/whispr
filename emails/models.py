@@ -61,6 +61,8 @@ class Email(models.Model):
     analyzed_at = models.DateTimeField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    embedding = models.JSONField(blank=True, null=True)  # temporarily store embeddings as list
+    embedding_generated = models.BooleanField(default=False)
     
     class Meta:
         db_table = 'emails'
@@ -73,6 +75,13 @@ class Email(models.Model):
     
     def __str__(self):
         return f'{self.subject[:50]} - {self.sender}'
+
+
+# Once your production DB uses pgvector, you’ll replace the JSON field with:
+
+# from pgvector.django import VectorField
+
+# embedding = VectorField(dimensions=768, null=True, blank=True)  # depends on model
 
 
 class UserEmailRule(models.Model):

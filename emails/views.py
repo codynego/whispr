@@ -14,144 +14,117 @@ from .models import UserEmailRule
 from .serializers import UserEmailRuleSerializer
 
 
-
-GMAIL_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
-OUTLOOK_AUTH_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
-GMAIL_TOKEN_URL = "https://oauth2.googleapis.com/token"
-OUTLOOK_TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
-REDIRECT_URI_GMAIL = "http://localhost:3000/dashboard/settings/integrations/callbacks/"
-REDIRECT_URI_OUTLOOK = "http://localhost:3000/dashboard/settings/integrations/callbacks/"  # Standardize to frontend
-
-def get_oauth_url(request, provider):
-    """Return OAuth URL for frontend to redirect the user"""
-    if provider == "gmail":
-        params = {
-            "client_id": settings.GMAIL_CLIENT_ID,
-            "redirect_uri": REDIRECT_URI_GMAIL,
-            "response_type": "code",
-            "scope": "https://www.googleapis.com/auth/gmail.readonly email profile",
-            "access_type": "offline",
-            "prompt": "consent",
-            "state": "provider=gmail",
-        }
-        url = f"{GMAIL_AUTH_URL}?{urlencode(params)}"
-    elif provider == "outlook":
-        params = {
-            "client_id": settings.OUTLOOK_CLIENT_ID,
-            "redirect_uri": REDIRECT_URI_OUTLOOK,  # Fixed: Use frontend URL
-            "response_type": "code",
-            "scope": "https://graph.microsoft.com/Mail.Read",
-            "response_mode": "query",
-            "state": "provider=outlook",
-        }
-        url = f"{OUTLOOK_AUTH_URL}?{urlencode(params)}"
-    else:
-        return JsonResponse({"error": "Invalid provider"}, status=400)
-    
-    return JsonResponse({"url": url})
+import json
+import jwt
+from django.views import View
+from django.http import JsonResponse
+from django.conf import settings
+from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
+from django.utils.encoding import force_bytes
+from django.contrib.auth import get_user_model
+from google_auth_oauthlib.flow import Flow
+from rest_framework import generics, permissions, filters
+from rest_framework.pagination import PageNumberPagination
 
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def oauth_callback(request):
-    """Handle OAuth redirect and save tokens"""
-    code = request.query_params.get("code")
-    state = request.query_params.get("state", "")
-    provider = request.query_params.get("provider")  # From frontend forward
 
-    # Fallback: Parse provider from state if not provided
-    if not provider and state:
-        parsed_state = parse_qs(state)
-        provider = parsed_state.get("provider", [None])[0]
 
-    if settings.DEBUG:
-        print("provider:", provider)
-        print("code:", code[:20] + "..." if code else None)  # Truncate for security
-        print("secret:", settings.GMAIL_CLIENT_SECRET[:10] + "..." if settings.GMAIL_CLIENT_SECRET else None)
 
-    if not code or not provider:
-        return Response({"error": "Missing parameters"}, status=400)
-    
-    access_token = refresh_token = email_address = None
-    
-    try:
-        if provider == "gmail":
-            data = {
-                "code": code,
-                "client_id": settings.GMAIL_CLIENT_ID,
-                "client_secret": settings.GMAIL_CLIENT_SECRET,
-                "redirect_uri": REDIRECT_URI_GMAIL,
-                "grant_type": "authorization_code",
-            }
-            if settings.DEBUG:
-                print("Data for token exchange:", {k: v[:20] + "..." if k in ["code", "client_secret"] else v for k, v in data.items()})
-            r = requests.post(GMAIL_TOKEN_URL, data=data)
-            if settings.DEBUG:
-                print("Response status:", r.status_code, "Response from token exchange:", r.text)
-            r.raise_for_status()
-            tokens = r.json()
-            access_token = tokens.get("access_token")
-            refresh_token = tokens.get("refresh_token")
-            
-            # Get user's Gmail address
-            headers = {"Authorization": f"Bearer {access_token}"}
-            profile = requests.get("https://www.googleapis.com/gmail/v1/users/me/profile", headers=headers).json()  # Fixed: Use /me/profile
-            email_address = profile.get("emailAddress")
-        
-        elif provider == "outlook":
-            data = {
-                "code": code,
-                "client_id": settings.OUTLOOK_CLIENT_ID,
-                "client_secret": settings.OUTLOOK_CLIENT_SECRET,
-                "redirect_uri": REDIRECT_URI_OUTLOOK,
-                "grant_type": "authorization_code",
-            }
-            if settings.DEBUG:
-                print("Data for token exchange:", {k: v[:20] + "..." if k in ["code", "client_secret"] else v for k, v in data.items()})
-            r = requests.post(OUTLOOK_TOKEN_URL, data=data)
-            if settings.DEBUG:
-                print("Response status:", r.status_code, "Response from token exchange:", r.text)
-            r.raise_for_status()
-            tokens = r.json()
-            access_token = tokens.get("access_token")
-            refresh_token = tokens.get("refresh_token")
-            
-            # Get user's Outlook email
-            headers = {"Authorization": f"Bearer {access_token}"}
-            profile = requests.get("https://graph.microsoft.com/v1.0/me", headers=headers).json()
-            email_address = profile.get("mail") or profile.get("userPrincipalName")
-        else:
-            return Response({"error": "Invalid provider"}, status=400)
-        
-        if not access_token:
-            return Response({"error": "Failed to obtain access token"}, status=400)
-        
-        if not email_address:
-            return Response({"error": "Unable to fetch email address"}, status=400)
-        
-        # Save or update EmailAccount
-        account, created = EmailAccount.objects.update_or_create(
-            user=request.user,
-            email_address=email_address,
-            defaults={
-                "provider": provider,
-                "access_token": access_token,
-                "refresh_token": refresh_token,
-            }
+
+
+# === CONFIG ===
+REDIRECT_URI = "http://localhost:3000/dashboard/settings/integrations/callbacks"
+CLIENT_SECRET_FILE = "emails/credentials/client_secret.json"
+SCOPES = [
+    "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+    "openid",
+]
+
+
+class GmailOAuthInitView(generics.GenericAPIView):
+    """Step 1: Start OAuth flow and return Google Auth URL."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, provider):
+        if not request.user.is_authenticated:
+            return JsonResponse({"error": "User not authenticated"}, status=401)
+
+        # Encode user ID into the state parameter
+        state_data = {"uid": urlsafe_base64_encode(force_bytes(request.user.id))}
+        state_str = json.dumps(state_data)
+
+        flow = Flow.from_client_secrets_file(
+            CLIENT_SECRET_FILE,
+            scopes=SCOPES,
+            redirect_uri=REDIRECT_URI,
         )
-        
-        return Response({
-            "message": "Account connected successfully",
-            "email": email_address,
-            "provider": provider
+
+        auth_url, _ = flow.authorization_url(
+            access_type="offline",
+            include_granted_scopes="true",
+            prompt="consent",
+            state=state_str,
+        )
+
+        return JsonResponse({"url": auth_url})
+
+
+class GmailOAuthCallbackView(generics.GenericAPIView):
+    """Step 2: Handle Google's redirect and store tokens."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        code = request.GET.get("code")
+
+        if not code:
+            return JsonResponse({"error": "Missing authorization code"}, status=400)
+
+        # Decode state → user ID
+        try:
+            user = request.user
+        except Exception as e:
+            return JsonResponse({"error": f"Invalid state: {str(e)}"}, status=400)
+
+        # Recreate the OAuth flow to fetch token
+        flow = Flow.from_client_secrets_file(
+            CLIENT_SECRET_FILE,
+            scopes=SCOPES,
+            redirect_uri=REDIRECT_URI,
+        )
+
+        try:
+            flow.fetch_token(code=code)
+        except Exception as e:
+            return JsonResponse({"error": f"Token exchange failed: {str(e)}"}, status=400)
+
+        creds = flow.credentials
+
+        # Decode ID token to extract Gmail email
+        decoded_token = jwt.decode(creds.id_token, options={"verify_signature": False})
+        email = decoded_token.get("email")
+
+        if not email:
+            return JsonResponse({"error": "Could not extract email from token"}, status=400)
+
+        # Save or update Gmail account
+        EmailAccount.objects.update_or_create(
+            user=user,
+            provider="gmail",
+            email_address=email,
+            defaults={
+                "email_address": email,
+                "access_token": creds.token,
+                "refresh_token": creds.refresh_token,
+                "token_expires_at": creds.expiry,
+            },
+        )
+
+        return JsonResponse({
+            "message": "Gmail account connected successfully!",
+            "email": email
         })
-    
-    except requests.exceptions.HTTPError as e:
-        return Response({"error": f"Token exchange HTTP error: {e.response.status_code} - {e.response.text}"}, status=400)
-    except requests.RequestException as e:
-        return Response({"error": f"Token exchange failed: {str(e)}"}, status=400)
-    except Exception as e:
-        return Response({"error": f"Unexpected error: {str(e)}"}, status=500)
 
 
 # Rest of the views remain unchanged...
@@ -173,25 +146,52 @@ class EmailAccountDetailView(generics.RetrieveUpdateDestroyAPIView):
         return EmailAccount.objects.filter(user=self.request.user)
 
 
+
+class EmailPagination(PageNumberPagination):
+    page_size = 10  # default per page
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
 class EmailListView(generics.ListAPIView):
-    """List all emails for the authenticated user"""
+    """
+    List all emails for the authenticated user with filtering and pagination.
+    Filters:
+      - ?account=<account_id>
+      - ?importance=high|medium|low
+      - ?is_read=true|false
+    Pagination:
+      - ?page=<number>
+      - ?page_size=<number>
+    """
     serializer_class = EmailSerializer
     permission_classes = [permissions.IsAuthenticated]
-    
+    pagination_class = EmailPagination
+
     def get_queryset(self):
-        queryset = Email.objects.filter(account__user=self.request.user)
-        
+        user = self.request.user
+        queryset = Email.objects.filter(account__user=user)
+
+        # Filter by email account
+        account_id = self.request.query_params.get('account')
+        if account_id:
+            queryset = queryset.filter(account_id=account_id)
+
         # Filter by importance
         importance = self.request.query_params.get('importance')
         if importance:
-            queryset = queryset.filter(importance=importance)
-        
+            queryset = queryset.filter(importance__iexact=importance)
+
         # Filter by read status
         is_read = self.request.query_params.get('is_read')
         if is_read is not None:
             queryset = queryset.filter(is_read=is_read.lower() == 'true')
-        
+
+        # Optional: order by most recent
+        queryset = queryset.order_by('-received_at')
+
         return queryset
+
 
 
 class EmailDetailView(generics.RetrieveUpdateAPIView):
@@ -203,24 +203,44 @@ class EmailDetailView(generics.RetrieveUpdateAPIView):
         return Email.objects.filter(account__user=self.request.user)
 
 
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework import permissions, status
+from rest_framework.response import Response
+from .tasks import sync_email_account
+from .serializers import EmailSyncSerializer
+
+
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
 def sync_emails(request):
-    """Trigger email sync for user's accounts"""
+    """
+    Trigger email sync for the authenticated user's accounts.
+    """
     serializer = EmailSyncSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
-    
-    provider = serializer.validated_data['provider']
-    authorization_code = serializer.validated_data['authorization_code']
-    
-    # Trigger async task to sync emails
-    task = sync_email_account.delay(request.user.id, provider, authorization_code)
-    
-    return Response({
-        'message': 'Email sync initiated',
-        'task_id': task.id
-    }, status=status.HTTP_202_ACCEPTED)
 
+    account_id = serializer.validated_data['account_id']
+
+    # Optional: confirm user actually has an account for this provider
+    from .models import EmailAccount
+    try:
+        account = EmailAccount.objects.get(user=request.user, id=account_id, is_active=True)
+    except EmailAccount.DoesNotExist:
+        return Response(
+            {"error": f"No active account found for user."},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Trigger async Celery task (no need for authorization_code)
+    task = sync_email_account(account)
+
+    return Response(
+        {
+            "message": f"Email sync started successfully.",
+
+        },
+        status=status.HTTP_202_ACCEPTED,
+    )
 
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
