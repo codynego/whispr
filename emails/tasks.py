@@ -19,12 +19,13 @@ from .models import EmailAccount, Email  # your Django models
 logger = logging.getLogger(__name__)
 
 
-def sync_email_account(account):
+@shared_task(bind=True, autoretry_for=(Exception,), max_retries=3)
+def sync_email_account(self, account_id):
     """
     Sync emails from Gmail or Outlook using stored tokens.
     """
     try:
-        account = account
+        account = EmailAccount.objects.get(id=account_id)
         provider = account.provider.lower()
 
         if provider == "gmail":
@@ -60,7 +61,7 @@ def fetch_gmail_emails(account):
     )
 
     service = build("gmail", "v1", credentials=creds)
-    results = service.users().messages().list(userId="me", maxResults=20).execute()
+    results = service.users().messages().list(userId="me", maxResults=10).execute()
     messages = results.get("messages", [])
 
     count = 0

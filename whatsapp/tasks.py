@@ -61,13 +61,13 @@ def process_whatsapp_message(message_instance):
         return None
 
 
-# @shared_task(bind=True, max_retries=3, default_retry_delay=10)
-def send_whatsapp_message_task(message_id):
+@shared_task(bind=True, max_retries=3, default_retry_delay=10)
+def send_whatsapp_message_task(self, message_id):
     """
     Send WhatsApp message via Cloud API
     """
     try:
-
+        print("Sending WhatsApp message ID:", message_id)
         message = WhatsAppMessage.objects.get(id=message_id)
 
         

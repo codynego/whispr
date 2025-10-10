@@ -232,7 +232,7 @@ def sync_emails(request):
         )
 
     # Trigger async Celery task (no need for authorization_code)
-    task = sync_email_account(account)
+    task = sync_email_account.delay(account.id)
 
     return Response(
         {

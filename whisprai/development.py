@@ -99,6 +99,8 @@ DATABASES = {
     }
 }
 
+import ssl
+
 # STATIC & MEDIA
 STATIC_URL = '/static/'
 MEDIA_URL = '/media/'
@@ -112,8 +114,52 @@ CORS_ALLOWED_ORIGINS = [
 CORS_ALLOW_CREDENTIALS = True
 
 # CELERY
-CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://localhost:6379/0')
-CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='redis://localhost:6379/0')
+CELERY_BROKER_URL = config('REDIS_URL', default='redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = config('REDIS_URL', default='redis://localhost:6379/0')
+
+
+import ssl
+
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = "Africa/Lagos"
+CELERY_ENABLE_UTC = True
+
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
+
+REDIS_URL = config("REDIS_URL", "redis://localhost:6379")
+REDIS_SSL = config("REDIS_SSL", "False").lower() == "true"
+
+# Add ssl_cert_reqs parameter to the URL if using rediss://
+if REDIS_URL.startswith("rediss://"):
+    # Check if the URL already has parameters
+    separator = "&" if "?" in REDIS_URL else "?"
+    REDIS_URL = f"{REDIS_URL}{separator}ssl_cert_reqs=none"
+
+CELERY_BROKER_URL = REDIS_URL
+CELERY_RESULT_BACKEND = REDIS_URL
+
+# Configure SSL for Celery if using rediss://
+if REDIS_URL.startswith("rediss://"):
+    CELERY_BROKER_USE_SSL = {
+        "ssl_cert_reqs": ssl.CERT_NONE
+    }
+    CELERY_RESULT_BACKEND_USE_SSL = {
+        "ssl_cert_reqs": ssl.CERT_NONE
+    }
+
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": REDIS_URL,  # Now includes ssl_cert_reqs in the URL
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        },
+        "KEY_PREFIX": "whisprai",
+    }
+}
 
 # EMAIL (Console backend for dev)
 EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
@@ -131,4 +177,7 @@ WHATSAPP_API_URL = config('WHATSAPP_API_URL', default='https://graph.facebook.co
 WHATSAPP_PHONE_NUMBER_ID = config('WHATSAPP_PHONE_NUMBER_ID', default='YOUR_PHONE_NUMBER_ID')
 WHATSAPP_ACCESS_TOKEN = config('WHATSAPP_ACCESS_TOKEN', default='YOUR_LONG_LIVED_ACCESS_TOKEN')
 WHATSAPP_VERIFY_TOKEN = config('WHATSAPP_VERIFY_TOKEN', default='YOUR_VERIFY_TOKEN')
+HUGGINGFACE_API_KEY = config('HUGGINGFACE_API_KEY', default='')
+HUGGINGFACE_SUMMARIZATION_MODEL = config('HUGGINGFACE_SUMMARIZATION_MODEL', default='facebook/bart-large-cnn') 
+
 

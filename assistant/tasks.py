@@ -172,10 +172,10 @@ def execute_ai_action(user, ai_response, sender_number="2349033814065"):
         logger.info(f"Reminder created for {user.email}")
         return "reminder_set"
 
-    # === Case 4: Reply / General Intent ===
-    elif intent in ["reply", "none"] or not intent:
-        send_whatsapp_message(to_number=sender_number, message=reply)
-        return "replied"
+    # # === Case 4: Reply / General Intent ===
+    # elif intent in ["reply", "none"] or not intent:
+    #     send_whatsapp_message(to_number=sender_number, message=reply)
+    #     return "replied"
 
     # === Fallback ===
     else:

@@ -8,6 +8,7 @@ from rest_framework import generics, permissions
 from .models import AssistantConfig, AssistantMessage, AssistantConfig
 from .serializers import AssistantConfigSerializer
 from whisprai.ai.gemini_client import get_gemini_response
+import json
 
 
 class AssistantChatView(generics.GenericAPIView):
@@ -50,10 +51,12 @@ class AssistantChatView(generics.GenericAPIView):
         # Call Gemini
         response_text = get_gemini_response(
             prompt,
-            user=request.user,
+            user_id=request.user.id,
             temperature=config.temperature,
             max_output_tokens=config.max_response_length
         )
+        response_text = response_text["reply"]
+        print("Gemini response:", response_text)
         # Save assistant response
         reply = AssistantMessage.objects.create(user=user, role="assistant", content=response_text)
 
