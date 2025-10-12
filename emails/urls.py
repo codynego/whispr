@@ -5,6 +5,7 @@ from .views import (
     sync_emails, analyze_importance,
     GmailOAuthInitView, GmailOAuthCallbackView,
     UserEmailRuleListCreateView, UserEmailRuleDetailView,
+    DeactivateEmailAccountView
 )
 
 urlpatterns = [
@@ -20,5 +21,7 @@ urlpatterns = [
 
     path("user-rules/", UserEmailRuleListCreateView.as_view(), name="user-rules-list"),
     path("user-rules/<int:pk>/", UserEmailRuleDetailView.as_view(), name="user-rule-detail"),
+
+    path("deactivate/<int:pk>/", EmailAccountDetailView.as_view(), name="deactivate-email-account"),
 
 ]

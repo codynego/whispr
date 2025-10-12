@@ -150,6 +150,14 @@ if REDIS_URL.startswith("rediss://"):
         "ssl_cert_reqs": ssl.CERT_NONE
     }
 
+# Celery Beat Scheduler
+CELERY_BEAT_SCHEDULE = {
+    'sync-emails-every-10-mins': {
+        'task': 'emails.tasks.periodic_email_sync',
+        'schedule': 600.0,  # every 10 minutes
+    },
+}
+
 CACHES = {
     "default": {
         "BACKEND": "django_redis.cache.RedisCache",
@@ -181,3 +189,6 @@ HUGGINGFACE_API_KEY = config('HUGGINGFACE_API_KEY', default='')
 HUGGINGFACE_SUMMARIZATION_MODEL = config('HUGGINGFACE_SUMMARIZATION_MODEL', default='facebook/bart-large-cnn') 
 
 
+# settings.py
+USE_TZ = True
+TIME_ZONE = "Africa/Lagos"  # or your local zone

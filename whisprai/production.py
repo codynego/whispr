@@ -184,3 +184,6 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 
 # --- Default PK ---
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+# settings.py
+USE_TZ = True
+TIME_ZONE = "Africa/Lagos"  # or your local zone

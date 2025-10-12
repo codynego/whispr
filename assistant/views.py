@@ -9,6 +9,7 @@ from .models import AssistantConfig, AssistantMessage, AssistantConfig
 from .serializers import AssistantConfigSerializer
 from whisprai.ai.gemini_client import get_gemini_response
 import json
+from .ai_core.message_handler import MessageHandler
 
 
 class AssistantChatView(generics.GenericAPIView):
@@ -37,24 +38,27 @@ class AssistantChatView(generics.GenericAPIView):
         
         # Save user message
         AssistantMessage.objects.create(user=user, role="user", content=prompt)
+        handler = MessageHandler(user=user)
+        response_text = handler.handle(prompt)
+        print("Handler response:", response_text)
 
-        # Build personalized context
-        system_prompt = f"""
-        You are an AI assistant for {user.email}.
-        Tone: {config.tone}.
-        Instructions: {config.custom_instructions or 'Be helpful and concise.'}
-        Respond based on user's message below:
-        """
+        # # Build personalized context
+        # system_prompt = f"""
+        # You are an AI assistant for {user.email}.
+        # Tone: {config.tone}.
+        # Instructions: {config.custom_instructions or 'Be helpful and concise.'}
+        # Respond based on user's message below:
+        # """
 
-        full_prompt = f"{system_prompt}\nUser: {prompt}"
+        # full_prompt = f"{system_prompt}\nUser: {prompt}"
 
-        # Call Gemini
-        response_text = get_gemini_response(
-            prompt,
-            user_id=request.user.id,
-            temperature=config.temperature,
-            max_output_tokens=config.max_response_length
-        )
+        # # Call Gemini
+        # response_text = get_gemini_response(
+        #     prompt,
+        #     user_id=request.user.id,
+        #     temperature=config.temperature,
+        #     max_output_tokens=config.max_response_length
+        # )
         response_text = response_text["reply"]
         print("Gemini response:", response_text)
         # Save assistant response

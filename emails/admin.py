@@ -24,7 +24,9 @@ class EmailAccountAdmin(admin.ModelAdmin):
 class EmailAdmin(admin.ModelAdmin):
     list_display = (
         'subject', 
-        'sender', 
+        'sender',
+        'sender_name',
+        'recipient',
         'importance', 
         'importance_score',
         'is_read', 

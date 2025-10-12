@@ -43,10 +43,12 @@ class Email(models.Model):
     message_id = models.CharField(max_length=255, unique=True, db_index=True)
     thread_id = models.CharField(max_length=255, blank=True, null=True)
     
+    sender_name = models.CharField(max_length=255, blank=True, null=True)
     sender = models.EmailField()
     recipient = models.EmailField()
     subject = models.TextField(blank=True)
     body = models.TextField(blank=True)
+    body_html = models.TextField(blank=True, null=True)
     snippet = models.TextField(blank=True)
     
     importance = models.CharField(max_length=20, choices=IMPORTANCE_CHOICES, default='medium')

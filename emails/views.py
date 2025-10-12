@@ -198,9 +198,19 @@ class EmailDetailView(generics.RetrieveUpdateAPIView):
     """Retrieve or update an email"""
     serializer_class = EmailSerializer
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def get_queryset(self):
         return Email.objects.filter(account__user=self.request.user)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if not instance.is_read:
+            instance.is_read = True
+            instance.save(update_fields=["is_read"])
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
+    
 
 
 from rest_framework.decorators import api_view, permission_classes
@@ -280,3 +290,33 @@ class UserEmailRuleDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         return UserEmailRule.objects.filter(user=self.request.user)
+
+
+
+class DeactivateEmailAccountView(generics.UpdateAPIView):
+    """
+    PATCH /api/emails/deactivate/<int:pk>/
+    Deactivates a connected email account.
+    """
+    queryset = EmailAccount.objects.all()
+    serializer_class = EmailAccountSerializer
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, *args, **kwargs):
+        account = self.get_object()
+
+        # Optional: only allow the owner to deactivate their own account
+        if hasattr(account, "user") and account.user != request.user:
+            return Response(
+                {"detail": "You are not authorized to deactivate this account."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Deactivate the account
+        account.is_active = False
+        account.save(update_fields=["is_active"])
+
+        return Response(
+            {"detail": f"Email account '{account.email}' has been deactivated."},
+            status=status.HTTP_200_OK
+        )

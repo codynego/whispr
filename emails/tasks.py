@@ -4,17 +4,16 @@ from django.utils import timezone
 import openai
 import logging
 from .models import EmailAccount, Email
-
-logger = logging.getLogger(__name__)
-
-import logging
 import base64
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from django.utils import timezone
-from celery import shared_task
+from django.contrib.auth import get_user_model
+from .utils import fetch_gmail_emails
 
-from .models import EmailAccount, Email  # your Django models
+User = get_user_model()
+
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +29,7 @@ def sync_email_account(self, account_id):
 
         if provider == "gmail":
             logger.info(f"Syncing Gmail account {account.email_address}")
-            print("Syncing Gmail account", account.email_address)
             count = fetch_gmail_emails(account)
-            print("Fetched", count, "messages for", account.email_address)
-            logger.info(f"Fetched {count} messages for {account.email_address}")
             return {"status": "success", "count": count}
 
         elif provider == "outlook":
@@ -47,54 +43,6 @@ def sync_email_account(self, account_id):
 
 
 
-def fetch_gmail_emails(account):
-    from google.oauth2.credentials import Credentials
-    from googleapiclient.discovery import build
-    import base64
-
-    creds = Credentials(
-        token=account.access_token,
-        refresh_token=account.refresh_token,
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id=settings.GMAIL_CLIENT_ID,
-        client_secret=settings.GMAIL_CLIENT_SECRET,
-    )
-
-    service = build("gmail", "v1", credentials=creds)
-    results = service.users().messages().list(userId="me", maxResults=10).execute()
-    messages = results.get("messages", [])
-
-    count = 0
-    for msg in messages:
-        msg_detail = service.users().messages().get(userId="me", id=msg["id"]).execute()
-        payload = msg_detail.get("payload", {})
-        headers = payload.get("headers", [])
-
-        subject = next((h["value"] for h in headers if h["name"] == "Subject"), "")
-        from_ = next((h["value"] for h in headers if h["name"] == "From"), "")
-        snippet = msg_detail.get("snippet", "")
-
-        body = ""
-        if "parts" in payload:
-            for part in payload["parts"]:
-                if part["mimeType"] == "text/plain":
-                    data = part["body"].get("data", "")
-                    body = base64.urlsafe_b64decode(data).decode("utf-8", errors="ignore")
-
-        Email.objects.update_or_create(
-            account=account,
-            message_id=msg["id"],
-            defaults={
-                "sender": from_,
-                "subject": subject,
-                "snippet": snippet,
-                "body": body,
-                "received_at": timezone.now(),
-            },
-        )
-        count += 1
-
-    return count
 
 
 # === Placeholder for Outlook ===
@@ -109,16 +57,18 @@ def fetch_outlook_emails(account):
 
 
 # === Celery task ===
-@shared_task
-def sync_all_emails():
+@shared_task(bind=True, autoretry_for=(Exception,), max_retries=3)
+def sync_all_emails(self):
     """Sync emails for all active accounts"""
     try:
         active_accounts = EmailAccount.objects.filter(is_active=True)
         total_synced = 0
 
         for account in active_accounts:
+            print("account", account.provider, account.email_address)
             if account.provider == "gmail":
-                total_synced += fetch_gmail_emails(account)
+                total_synced += 1
+                sync_email_account.delay(account.id)
             elif account.provider == "outlook":
                 total_synced += fetch_outlook_emails(account)
 
@@ -216,3 +166,19 @@ def analyze_email_importance():
     except Exception as e:
         logger.error(f'Error in batch importance analysis: {str(e)}')
         return {'status': 'error', 'message': str(e)}
+
+
+
+
+@shared_task
+def periodic_email_sync():
+    """Periodically syncs Gmail inboxes for connected users."""
+    logger.info("Starting periodic email sync...")
+    try:
+        synced = sync_all_emails.delay()
+        logger.info(f"✅ Synced {len(synced)} emails")
+    except Exception as e:
+        logger.error(f"❌ Failed syncing emails: {e}")
+
+    logger.info("Finished periodic email sync.")
+
