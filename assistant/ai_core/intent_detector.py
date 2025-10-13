@@ -1,76 +1,135 @@
-# # whispr/ai_core/intent_detector.py
-
+# import google.generativeai as genai
 # from typing import Dict, Any, Optional
+# import os
 # import re
+# import json
+
 
 # class IntentDetector:
 #     """
-#     Detects user intent from text input and optionally merges it with previous context.
-#     In production, this could be replaced by a small intent classification model.
+#     Detects user intent and entities using either explicit @commands
+#     or fallback to Gemini for free-form messages.
 #     """
 
-#     def __init__(self):
-#         # Define supported intents and their keyword triggers
-#         self.intent_keywords = {
-#             "find_email": ["email", "mail", "message", "inbox", "sent", "important"],
-#             "find_transaction": ["credit", "debit", "alert", "transaction", "payment"],
-#             "find_task": ["task", "todo", "follow-up", "reminder"],
-#             "find_meeting": ["meeting", "call", "appointment", "schedule"],
-#             "find_document": ["file", "document", "attachment", "pdf"],
-#             "send_message": ["reply", "respond", "send", "forward"],
-#             "find_project_updates": ["project", "update", "status", "progress"]
+#     def __init__(self, api_key: Optional[str] = None):
+#         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
+#         genai.configure(api_key=self.api_key)
+#         self.model = genai.GenerativeModel("gemini-2.5-flash")
+
+#         # 🔹 Map @commands → intents
+#         self.command_map = {
+#             "@find": "find_email",
+#             "@send": "send_message",
+#             "@summarize": "summarize_email",
+#             "@task": "find_task",
+#             "@meeting": "find_meeting",
+#             "@doc": "find_document",
 #         }
 
-#     def detect_intent(self, message: str, previous_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+#     # --------------------------------------------------------
+#     # 🧠 DETECT INTENT
+#     # --------------------------------------------------------
+#     def detect_intent(
+#         self, message: str, previous_context: Optional[Dict[str, Any]] = None
+#     ) -> Dict[str, Any]:
 #         """
-#         Returns a structured intent object like:
+#         Determines the user intent and entities.
+#         First tries to match an explicit @command, otherwise uses Gemini.
+#         """
+#         message_lower = message.lower().strip()
+
+#         # 1️⃣ Check for explicit @command
+#         cmd_match = re.search(r"(@\w+)", message_lower)
+#         if cmd_match:
+#             command = cmd_match.group(1)
+#             print("Detected explicit command:", command)
+
+#             if command in self.command_map:
+#                 intent = self.command_map[command]
+#                 entities = self._extract_entities(message)
+#                 print(f"Mapped {command} → {intent}")
+#                 return {
+#                     "intent": intent,
+#                     "confidence": 1.0,
+#                     "entities": entities,
+#                     "source": "command",
+#                 }
+
+#         # 2️⃣ Otherwise fallback to Gemini
+#         print("No explicit command found — using Gemini for intent detection.")
+#         return self._detect_with_gemini(message, previous_context)
+
+#     # --------------------------------------------------------
+#     # 🤖 GEMINI INTENT DETECTION
+#     # --------------------------------------------------------
+#     def _detect_with_gemini(
+#         self, message: str, previous_context: Optional[Dict[str, Any]] = None
+#     ) -> Dict[str, Any]:
+#         """
+#         Uses Gemini to extract structured intent and entities from text.
+#         """
+#         system_prompt = """
+#         You are an AI assistant that analyzes a user's message to determine:
+#         1. The intent (what the user wants to do)
+#         2. The entities (specific details like sender, timeframe, subject, etc.)
+
+#         Return ONLY a valid JSON object like this:
 #         {
-#             "intent": "find_email",
-#             "confidence": 0.92,
-#             "entities": {"sender": "ALX"}
+#             "intent": "<one of: read_message, find_email, find_transaction, find_task, find_meeting, send_message, find_document, summarize_email>",
+#             "confidence": <float between 0 and 1>,
+#             "entities": {
+#                 "<entity_name>": "<entity_value>"
+#             }
 #         }
 #         """
-#         message_lower = message.lower()
-#         detected_intent = None
-#         confidence = 0.0
 
-#         # Simple keyword-based intent detection
-#         for intent, keywords in self.intent_keywords.items():
-#             for keyword in keywords:
-#                 if keyword in message_lower:
-#                     detected_intent = intent
-#                     confidence = 0.9
-#                     break
-#             if detected_intent:
-#                 break
+#         try:
+#             user_prompt = f"User message: {message}\nPrevious context: {previous_context or {}}"
+#             response = self.model.generate_content(f"{system_prompt}\n\n{user_prompt}")
 
-#         # Fallback: if context exists but no intent detected, reuse previous one
-#         if not detected_intent and previous_context:
-#             detected_intent = previous_context.get("intent")
-#             confidence = 0.6
+#             raw_text = response.text.strip()
+#             print("Gemini Raw Response:", raw_text)
 
-#         # Basic entity extraction (for demo)
-#         entities = self._extract_entities(message)
+#             # Remove markdown code fences
+#             clean_text = re.sub(r"^```(?:json)?|```$", "", raw_text, flags=re.MULTILINE).strip()
 
-#         return {
-#             "intent": detected_intent or "unknown",
-#             "confidence": confidence,
-#             "entities": entities
-#         }
+#             try:
+#                 parsed = json.loads(clean_text)
+#             except json.JSONDecodeError:
+#                 print("⚠️ Could not decode JSON, fallback to defaults.")
+#                 parsed = {}
 
+#             parsed.setdefault("intent", "unknown")
+#             parsed.setdefault("confidence", 0.5)
+#             parsed.setdefault("entities", {})
+
+#             print("Gemini Intent Detection Result:", parsed)
+#             return parsed
+
+#         except Exception as e:
+#             print("Gemini Intent Detection Error:", e)
+#             return {
+#                 "intent": "unknown",
+#                 "confidence": 0.0,
+#                 "entities": {},
+#             }
+
+#     # --------------------------------------------------------
+#     # 🔍 BASIC ENTITY EXTRACTION (regex fallback)
+#     # --------------------------------------------------------
 #     def _extract_entities(self, message: str) -> Dict[str, str]:
 #         """
-#         Very basic regex-based entity extraction.
-#         Replace this later with a Gemini or spaCy-powered extractor.
+#         Basic regex-based entity extraction.
+#         (Lightweight backup if Gemini isn't used)
 #         """
 #         entities = {}
 
-#         # Detect possible sender names or organizations
+#         # Detect sender
 #         match_sender = re.search(r"from\s+([A-Za-z0-9&.\s]+)", message)
 #         if match_sender:
 #             entities["sender"] = match_sender.group(1).strip()
 
-#         # Detect temporal clues
+#         # Detect timeframe
 #         if "yesterday" in message.lower():
 #             entities["timeframe"] = "yesterday"
 #         elif "last week" in message.lower():
@@ -89,97 +148,163 @@
 
 
 
-
-import google.generativeai as genai
 from typing import Dict, Any, Optional
 import os
 import re
 import json
+import spacy
+
 
 class IntentDetector:
     """
-    Uses Gemini to detect intent and extract entities from user messages.
-    Returns a structured JSON payload with both intent and entities.
+    Detects user intent and entities using explicit @commands
+    or rule-based keyword matching for intent and NER for entities.
     """
 
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        genai.configure(api_key=self.api_key)
-        self.model = genai.GenerativeModel("gemini-2.5-flash")
-
-    def detect_intent(self, message: str, previous_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """
-        Uses Gemini to extract structured intent and entities from text.
-        Example return:
-        {
-            "intent": "find_email",
-            "confidence": 0.94,
-            "entities": {
-                "sender": "ALX",
-                "timeframe": "this week"
-            }
-        }
-        """
-        system_prompt = """
-        You are an AI assistant that analyzes a user's message to determine:
-        1. The intent (what the user wants to do)
-        2. The entities (specific details like sender, timeframe, subject, etc.)
-
-        Return your response **only** as a valid JSON object with this format:
-        {
-            "intent": "<string>",
-            "confidence": <float between 0 and 1>,
-            "entities": {
-                "<entity_name>": "<entity_value>",
-                ...
-            }
-        }
-
-        Examples:
-        - Input: "Did ALX send me a mail?"
-          Output: {"intent": "find_email", "confidence": 0.93, "entities": {"sender": "ALX"}}
-
-        - Input: "Reply to the message from John about the meeting"
-          Output: {"intent": "send_message", "confidence": 0.95, "entities": {"recipient": "John", "topic": "meeting"}}
-
-        - Input: "What’s on my schedule tomorrow?"
-          Output: {"intent": "find_meeting", "confidence": 0.9, "entities": {"timeframe": "tomorrow"}}
-        """
-
+        # Load spaCy model for NER
         try:
-            user_prompt = f"User message: {message}\n\nPrevious context: {previous_context or {}}"
-            response = self.model.generate_content(f"{system_prompt}\n\n{user_prompt}")
-            print("Gemini Raw Response:", response.text.strip())
+            self.nlp = spacy.load("en_core_web_sm")
+        except OSError:
+            raise ValueError("spaCy model 'en_core_web_sm' not found. Please install it with: python -m spacy download en_core_web_sm")
 
-            # Try parsing Gemini’s structured JSON response
-            raw_text = response.text.strip()
-            print("Gemini Raw Response:", raw_text)
+        # 🔹 Map @commands → intents
+        self.command_map = {
+            "@find": "find_email",
+            "@send": "send_message",
+            "@summarize": "summarize_email",
+            "@task": "find_task",
+            "@meeting": "find_meeting",
+            "@doc": "find_document",
+        }
 
-            # Clean Markdown code fences if present (```json ... ```)
-            clean_text = re.sub(r"^```(?:json)?|```$", "", raw_text, flags=re.MULTILINE).strip()
+        # 🔹 Keyword-based intent mapping
+        self.intent_keywords = {
+            "find_email": ["email", "mail", "inbox"],
+            "send_message": ["send", "reply", "message"],
+            "summarize_email": ["summarize", "summary"],
+            "find_task": ["task", "todo"],
+            "find_meeting": ["meeting", "calendar"],
+            "find_document": ["document", "file", "doc"],
+            "find_transaction": ["transaction", "bank", "payment"],
+            "read_message": ["read", "open"],
+        }
 
-            try:
-                parsed = json.loads(clean_text)
-            except json.JSONDecodeError:
-                # If still not valid JSON, fall back to a safer partial parse
-                print("Warning: Could not decode JSON, using fallback parsing.")
-                parsed = {}
+    # --------------------------------------------------------
+    # 🧠 DETECT INTENT
+    # --------------------------------------------------------
+    def detect_intent(
+        self, message: str, previous_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Determines the user intent and entities.
+        First tries to match an explicit @command, otherwise uses rule-based keyword matching for intent and NER for entities.
+        """
+        message_lower = message.lower().strip()
 
-            # Sanitize output
-            if "intent" not in parsed:
-                parsed["intent"] = "unknown"
-            if "confidence" not in parsed:
-                parsed["confidence"] = 0.5
-            if "entities" not in parsed:
-                parsed["entities"] = {}
+        # 1️⃣ Check for explicit @command
+        cmd_match = re.search(r"(@\w+)", message_lower)
+        if cmd_match:
+            command = cmd_match.group(1)
+            print("Detected explicit command:", command)
 
-            print("Gemini Intent Detection Result:", parsed)
-            return parsed
+            if command in self.command_map:
+                intent = self.command_map[command]
+                entities = self._extract_entities_with_ner(message)
+                print(f"Mapped {command} → {intent}")
+                return {
+                    "intent": intent,
+                    "confidence": 1.0,
+                    "entities": entities,
+                    "source": "command",
+                }
 
-        except Exception as e:
-            print("Gemini Intent Detection Error:", e)
-            return {
-                "intent": "unknown",
-                "confidence": 0.0,
-                "entities": {}
-            }
+        # 2️⃣ Otherwise fallback to rule-based intent detection + NER
+        print("No explicit command found — using rule-based intent and NER for entities.")
+        return self._detect_with_rules_and_ner(message, previous_context)
+
+    # --------------------------------------------------------
+    # 📝 RULE-BASED INTENT DETECTION + NER
+    # --------------------------------------------------------
+    def _detect_with_rules_and_ner(
+        self, message: str, previous_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Uses keyword matching to detect intent from text, and spaCy NER for entities.
+        """
+        message_lower = message.lower()
+        intent = "unknown"
+        confidence = 0.0
+        max_matches = 0
+
+        for possible_intent, keywords in self.intent_keywords.items():
+            matches = sum(1 for keyword in keywords if keyword in message_lower)
+            if matches > max_matches:
+                max_matches = matches
+                intent = possible_intent
+                confidence = min(1.0, matches / len(keywords))
+
+        if max_matches == 0:
+            confidence = 0.0
+
+        # Extract entities using NER
+        entities = self._extract_entities_with_ner(message)
+
+        result = {
+            "intent": intent,
+            "confidence": confidence,
+            "entities": entities,
+            "source": "rules_ner",
+        }
+
+        print("Rule-based + NER Detection Result:", result)
+        return result
+
+    # --------------------------------------------------------
+    # 🔍 ENTITY EXTRACTION WITH NER (spaCy + regex fallback)
+    # --------------------------------------------------------
+    def _extract_entities_with_ner(self, message: str) -> Dict[str, str]:
+        """
+        Extracts entities using spaCy NER for named entities and regex for others.
+        """
+        entities = {}
+
+        # spaCy NER
+        doc = self.nlp(message)
+        for ent in doc.ents:
+            if ent.label_ in ["PERSON", "ORG"]:
+                entities["sender"] = ent.text  # Sender could be person or organization
+            elif ent.label_ == "DATE":
+                entities["timeframe"] = ent.text
+            # Add more mappings as needed, e.g., MONEY for transactions
+
+        # Regex fallbacks for non-NER entities
+        message_lower = message.lower()
+
+        # Detect sender (if not already from NER)
+        if "sender" not in entities:
+            match_sender = re.search(r"from\s+([A-Za-z0-9&.\s]+)", message)
+            if match_sender:
+                entities["sender"] = match_sender.group(1).strip()
+
+        # Detect timeframe (enhance if not from NER)
+        if "timeframe" not in entities:
+            if "yesterday" in message_lower:
+                entities["timeframe"] = "yesterday"
+            elif "last week" in message_lower:
+                entities["timeframe"] = "last_week"
+            elif "today" in message_lower:
+                entities["timeframe"] = "today"
+
+        # Detect transaction type
+        if "credit" in message_lower:
+            entities["type"] = "credit"
+        elif "debit" in message_lower:
+            entities["type"] = "debit"
+
+        # Detect subject
+        match_subject = re.search(r"subject[:\s]+(.+?)(?:\n|$)", message, re.IGNORECASE | re.DOTALL)
+        if match_subject:
+            entities["subject"] = match_subject.group(1).strip()
+
+        return entities

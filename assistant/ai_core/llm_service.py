@@ -49,59 +49,7 @@ class LLMService:
         self.conversation_history[self.session_id].append({"role": role, "content": content})
         print("Updated Conversation History:", self.conversation_history[self.session_id])
 
-    # --------------------------------------------------------
-    # 2️⃣  INTENT + ENTITY DETECTION (with context)
-    # --------------------------------------------------------
-    def detect_intent_and_entities(
-        self,
-        message: str,
-    ) -> Dict[str, Any]:
-        """
-        Detects user intent while using the prior conversation as context.
-        Returns structured JSON.
-        """
-        context_text = self._get_context()
 
-        prompt = f"""
-You are Whispr’s intent detection engine.
-
-Conversation so far:
-{context_text}
-
-Current user message: "{message}"
-
-Analyze the intent and return a JSON:
-{{
-  "intent": "...",         # e.g. "find_email", "send_message"
-  "confidence": 0.0-1.0,   # numeric confidence
-  "entities": {{
-    "sender": "...",
-    "receiver": "...",
-    "timeframe": "...",
-    "content": "..."
-  }}
-}}
-the list of possible intents are: read_message, find_email, find_transaction, find_task, find_meeting, send_message, find_document
-        """
-
-        self._update_context("user", message)
-
-        response = self.model_obj.generate_content(
-            prompt,
-            generation_config=GenerationConfig(response_mime_type="application/json"),
-        )
-
-        try:
-            result = json.loads(response.text)
-        except Exception:
-            result = {"intent": "unknown", "confidence": 0.3, "entities": {}}
-
-        self._update_context("assistant", json.dumps(result, indent=2))
-        return result
-
-    # --------------------------------------------------------
-    # 3️⃣  CLARIFICATION PROMPT
-    # --------------------------------------------------------
     def ask_for_missing_info(
         self,
         intent: str,
@@ -149,18 +97,19 @@ Respond with only the question.
         using session context.
         """
         context_text = self._get_context()
+        
         prompt = f"""
-You are Whispr, the AI email assistant.
-Continue the conversation naturally, using past context and new data.
+        You are Whispr, the AI email assistant.
+        Continue the conversation naturally, using past context and new data.
 
-Conversation so far:
-{context_text}
+        Conversation so far:
+        {context_text}
 
-User message: "{user_message}"
-Context data: {json.dumps(context_data, indent=2, default=self._json_serializable)}
-Task result: {json.dumps(task_result, indent=2, default=self._json_serializable) if task_result else "None"}
+        User message: "{user_message}"
+        Context data: {json.dumps(context_data, indent=2, default=self._json_serializable)}
+        Task result: {json.dumps(task_result, indent=2, default=self._json_serializable) if task_result else "None"}
 
-Respond with a single, natural sentence.
+        Respond with a single, natural sentence.
         """
         print("LLM Reply Prompt:", prompt)
 

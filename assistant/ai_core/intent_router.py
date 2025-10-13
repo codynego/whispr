@@ -1,12 +1,14 @@
 from emails.services import EmailService
 from .llm_service import LLMService
 from django.conf import settings
+
 APIKEY = settings.GEMINI_API_KEY
+
 
 class IntentRouter:
     """
-    Dynamically routes intents to appropriate handler methods
-    using an internal registry.
+    Routes user intents or @commands to the appropriate handler.
+    Supports both LLM-inferred intents and explicit @commands.
     """
 
     def __init__(self, user=None):
@@ -14,12 +16,16 @@ class IntentRouter:
         self.llm_service = LLMService(self.user, APIKEY)
         self.email_service = EmailService(user=user)
         self.handlers = self._register_handlers()
+        self.command_map = {
+            "@read": "read_message",
+            "@find": "find_email",
+            "@send": "send_email",
+            "@reply": "reply_email",
+            "@summarize": "summarize_email",
+        }
 
     # ---------------- REGISTER HANDLERS ---------------- #
     def _register_handlers(self):
-        """
-        Register all known intents and their corresponding handler methods.
-        """
         return {
             "get_content": self.handle_read_email,
             "read_message": self.handle_read_email,
@@ -32,33 +38,41 @@ class IntentRouter:
 
     # ---------------- GET HANDLER ---------------- #
     def get_handler(self, intent_name):
-        """
-        Returns the correct handler function for a given intent.
-        """
         return self.handlers.get(intent_name)
 
     # ---------------- MAIN ENTRY ---------------- #
     def route(self, message, context=None):
         """
-        Main entry point:
-        - Parse message into {intent, entities}
-        - Fetch and run appropriate handler
+        Main entry:
+        1. Checks for explicit @commands first
+        2. If none, uses LLM to infer intent
+        3. Routes to matching handler
         """
-        parsed = self.llm_service.parse_intent_and_entities(message, context)
-        intent = parsed.get("intent")
-        entities = parsed.get("entities", {})
-
-        if not intent:
-            return "Sorry, I couldn’t understand your request."
+        intent, entities = self._detect_intent(message, context)
 
         handler = self.get_handler(intent)
         if not handler:
-            return f"Unknown intent '{intent}'."
+            return f"Unknown or unsupported intent: '{intent}'"
 
         try:
             return handler(entities)
         except Exception as e:
-            return f"Error while handling '{intent}': {e}"
+            print(f"[IntentRouter] Error handling '{intent}':", e)
+            return f"An error occurred while processing '{intent}'."
+
+    # ---------------- INTENT DETECTION ---------------- #
+    def _detect_intent(self, message, context=None):
+        # 1️⃣ Check for explicit command (e.g. "@find mail from ALX")
+        for cmd, intent in self.command_map.items():
+            if cmd in message.lower():
+                entities = self.llm_service.extract_entities(message, intent)
+                return intent, entities
+
+        # 2️⃣ Fall back to LLM parsing
+        parsed = self.llm_service.parse_intent_and_entities(message, context)
+        intent = parsed.get("intent", "unknown")
+        entities = parsed.get("entities", {})
+        return intent, entities
 
     # ---------------- HANDLER METHODS ---------------- #
     def handle_find_emails(self, entities):
@@ -68,17 +82,13 @@ class IntentRouter:
             date=entities.get("date"),
             limit=entities.get("limit", 5),
         )
-        if not emails:
-            return "No emails found matching your query."
-        return emails
+        return emails or "No emails found matching your query."
 
     def handle_read_email(self, entities):
         email = self.email_service.read_email(
             email_id=entities.get("email_id")
         )
-        if not email:
-            return "Email not found."
-        return email
+        return email or "Email not found."
 
     def handle_send_email(self, entities):
         success = self.email_service.send_email(
@@ -86,17 +96,17 @@ class IntentRouter:
             subject=entities.get("subject"),
             body=entities.get("body"),
         )
-        return "Email sent successfully." if success else "Failed to send email."
+        return "✅ Email sent successfully." if success else "❌ Failed to send email."
 
     def handle_reply_email(self, entities):
         success = self.email_service.reply_to_email(
             email_id=entities.get("email_id"),
             body=entities.get("body"),
         )
-        return "Reply sent successfully." if success else "Failed to send reply."
+        return "💬 Reply sent successfully." if success else "❌ Failed to send reply."
 
     def handle_summarize_email(self, entities):
         summary = self.email_service.summarize_email(
-            email_id=entities.get("email_id")
+            sender=entities.get("sender")
         )
-        return f"Summary: {summary}"
+        return f"🧠 Summary: {summary}" if summary else "Couldn't summarize this email."

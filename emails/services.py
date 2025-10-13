@@ -2,14 +2,17 @@ from emails.models import Email
 from django.utils import timezone
 from datetime import timedelta
 
+
 class EmailService:
     """
+    Service for managing user emails.
     Handles all database and functional operations related to user emails.
     Used by the IntentRouter.
+
     """
 
     def __init__(self, user=None):
-        self.user = user  # you can pass the user from request for personalized queries
+        self.user = user 
 
     # ---------------- FIND EMAIL ---------------- #
     def find_emails(self, sender=None, subject=None, date=None, limit=5):
@@ -18,7 +21,6 @@ class EmailService:
         """
         qs = Email.objects.all()
 
-        # Optional filtering by user
         if self.user:
             qs = qs.filter(account__user=self.user)
 
@@ -27,20 +29,25 @@ class EmailService:
         if subject:
             qs = qs.filter(subject__icontains=subject)
 
-        # Handle date filters
+        # Date filtering
         if date:
             date = date.lower()
             if date == "today":
                 qs = qs.filter(received_at__date=timezone.now().date())
             elif date == "yesterday":
                 qs = qs.filter(received_at__date=timezone.now().date() - timedelta(days=1))
-            elif date == "last week":
+            elif date == "last_week":
                 start = timezone.now().date() - timedelta(days=7)
                 qs = qs.filter(received_at__date__gte=start)
 
-        emails = list(qs.order_by("-received_at")[:limit].values("id", "sender", "subject", "snippet", "received_at"))
+        emails = list(
+            qs.order_by("-received_at")[:limit].values(
+                "id", "sender", "subject", "body", "received_at"
+            )
+        )
         return emails
 
+    # ---------------- READ EMAIL ---------------- #
     def read_email(self, email_id):
         """
         Retrieves a specific email by ID.
@@ -63,37 +70,60 @@ class EmailService:
     # ---------------- SEND EMAIL ---------------- #
     def send_email(self, recipient, subject, body):
         """
-        Sends an email (could connect to Gmail API, SMTP, or your internal system).
+        Sends an email (placeholder logic for now).
         """
-        # Example placeholder logic for now:
         print(f"Sending email to {recipient} — Subject: {subject}\nBody: {body}")
         return True
 
     # ---------------- REPLY EMAIL ---------------- #
-    def reply_to_email(self, email_id, body):
+    def reply_to_email(self, sender, body):
         """
-        Replies to a specific email.
+        Replies to the latest email thread from a sender.
+        If no sender is given, returns an error.
         """
-        try:
-            email = Email.objects.get(id=email_id, account__user=self.user)
-        except Email.DoesNotExist:
-            return {"error": "Email not found"}
+        if not sender:
+            return {"error": "No sender provided for reply."}
 
-        print(f"Replying to {email.sender}: {body}")
-        # Example placeholder for sending logic
-        return True
+        qs = Email.objects.all()
+        if self.user:
+            qs = qs.filter(account__user=self.user)
+
+        latest_email = qs.filter(sender__icontains=sender).order_by("-received_at").first()
+        if not latest_email:
+            return {"error": f"No recent email thread found for {sender}."}
+
+        print(f"Replying to {latest_email.sender}: {body}")
+        # (In real use: send reply via API, link thread_id, etc.)
+        return {
+            "status": "success",
+            "replied_to": latest_email.id,
+            "recipient": latest_email.sender,
+            "subject": f"Re: {latest_email.subject}",
+        }
 
     # ---------------- SUMMARIZE EMAIL ---------------- #
-    def summarize_email(self, email_id):
+    def summarize_email(self, sender=None):
         """
-        Summarizes an email body (can later use Gemini API for smart summaries).
+        Summarizes the latest email thread from a sender.
         """
-        try:
-            email = Email.objects.get(id=email_id, account__user=self.user)
-        except Email.DoesNotExist:
-            return {"error": "Email not found"}
+        if not sender:
+            return {"error": "No sender provided for summary."}
 
-        # Example summary logic — you’ll replace this with LLM integration later
-        body = email.body or ""
-        summary = body[:100] + "..." if len(body) > 100 else body
-        return summary
+        qs = Email.objects.all()
+        if self.user:
+            qs = qs.filter(account__user=self.user)
+
+        latest_email = qs.filter(sender__icontains=sender).order_by("-received_at").first()
+        if not latest_email:
+            return {"error": f"No recent email thread found for {sender}."}
+
+        body = latest_email.body or ""
+        # summary = body[:100] + "..." if len(body) > 100 else body
+        summary = body
+
+        return {
+            "email_id": latest_email.id,
+            "sender": latest_email.sender,
+            "subject": latest_email.subject,
+            "summary": summary,
+        }
