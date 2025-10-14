@@ -1,7 +1,7 @@
 from emails.models import Email
 from django.utils import timezone
 from datetime import timedelta
-
+from whisprai.ai.retriever import retrieve_relevant_emails
 
 class EmailService:
     """
@@ -14,58 +14,94 @@ class EmailService:
     def __init__(self, user=None):
         self.user = user 
 
-    # ---------------- FIND EMAIL ---------------- #
-    def find_emails(self, sender=None, subject=None, date=None, limit=5):
-        """
-        Searches user emails based on given filters.
-        """
-        qs = Email.objects.all()
 
-        if self.user:
-            qs = qs.filter(account__user=self.user)
-
+    def find_emails(self, sender=None, subject=None, date=None, query_text=None, top_k=5):
+        # 1️⃣ First, try DB filters
+        emails = Email.objects.filter(account__user=self.user)
         if sender:
-            qs = qs.filter(sender__icontains=sender)
+            emails = emails.filter(sender__icontains=sender)
         if subject:
-            qs = qs.filter(subject__icontains=subject)
-
-        # Date filtering
+            emails = emails.filter(subject__icontains=subject)
         if date:
             date = date.lower()
             if date == "today":
-                qs = qs.filter(received_at__date=timezone.now().date())
+                emails = emails.filter(received_at__date=timezone.now().date())
             elif date == "yesterday":
-                qs = qs.filter(received_at__date=timezone.now().date() - timedelta(days=1))
+                emails = emails.filter(received_at__date=timezone.now().date() - timedelta(days=1))
             elif date == "last_week":
                 start = timezone.now().date() - timedelta(days=7)
-                qs = qs.filter(received_at__date__gte=start)
+                emails = emails.filter(received_at__date__gte=start)
 
-        emails = list(
-            qs.order_by("-received_at")[:limit].values(
-                "id", "sender", "subject", "body", "received_at"
-            )
-        )
-        return emails
+        if query_text:
+            semantic_emails = retrieve_relevant_emails(self.user, emails, query_text, top_k=top_k)
+            email_list = semantic_emails
 
-    # ---------------- READ EMAIL ---------------- #
-    def read_email(self, email_id):
+        return {
+            "count": len(email_list),
+            "emails": [
+                {
+                    "id": email.id,
+                    "sender": email.sender,
+                    "sender_name": getattr(email, "sender_name", None),
+                    "recipient": email.recipient,
+                    "subject": email.subject,
+                    "body": email.body,
+                    "received_at": email.received_at,
+                    "is_read": getattr(email, "is_read", False),
+                }
+                for email in email_list
+            ]
+        }
+
+
+    def read_email(self, sender=None, subject=None, date=None, query_text=None,):
         """
-        Retrieves a specific email by ID.
+        Retrieves the most relevant email from a sender or based on a query.
         """
-        try:
-            email = Email.objects.get(id=email_id, account__user=self.user)
-            return {
-                "id": email.id,
-                "sender": email.sender,
-                "sender_name": email.sender_name,
-                "recipient": email.recipient,
-                "subject": email.subject,
-                "body": email.body,
-                "received_at": email.received_at,
-                "is_read": email.is_read,
+        if not sender and not query_text:
+            return {"error": "Either sender or query_text must be provided."}
+        emails = Email.objects.filter(account__user=self.user)
+        if sender:
+            emails = emails.filter(sender__icontains=sender)
+        if subject:
+            emails = emails.filter(subject__icontains=subject)
+        if date:
+            date = date.lower()
+            if date == "today":
+                emails = emails.filter(received_at__date=timezone.now().date())
+            elif date == "yesterday":
+                emails = emails.filter(received_at__date=timezone.now().date() - timedelta(days=1))
+            elif date == "last_week":
+                start = timezone.now().date() - timedelta(days=7)
+                emails = emails.filter(received_at__date__gte=start)
+
+        # Use embeddings if query_text is provided
+        if query_text:
+            relevant_emails = retrieve_relevant_emails(self.user, emails, query_text, top_k=1)
+            if not relevant_emails:
+                return {"error": "No relevant emails found for your query."}
+            email = relevant_emails
+        # else:
+        #     email = emails.first()
+        #     if not email:
+        #         return {"error": "No emails found."}
+
+        return {
+                "count": len(emails),
+                "emails": [
+                    {
+                        "id": email.id,
+                        "sender": email.sender,
+                        "sender_name": getattr(email, "sender_name", None),
+                        "recipient": email.recipient,
+                        "subject": email.subject,
+                        "body": email.body,
+                        "received_at": email.received_at,
+                        "is_read": getattr(email, "is_read", False),
+                    }
+                    for email in emails
+                ]
             }
-        except Email.DoesNotExist:
-            return None
 
     # ---------------- SEND EMAIL ---------------- #
     def send_email(self, recipient, subject, body):
@@ -101,29 +137,46 @@ class EmailService:
             "subject": f"Re: {latest_email.subject}",
         }
 
-    # ---------------- SUMMARIZE EMAIL ---------------- #
-    def summarize_email(self, sender=None):
+
+    def summarize_email(self, sender=None, subject=None, date=None, query_text=None):
         """
-        Summarizes the latest email thread from a sender.
+        Summarizes the most relevant email based on sender or query.
         """
-        if not sender:
-            return {"error": "No sender provided for summary."}
+        if not sender and not query_text:
+            return {"error": "Provide either sender or query_text for summary."}
 
-        qs = Email.objects.all()
-        if self.user:
-            qs = qs.filter(account__user=self.user)
+        emails = Email.objects.filter(account__user=self.user)
+        if sender:
+            emails = emails.filter(sender__icontains=sender)
+        if subject:
+            emails = emails.filter(subject__icontains=subject)
+        if date:
+            date = date.lower()
+            if date == "today":
+                emails = emails.filter(received_at__date=timezone.now().date())
+            elif date == "yesterday":
+                emails = emails.filter(received_at__date=timezone.now().date() - timedelta(days=1))
+            elif date == "last_week":
+                start = timezone.now().date() - timedelta(days=7)
+                emails = emails.filter(received_at__date__gte=start)
 
-        latest_email = qs.filter(sender__icontains=sender).order_by("-received_at").first()
-        if not latest_email:
-            return {"error": f"No recent email thread found for {sender}."}
 
-        body = latest_email.body or ""
-        # summary = body[:100] + "..." if len(body) > 100 else body
-        summary = body
+        # Use embeddings to find the most relevant email
+        if query_text:
+            relevant_emails = retrieve_relevant_emails(self.user, emails, query_text, top_k=1)
+            if not relevant_emails:
+                return {"error": "No relevant emails found for your query."}
+            email = relevant_emails[0]
+
+
+        body = email.body or ""
+        # Optionally integrate an LLM summarizer here
+        summary = body[:200] + "..." if len(body) > 200 else body
 
         return {
-            "email_id": latest_email.id,
-            "sender": latest_email.sender,
-            "subject": latest_email.subject,
+            "email_id": email.id,
+            "sender": email.sender,
+            "subject": email.subject,
+            "body": body,
             "summary": summary,
         }

@@ -17,7 +17,7 @@ class IntentRouter:
         self.email_service = EmailService(user=user)
         self.handlers = self._register_handlers()
         self.command_map = {
-            "@read": "read_message",
+            "@read": "read_email",
             "@find": "find_email",
             "@send": "send_email",
             "@reply": "reply_email",
@@ -28,7 +28,7 @@ class IntentRouter:
     def _register_handlers(self):
         return {
             "get_content": self.handle_read_email,
-            "read_message": self.handle_read_email,
+            "read_email": self.handle_read_email,
             "find_email": self.handle_find_emails,
             "find_emails": self.handle_find_emails,
             "send_email": self.handle_send_email,
@@ -80,13 +80,14 @@ class IntentRouter:
             sender=entities.get("sender"),
             subject=entities.get("subject"),
             date=entities.get("date"),
-            limit=entities.get("limit", 5),
+            query_text=entities.get("query_text"),
         )
         return emails or "No emails found matching your query."
 
     def handle_read_email(self, entities):
         email = self.email_service.read_email(
-            email_id=entities.get("email_id")
+            sender=entities.get("sender"),
+            query_text=entities.get("query_text"),
         )
         return email or "Email not found."
 
@@ -107,6 +108,7 @@ class IntentRouter:
 
     def handle_summarize_email(self, entities):
         summary = self.email_service.summarize_email(
-            sender=entities.get("sender")
+            sender=entities.get("sender"),
+            query_text=entities.get("query_text"),
         )
         return f"🧠 Summary: {summary}" if summary else "Couldn't summarize this email."

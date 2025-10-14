@@ -9,10 +9,16 @@ class IntentSchemaParser:
     """
 
     def __init__(self):
-        self.intent_schemas = {
+       self.intent_schemas = {
+            "read_message": {
+                "required_fields": [],  # sender or query_text can now trigger retrieval
+                "optional_fields": ["sender", "category", "timeframe", "subject", "query_text"],  # semantic-aware search
+                "data_source": "emails",
+                "handler": "read_email"
+            },
             "find_email": {
-                "required_fields": [],
-                "optional_fields": ["sender", "category", "timeframe", "subject"],
+                "required_fields": [],  # no hard requirement; can search by filters or query
+                "optional_fields": ["sender", "category", "timeframe", "subject", "query_text"],  # allow embeddings-based query
                 "data_source": "emails",
                 "handler": "query_emails"
             },
@@ -46,7 +52,14 @@ class IntentSchemaParser:
                 "data_source": "files",
                 "handler": "query_documents"
             },
+            "summarize_email": {
+                "required_fields": [],  # sender or query_text triggers summary
+                "optional_fields": ["sender", "category", "timeframe", "subject", "query_text"],
+                "data_source": "emails",
+                "handler": "summarize_email"
+            },
         }
+
 
     def validate(
         self,

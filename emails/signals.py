@@ -15,7 +15,7 @@ def generate_email_embedding_and_importance(sender, instance, created, **kwargs)
         # Combine subject + body for better representation
         user = instance.account.user
         sender_number = user.whatsapp if hasattr(user, 'whatsapp') else None
-        text = f"{instance.subject}\n\n{instance.body}".strip()
+        text = f"{instance.subject}\n\n{instance.body}\n\n{instance.sender_name}\n\n{instance.received_at}".strip()
         if not text:
             return  # skip empty emails
 

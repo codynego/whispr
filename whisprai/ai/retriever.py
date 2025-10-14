@@ -7,7 +7,7 @@ from emails.models import Email
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
 
-def retrieve_relevant_emails(user, query_text: str, top_k: int = 5):
+def retrieve_relevant_emails(user, data=None, query_text: str = None, top_k: int = 5):
     """
     Retrieve top-k emails semantically related to a user's query using embeddings.
     Automatically generates embeddings for the query and compares with stored email vectors.
@@ -19,7 +19,10 @@ def retrieve_relevant_emails(user, query_text: str, top_k: int = 5):
     query_embedding = model.encode([query_text], normalize_embeddings=True)
 
     # 2️⃣ Fetch user emails that have stored embeddings
-    emails = Email.objects.filter(account__user=user).exclude(embedding=None)
+    if data:
+        emails = data
+    else:
+        emails = Email.objects.filter(account__user=user, embedding__isnull=False)
     if not emails.exists():
         return []
 

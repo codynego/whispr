@@ -97,21 +97,39 @@ Respond with only the question.
         using session context.
         """
         context_text = self._get_context()
-        
+                
         prompt = f"""
-        You are Whispr, the AI email assistant.
-        Continue the conversation naturally, using past context and new data.
+        You are Whispr — an intelligent, helpful AI email assistant.
 
-        Conversation so far:
+        Your job is to give the user a clear, concise, and useful answer based on their message,
+        the email data provided, and the previous conversation context.
+
+        Use this information to understand and respond naturally, as if you’re continuing a chat
+        with the user. If the user’s question refers to specific emails (like who sent them,
+        what they said, or how many there are), use the email data below to answer directly.
+
+        ---
+        🧠 Previous context:
         {context_text}
 
-        User message: "{user_message}"
-        Context data: {json.dumps(context_data, indent=2, default=self._json_serializable)}
-        Task result: {json.dumps(task_result, indent=2, default=self._json_serializable) if task_result else "None"}
+        💬 User message:
+        "{user_message}"
 
-        Respond with a single, natural sentence.
+        📨 Available email data (context):
+        {json.dumps(context_data, indent=2, default=self._json_serializable)}
+
+        📂 Task result (if any):
+        {json.dumps(task_result, indent=2, default=self._json_serializable) if task_result else "None"}
+        ---
+
+        Respond in a single natural sentence — short, factual, and specific as though you are giving a report.
+        If the user asks to *read* or *summarize* emails, provide a short summary or key content directly.
+        If the user asks *how many* emails, give a number.
+        If the user asks about *sending* or *replying* to emails, confirm the action was done.
+        Avoid phrases like “I’ll check that for you” or “Let me see.” Just answer directly.
         """
         print("LLM Reply Prompt:", prompt)
+
 
         response = self.model_obj.generate_content(prompt)
         text = response.text.strip()

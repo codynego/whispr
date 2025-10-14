@@ -151,25 +151,45 @@
 from typing import Dict, Any, Optional
 import os
 import re
-import json
 import spacy
+import functools
+
+from sentence_transformers import SentenceTransformer
+
+# Initialize model once
+embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+
+def generate_embedding(text: str):
+    """
+    Generates a normalized embedding vector for the given text
+    using a sentence transformer model (all-MiniLM-L6-v2).
+    """
+    if not text or not text.strip():
+        return []
+
+    embedding = embedding_model.encode([text], normalize_embeddings=True)
+    return embedding[0].tolist() 
 
 
 class IntentDetector:
     """
-    Detects user intent and entities using explicit @commands
-    or rule-based keyword matching for intent and NER for entities.
+    Detects user intent and entities using explicit @commands,
+    rule-based keyword matching, NER, regex, and embeddings as fallback.
     """
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self):
         # Load spaCy model for NER
         try:
             self.nlp = spacy.load("en_core_web_sm")
         except OSError:
-            raise ValueError("spaCy model 'en_core_web_sm' not found. Please install it with: python -m spacy download en_core_web_sm")
+            raise ValueError(
+                "spaCy model 'en_core_web_sm' not found. Please install it with:\n"
+                "python -m spacy download en_core_web_sm"
+            )
 
         # 🔹 Map @commands → intents
         self.command_map = {
+            "@read": "read_email",
             "@find": "find_email",
             "@send": "send_message",
             "@summarize": "summarize_email",
@@ -180,6 +200,7 @@ class IntentDetector:
 
         # 🔹 Keyword-based intent mapping
         self.intent_keywords = {
+            "read_email": ["read", "open"],
             "find_email": ["email", "mail", "inbox"],
             "send_message": ["send", "reply", "message"],
             "summarize_email": ["summarize", "summary"],
@@ -190,28 +211,19 @@ class IntentDetector:
             "read_message": ["read", "open"],
         }
 
-    # --------------------------------------------------------
-    # 🧠 DETECT INTENT
-    # --------------------------------------------------------
+    # ----------------- Intent Detection ----------------- #
     def detect_intent(
         self, message: str, previous_context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """
-        Determines the user intent and entities.
-        First tries to match an explicit @command, otherwise uses rule-based keyword matching for intent and NER for entities.
-        """
         message_lower = message.lower().strip()
 
         # 1️⃣ Check for explicit @command
         cmd_match = re.search(r"(@\w+)", message_lower)
         if cmd_match:
             command = cmd_match.group(1)
-            print("Detected explicit command:", command)
-
             if command in self.command_map:
                 intent = self.command_map[command]
-                entities = self._extract_entities_with_ner(message)
-                print(f"Mapped {command} → {intent}")
+                entities = self._extract_entities(message)
                 return {
                     "intent": intent,
                     "confidence": 1.0,
@@ -219,19 +231,13 @@ class IntentDetector:
                     "source": "command",
                 }
 
-        # 2️⃣ Otherwise fallback to rule-based intent detection + NER
-        print("No explicit command found — using rule-based intent and NER for entities.")
+        # 2️⃣ Rule-based keyword matching + NER
         return self._detect_with_rules_and_ner(message, previous_context)
 
-    # --------------------------------------------------------
-    # 📝 RULE-BASED INTENT DETECTION + NER
-    # --------------------------------------------------------
+    # ----------------- Rule-Based Intent + NER ----------------- #
     def _detect_with_rules_and_ner(
         self, message: str, previous_context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """
-        Uses keyword matching to detect intent from text, and spaCy NER for entities.
-        """
         message_lower = message.lower()
         intent = "unknown"
         confidence = 0.0
@@ -244,50 +250,38 @@ class IntentDetector:
                 intent = possible_intent
                 confidence = min(1.0, matches / len(keywords))
 
-        if max_matches == 0:
-            confidence = 0.0
+        # Extract entities
+        entities = self._extract_entities(message)
+        print("intent ", intent)
 
-        # Extract entities using NER
-        entities = self._extract_entities_with_ner(message)
-
-        result = {
+        return {
             "intent": intent,
             "confidence": confidence,
             "entities": entities,
-            "source": "rules_ner",
+            "source": "rules_ner_embed",
         }
 
-        print("Rule-based + NER Detection Result:", result)
-        return result
-
-    # --------------------------------------------------------
-    # 🔍 ENTITY EXTRACTION WITH NER (spaCy + regex fallback)
-    # --------------------------------------------------------
-    def _extract_entities_with_ner(self, message: str) -> Dict[str, str]:
-        """
-        Extracts entities using spaCy NER for named entities and regex for others.
-        """
+    # ----------------- Entity Extraction ----------------- #
+    def _extract_entities(self, message: str) -> Dict[str, str]:
         entities = {}
-
-        # spaCy NER
         doc = self.nlp(message)
-        for ent in doc.ents:
-            if ent.label_ in ["PERSON", "ORG"]:
-                entities["sender"] = ent.text  # Sender could be person or organization
-            elif ent.label_ == "DATE":
-                entities["timeframe"] = ent.text
-            # Add more mappings as needed, e.g., MONEY for transactions
 
-        # Regex fallbacks for non-NER entities
+        # NER first
+        for ent in doc.ents:
+            if ent.label_ in ["PERSON", "ORG"] and "sender" not in entities:
+                entities["sender"] = ent.text
+            elif ent.label_ == "DATE" and "timeframe" not in entities:
+                entities["timeframe"] = ent.text
+
         message_lower = message.lower()
 
-        # Detect sender (if not already from NER)
+        # Regex fallback for sender
         if "sender" not in entities:
             match_sender = re.search(r"from\s+([A-Za-z0-9&.\s]+)", message)
             if match_sender:
                 entities["sender"] = match_sender.group(1).strip()
 
-        # Detect timeframe (enhance if not from NER)
+        # Regex fallback for timeframe
         if "timeframe" not in entities:
             if "yesterday" in message_lower:
                 entities["timeframe"] = "yesterday"
@@ -296,15 +290,54 @@ class IntentDetector:
             elif "today" in message_lower:
                 entities["timeframe"] = "today"
 
-        # Detect transaction type
+        # Transaction type
         if "credit" in message_lower:
             entities["type"] = "credit"
         elif "debit" in message_lower:
             entities["type"] = "debit"
 
-        # Detect subject
-        match_subject = re.search(r"subject[:\s]+(.+?)(?:\n|$)", message, re.IGNORECASE | re.DOTALL)
+        # Subject
+        match_subject = re.search(
+            r"subject[:\s]+(.+?)(?:\n|$)", message, re.IGNORECASE | re.DOTALL
+        )
         if match_subject:
             entities["subject"] = match_subject.group(1).strip()
 
+        # ----------------- Embedding fallback ----------------- #
+        if "sender" not in entities:
+            sender_guess = self._guess_sender_with_embedding(message)
+            if sender_guess:
+                entities["sender"] = sender_guess
+
+        if message.strip() and "query_text" not in entities:
+            entities["query_text"] = message.strip()
+
         return entities
+
+    # ----------------- Embedding Fallback ----------------- #
+    @functools.lru_cache(maxsize=1024)
+    def _guess_sender_with_embedding(self, text: str) -> Optional[str]:
+        """
+        If NER & regex fail, use embedding similarity to guess sender.
+        (This is a placeholder; replace with real embedding+vector search)
+        """
+        known_senders = ["ALX", "Google", "OpenAI", "Tesla", "John Doe", "ACME Corp"]
+        text_embedding = generate_embedding(text)
+
+        # Simple cosine similarity placeholder
+        def cosine_sim(a, b):
+            dot = sum(x * y for x, y in zip(a, b))
+            norm_a = sum(x * x for x in a) ** 0.5
+            norm_b = sum(x * x for x in b) ** 0.5
+            return dot / (norm_a * norm_b + 1e-6)
+
+        best_sender = None
+        best_score = 0.5  # threshold
+        for sender in known_senders:
+            sender_emb = generate_embedding(sender)
+            score = cosine_sim(text_embedding, sender_emb)
+            if score > best_score:
+                best_score = score
+                best_sender = sender
+
+        return best_sender

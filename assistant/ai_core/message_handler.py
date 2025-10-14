@@ -27,7 +27,7 @@ class MessageHandler:
 
         # Known intents
         self.intents = [
-            "read_message",
+            "read_email",
             "get_content",
             "find_email",
             "find_transaction",
@@ -43,6 +43,7 @@ class MessageHandler:
             "send_message": "@send",
             "create_task": "@task",
             "summarize_email": "@summarize",
+            "read_email": "@read",
         }
 
     # --------------------------------------------------------
