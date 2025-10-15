@@ -37,17 +37,14 @@ class LLMService:
         history = self.conversation_history.get(self.session_id, [])
         # Keep only the last 2 messages
         recent_history = history[-4:]
-        print("Recent History:", recent_history)
         formatted = "\n".join([f"{h['role'].capitalize()}: {h['content']}" for h in recent_history])
         return formatted or "(no prior context)"
 
     def _update_context(self, role: str, content: str):
         """Save each turn to the conversation history."""
-        print(f"Updating context for session {self.session_id}: {role} -> {content}")
         if self.session_id not in self.conversation_history:
             self.conversation_history[self.session_id] = []
         self.conversation_history[self.session_id].append({"role": role, "content": content})
-        print("Updated Conversation History:", self.conversation_history[self.session_id])
 
 
     def ask_for_missing_info(
@@ -128,7 +125,7 @@ Respond with only the question.
         If the user asks about *sending* or *replying* to emails, confirm the action was done.
         Avoid phrases like “I’ll check that for you” or “Let me see.” Just answer directly.
         """
-        print("LLM Reply Prompt:", prompt)
+        # print("LLM Reply Prompt:", prompt)
 
 
         response = self.model_obj.generate_content(prompt)

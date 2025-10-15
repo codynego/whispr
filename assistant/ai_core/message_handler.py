@@ -33,14 +33,15 @@ class MessageHandler:
             "find_transaction",
             "find_task",
             "find_meeting",
-            "send_message",
+            "send_email",
             "find_document",
             "summarize_email",
+            "create_task"
         ]
 
         # Required @commands for safety-critical actions
         self.required_commands = {
-            "send_message": "@send",
+            "send_email": "@send",
             "create_task": "@task",
             "summarize_email": "@summarize",
             "read_email": "@read",

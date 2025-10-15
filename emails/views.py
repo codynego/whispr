@@ -40,6 +40,8 @@ SCOPES = [
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
     "openid",
+    'https://www.googleapis.com/auth/gmail.send'
+    
 ]
 
 

@@ -1,6 +1,7 @@
 from emails.services import EmailService
 from .llm_service import LLMService
 from django.conf import settings
+from assistant.models import AssistantTask
 
 APIKEY = settings.GEMINI_API_KEY
 
@@ -22,6 +23,9 @@ class IntentRouter:
             "@send": "send_email",
             "@reply": "reply_email",
             "@summarize": "summarize_email",
+            "@task": "create_task",
+            "@todo": "create_task",
+            "@remind": "create_task",
         }
 
     # ---------------- REGISTER HANDLERS ---------------- #
@@ -34,6 +38,7 @@ class IntentRouter:
             "send_email": self.handle_send_email,
             "reply_email": self.handle_reply_email,
             "summarize_email": self.handle_summarize_email,
+            "create_task": self.handle_create_task,
         }
 
     # ---------------- GET HANDLER ---------------- #
@@ -84,6 +89,18 @@ class IntentRouter:
         )
         return emails or "No emails found matching your query."
 
+    def handle_create_task(self, entities):
+        print("Creating task with entities:", entities)
+        task = AssistantTask.objects.create(
+            user=self.user,
+            input_text=entities.get("input_text"),
+            task_type=entities.get("action") or "New Task",
+            output_text=entities.get("task_title"),
+            due_datetime=entities.get("due_datetime"),
+            context=entities.get("context"),
+        )
+        return f"✅ Task '{task.task_type}' created." if task else "❌ Failed to create task."
+
     def handle_read_email(self, entities):
         email = self.email_service.read_email(
             sender=entities.get("sender"),
@@ -93,7 +110,8 @@ class IntentRouter:
 
     def handle_send_email(self, entities):
         success = self.email_service.send_email(
-            recipient=entities.get("recipient"),
+            receiver_name=entities.get("receiver_name"),
+            receiver_email=entities.get("receiver_email"),
             subject=entities.get("subject"),
             body=entities.get("body"),
         )

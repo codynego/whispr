@@ -2,6 +2,8 @@ from emails.models import Email
 from django.utils import timezone
 from datetime import timedelta
 from whisprai.ai.retriever import retrieve_relevant_emails
+from emails.utils import send_gmail_email
+from emails.models import EmailAccount, Email
 
 class EmailService:
     """
@@ -104,15 +106,39 @@ class EmailService:
             }
 
     # ---------------- SEND EMAIL ---------------- #
-    def send_email(self, recipient, subject, body):
+    def send_email(self, receiver_name, receiver_email, subject, body):
         """
         Sends an email (placeholder logic for now).
         """
-        print(f"Sending email to {recipient} — Subject: {subject}\nBody: {body}")
+                # --- 1️⃣ Try to find which email account last communicated with this recipient ---
+        if not receiver_email:
+            email = (
+                Email.objects.filter(account__user=self.user).filter(
+                    sender__icontains=receiver_name
+                ).order_by("-received_at").first()
+            )
+            account = email.account if email else None
+        else:
+            account = EmailAccount.objects.filter(user=self.user, is_active=True).first()
+
+        if not account:
+            print("⚠️ No connected email account found.")
+            return {"error": "No connected email account found."}
+
+        # --- 2️⃣ Send email via Gmail API ---
+        to_email = receiver_email if receiver_email else email.sender
+        success = send_gmail_email(
+            account,
+            to_email=to_email,
+            subject=subject,
+            body=body
+        )
+
+        print(f"Sending email to {receiver_name} <{receiver_email}> — Subject: {subject}\nBody: {body}")
         return True
 
     # ---------------- REPLY EMAIL ---------------- #
-    def reply_to_email(self, sender, body):
+    def reply_to_email(self, receiver_name, receiver_email, subject, body):
         """
         Replies to the latest email thread from a sender.
         If no sender is given, returns an error.

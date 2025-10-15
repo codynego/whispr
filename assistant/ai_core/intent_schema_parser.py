@@ -40,11 +40,11 @@ class IntentSchemaParser:
                 "data_source": "calendar",
                 "handler": "query_meetings"
             },
-            "send_message": {
-                "required_fields": ["receiver", "content"],
-                "optional_fields": ["medium"],
+            "send_email": {
+                "required_fields": [],
+                "optional_fields": ["receiver", "receiver_email", "subject", "body"],
                 "data_source": None,
-                "handler": "send_message"
+                "handler": "send_email"
             },
             "find_document": {
                 "required_fields": [],

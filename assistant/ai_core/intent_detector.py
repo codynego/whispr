@@ -144,86 +144,96 @@
 #             entities["type"] = "debit"
 
 #         return entities
-
-
-
-
-from typing import Dict, Any, Optional
 import os
 import re
 import spacy
-import functools
-
+import json
+import google.generativeai as genai
+from typing import Dict, Any, Optional
+from datetime import datetime, timedelta
 from sentence_transformers import SentenceTransformer
+from dateutil import parser as date_parser
+import dateparser
 
-# Initialize model once
-embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+
+
+# ----------------- Embedding Helper ----------------- #
+embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 
 def generate_embedding(text: str):
-    """
-    Generates a normalized embedding vector for the given text
-    using a sentence transformer model (all-MiniLM-L6-v2).
-    """
+    """Generate normalized sentence embeddings."""
     if not text or not text.strip():
         return []
-
     embedding = embedding_model.encode([text], normalize_embeddings=True)
-    return embedding[0].tolist() 
+    return embedding[0].tolist()
 
 
+# ----------------- Intent Detector ----------------- #
 class IntentDetector:
     """
     Detects user intent and entities using explicit @commands,
-    rule-based keyword matching, NER, regex, and embeddings as fallback.
+    rule-based logic, NER, and selectively calls LLM
+    for complex message types like send/reply/task/reminder.
     """
 
-    def __init__(self):
-        # Load spaCy model for NER
+    def __init__(self, api_key: Optional[str] = None):
+        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
+        genai.configure(api_key=self.api_key)
+        self.model = genai.GenerativeModel("gemini-2.5-flash")
+
+        # Load spaCy NER model
         try:
             self.nlp = spacy.load("en_core_web_sm")
         except OSError:
-            raise ValueError(
-                "spaCy model 'en_core_web_sm' not found. Please install it with:\n"
-                "python -m spacy download en_core_web_sm"
-            )
+            raise ValueError("Please install spaCy model: python -m spacy download en_core_web_sm")
 
-        # 🔹 Map @commands → intents
+        # Command mapping
         self.command_map = {
             "@read": "read_email",
             "@find": "find_email",
-            "@send": "send_message",
+            "@send": "send_email",
+            "@reply": "reply_email",
             "@summarize": "summarize_email",
-            "@task": "find_task",
+            "@task": "create_task",
             "@meeting": "find_meeting",
             "@doc": "find_document",
+            "@remind": "set_reminder",
         }
 
-        # 🔹 Keyword-based intent mapping
+        # Keyword intent hints
         self.intent_keywords = {
             "read_email": ["read", "open"],
             "find_email": ["email", "mail", "inbox"],
-            "send_message": ["send", "reply", "message"],
+            "send_email": ["send", "compose", "email"],
+            "reply_email": ["reply", "respond"],
             "summarize_email": ["summarize", "summary"],
-            "find_task": ["task", "todo"],
+            "create_task": ["task", "todo", "schedule"],
+            "set_reminder": ["remind", "remember", "by", "at", "in"],
             "find_meeting": ["meeting", "calendar"],
             "find_document": ["document", "file", "doc"],
-            "find_transaction": ["transaction", "bank", "payment"],
-            "read_message": ["read", "open"],
         }
 
-    # ----------------- Intent Detection ----------------- #
-    def detect_intent(
-        self, message: str, previous_context: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+    # ----------------- Detect Intent ----------------- #
+    def detect_intent(self, message: str, previous_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Main entry point to detect intent and extract structured entities."""
         message_lower = message.lower().strip()
 
-        # 1️⃣ Check for explicit @command
+        # 1️⃣ Explicit command check
         cmd_match = re.search(r"(@\w+)", message_lower)
         if cmd_match:
             command = cmd_match.group(1)
             if command in self.command_map:
                 intent = self.command_map[command]
                 entities = self._extract_entities(message)
+                print(f"🧭 Explicit command detected: {command} → {intent}")
+
+                # Use LLM for structured extraction
+                if intent in ["send_email", "reply_email"]:
+                    entities.update(self._extract_send_reply_entities_with_llm(message))
+                elif intent in ["create_task", "set_reminder"]:
+                    entities.update(self._extract_task_entities_with_llm(message))
+                    entities["input_text"] = message  # Preserve original text
+
                 return {
                     "intent": intent,
                     "confidence": 1.0,
@@ -231,113 +241,197 @@ class IntentDetector:
                     "source": "command",
                 }
 
-        # 2️⃣ Rule-based keyword matching + NER
-        return self._detect_with_rules_and_ner(message, previous_context)
+        # 2️⃣ Rule-based fallback
+        result = self._detect_with_rules_and_ner(message)
+        intent = result["intent"]
+        print(f"🧭 Rule-based intent detected: {intent}")
 
-    # ----------------- Rule-Based Intent + NER ----------------- #
-    def _detect_with_rules_and_ner(
-        self, message: str, previous_context: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+        if intent in ["send_email", "reply_email"]:
+            result["entities"].update(self._extract_send_reply_entities_with_llm(message))
+        elif intent in ["create_task", "set_reminder"]:
+            result["entities"].update(self._extract_task_entities_with_llm(message))
+            result["entities"]["input_text"] = message  # Preserve original text
+
+        return result
+
+    # ----------------- Rules + NER ----------------- #
+    def _detect_with_rules_and_ner(self, message: str) -> Dict[str, Any]:
+        """Uses keyword matching and NER to guess intent."""
         message_lower = message.lower()
         intent = "unknown"
         confidence = 0.0
-        max_matches = 0
+        best_match = 0
 
         for possible_intent, keywords in self.intent_keywords.items():
-            matches = sum(1 for keyword in keywords if keyword in message_lower)
-            if matches > max_matches:
-                max_matches = matches
+            matches = sum(1 for kw in keywords if kw in message_lower)
+            if matches > best_match:
+                best_match = matches
                 intent = possible_intent
                 confidence = min(1.0, matches / len(keywords))
 
-        # Extract entities
         entities = self._extract_entities(message)
-        print("intent ", intent)
-
         return {
             "intent": intent,
             "confidence": confidence,
             "entities": entities,
-            "source": "rules_ner_embed",
+            "source": "rules_ner",
         }
 
     # ----------------- Entity Extraction ----------------- #
     def _extract_entities(self, message: str) -> Dict[str, str]:
+        """Extracts people, orgs, and time-related entities using spaCy + regex."""
         entities = {}
         doc = self.nlp(message)
 
-        # NER first
         for ent in doc.ents:
             if ent.label_ in ["PERSON", "ORG"] and "sender" not in entities:
                 entities["sender"] = ent.text
             elif ent.label_ == "DATE" and "timeframe" not in entities:
                 entities["timeframe"] = ent.text
 
+        # Fallbacks
         message_lower = message.lower()
+        if "today" in message_lower:
+            entities["timeframe"] = "today"
+        elif "yesterday" in message_lower:
+            entities["timeframe"] = "yesterday"
+        elif "tomorrow" in message_lower:
+            entities["timeframe"] = "tomorrow"
 
-        # Regex fallback for sender
         if "sender" not in entities:
             match_sender = re.search(r"from\s+([A-Za-z0-9&.\s]+)", message)
             if match_sender:
                 entities["sender"] = match_sender.group(1).strip()
 
-        # Regex fallback for timeframe
-        if "timeframe" not in entities:
-            if "yesterday" in message_lower:
-                entities["timeframe"] = "yesterday"
-            elif "last week" in message_lower:
-                entities["timeframe"] = "last_week"
-            elif "today" in message_lower:
-                entities["timeframe"] = "today"
-
-        # Transaction type
-        if "credit" in message_lower:
-            entities["type"] = "credit"
-        elif "debit" in message_lower:
-            entities["type"] = "debit"
-
-        # Subject
-        match_subject = re.search(
-            r"subject[:\s]+(.+?)(?:\n|$)", message, re.IGNORECASE | re.DOTALL
-        )
-        if match_subject:
-            entities["subject"] = match_subject.group(1).strip()
-
-        # ----------------- Embedding fallback ----------------- #
-        if "sender" not in entities:
-            sender_guess = self._guess_sender_with_embedding(message)
-            if sender_guess:
-                entities["sender"] = sender_guess
-
-        if message.strip() and "query_text" not in entities:
+        if message.strip():
             entities["query_text"] = message.strip()
 
         return entities
 
-    # ----------------- Embedding Fallback ----------------- #
-    @functools.lru_cache(maxsize=1024)
-    def _guess_sender_with_embedding(self, text: str) -> Optional[str]:
+    # ----------------- Email Entity Extraction via LLM ----------------- #
+    def _extract_send_reply_entities_with_llm(self, message: str) -> Dict[str, Any]:
+        """Extract recipient, subject, and email body using LLM."""
+        llm_prompt = f"""
+        You are Whispr, an AI email assistant.
+        Extract structured email details from this message.
+
+        Message: "{message}"
+
+        Return only valid JSON:
+        {{
+            "receiver_name": "<name or empty>",
+            "receiver_email": "<email if available>",
+            "subject": "<generate subject if not provided>",
+            "body": "<generate a clear and polite email body>"
+        }}
         """
-        If NER & regex fail, use embedding similarity to guess sender.
-        (This is a placeholder; replace with real embedding+vector search)
+        try:
+            response = self.model.generate_content(llm_prompt)
+            raw = response.text.strip()
+            cleaned = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
+            parsed = json.loads(cleaned)
+            return parsed
+        except Exception as e:
+            print("⚠️ LLM email extraction failed:", e)
+            return {"receiver_name": "", "receiver_email": "", "subject": "", "body": ""}
+
+        # ----------------- Task Entity Extraction via LLM ----------------- #
+    def _extract_task_entities_with_llm(self, message: str) -> Dict[str, Any]:
+        llm_prompt = f"""
+        You are Whispr, an AI assistant that manages tasks and reminders.
+        Extract structured task information from the user's message.
+
+        Message: "{message}"
+
+        Return only valid JSON:
+        {{
+            "task_type": "<type of task or reminder list: email_send, reply, reminder, summarize, watch_incoming_emails>",
+            "task_title": "<short summary of the task>",
+            "due_time": "<specific time or datetime if mentioned, else empty>",
+            "due_date": "<specific date if mentioned, else empty>",
+            "action": "<type of action list: email_send, reply, reminder, summarize, watch_incoming_emails>",
+            "context": "<extra context or who/what it's about>"
+        }}
         """
-        known_senders = ["ALX", "Google", "OpenAI", "Tesla", "John Doe", "ACME Corp"]
-        text_embedding = generate_embedding(text)
 
-        # Simple cosine similarity placeholder
-        def cosine_sim(a, b):
-            dot = sum(x * y for x, y in zip(a, b))
-            norm_a = sum(x * x for x in a) ** 0.5
-            norm_b = sum(x * x for x in b) ** 0.5
-            return dot / (norm_a * norm_b + 1e-6)
+        try:
+            response = self.model.generate_content(llm_prompt)
+            raw = response.text.strip()
+            cleaned = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
+            parsed = json.loads(cleaned)
 
-        best_sender = None
-        best_score = 0.5  # threshold
-        for sender in known_senders:
-            sender_emb = generate_embedding(sender)
-            score = cosine_sim(text_embedding, sender_emb)
-            if score > best_score:
-                best_score = score
-                best_sender = sender
+            # ---------------- Date/Time Normalization ----------------
+            now = datetime.now()
+            due_time_str = parsed.get("due_time", "").strip()
+            due_date_str = parsed.get("due_date", "").strip()
 
-        return best_sender
+            # Combine the date and time for parsing
+            combined_text = f"{due_date_str} {due_time_str}".strip()
+            parsed_dt = dateparser.parse(combined_text, settings={"RELATIVE_BASE": now})
+            print("Parsed datetime:", parsed_dt)
+
+            # Default logic
+            if not parsed_dt:
+                # Try parsing only time
+                if due_time_str:
+                    time_only = dateparser.parse(due_time_str, settings={"RELATIVE_BASE": now})
+                    if time_only:
+                        parsed_dt = datetime.combine(now.date(), time_only.time())
+                        # If that time already passed, move to tomorrow
+                        if parsed_dt < now:
+                            parsed_dt += timedelta(days=1)
+                # If nothing, default to 1 hour later
+                if not parsed_dt:
+                    parsed_dt = now + timedelta(hours=1)
+            else:
+                # If the parsed date/time is in the past, roll forward one day
+                if parsed_dt < now:
+                    parsed_dt += timedelta(days=1)
+
+            parsed["due_datetime"] = parsed_dt  # ✅ real datetime object
+            parsed["due_datetime_str"] = parsed_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+            print("✅ LLM Extracted Task Entities:", parsed)
+            return parsed
+
+        except Exception as e:
+            print("⚠️ LLM task extraction failed:", e)
+            fallback_dt = datetime.now() + timedelta(hours=1)
+            return {
+                "task_title": "",
+                "due_datetime": fallback_dt,
+                "due_datetime_str": fallback_dt.strftime("%Y-%m-%d %H:%M:%S"),
+                "action": "",
+                "context": "",
+            }
+
+    # ----------------- Convert Dates/Times ----------------- #
+    def _convert_task_dates(self, task_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Converts extracted date/time strings to proper datetimes."""
+        now = datetime.now()
+        due_date = None
+        due_time = None
+
+        try:
+            if task_data.get("due_date"):
+                due_date = date_parser.parse(task_data["due_date"], fuzzy=True)
+            if task_data.get("due_time"):
+                due_time = date_parser.parse(task_data["due_time"], fuzzy=True)
+        except Exception:
+            pass
+
+        # Handle missing cases
+        if not due_date and due_time:
+            due_date = due_time.date()
+
+        if not due_date:
+            due_date = now.date()
+        if due_time and due_time.time() <= now.time():
+            # If time already passed, set for tomorrow
+            due_date = now.date() + timedelta(days=1)
+
+        # Merge into a single datetime if both exist
+        combined_dt = datetime.combine(due_date, due_time.time()) if due_time else datetime.combine(due_date, datetime.min.time())
+        task_data["due_datetime"] = combined_dt.isoformat()
+
+        return task_data

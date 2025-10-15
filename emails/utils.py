@@ -10,6 +10,14 @@ from datetime import datetime
 import base64
 import email.utils
 import re
+import base64
+import mimetypes
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
+
+
 
 from .models import Email
 
@@ -202,3 +210,82 @@ def fetch_gmail_emails(account):
         count += 1
 
     return count
+
+
+
+
+
+
+def send_gmail_email(account, to_email, subject, body, body_html=None, attachments=None, thread_id=None):
+    """
+    Send an email using the Gmail API.
+    
+    Args:
+        account: The user's EmailAccount instance with OAuth2 tokens.
+        to_email: Recipient email address (string or list).
+        subject: Email subject.
+        body: Plain text version of the message.
+        body_html: Optional HTML version.
+        attachments: Optional list of file paths to attach.
+        thread_id: Optional Gmail thread ID if replying in a thread.
+    """
+    creds = Credentials(
+        token=account.access_token,
+        refresh_token=account.refresh_token,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=settings.GMAIL_CLIENT_ID,
+        client_secret=settings.GMAIL_CLIENT_SECRET,
+    )
+
+    service = build("gmail", "v1", credentials=creds)
+
+    # Convert to list if single recipient
+    if isinstance(to_email, str):
+        to_email = [to_email]
+
+    # --- Build the email ---
+    if body_html:
+        msg = MIMEMultipart("alternative")
+        msg.attach(MIMEText(body, "plain"))
+        msg.attach(MIMEText(body_html, "html"))
+    else:
+        msg = MIMEText(body, "plain")
+
+    msg["to"] = ", ".join(to_email)
+    msg["subject"] = subject
+
+    # Add attachments if provided
+    if attachments:
+        if not isinstance(msg, MIMEMultipart):
+            msg_full = MIMEMultipart()
+            msg_full.attach(MIMEText(body, "plain"))
+            msg = msg_full
+
+        for file_path in attachments:
+            content_type, encoding = mimetypes.guess_type(file_path)
+            if content_type is None or encoding is not None:
+                content_type = "application/octet-stream"
+
+            main_type, sub_type = content_type.split("/", 1)
+            with open(file_path, "rb") as f:
+                mime_part = MIMEBase(main_type, sub_type)
+                mime_part.set_payload(f.read())
+                encoders.encode_base64(mime_part)
+                mime_part.add_header("Content-Disposition", f"attachment; filename={file_path.split('/')[-1]}")
+                msg.attach(mime_part)
+
+    raw_message = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+
+    message_data = {"raw": raw_message}
+    if thread_id:
+        message_data["threadId"] = thread_id
+
+    # --- Send the email ---
+    try:
+        sent_message = service.users().messages().send(userId="me", body=message_data).execute()
+        print(f"✅ Email sent to {to_email}: {subject}")
+        return sent_message
+    except Exception as e:
+        print(f"⚠️ Failed to send email: {e}")
+        return None
+
