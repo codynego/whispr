@@ -38,7 +38,7 @@ class Email(models.Model):
         ('high', 'High'),
         ('critical', 'Critical'),
     )
-    
+    channel = models.CharField(max_length=50, default='email')
     account = models.ForeignKey(EmailAccount, on_delete=models.CASCADE, related_name='emails')
     message_id = models.CharField(max_length=255, unique=True, db_index=True)
     thread_id = models.CharField(max_length=255, blank=True, null=True)

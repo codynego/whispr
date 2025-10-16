@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     'assistant',
     'billing',
     'notifications',
+    'unified',
 ]
 
 MIDDLEWARE = [
