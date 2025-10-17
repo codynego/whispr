@@ -81,10 +81,11 @@ class IntentRouter:
 
     # ---------------- HANDLER METHODS ---------------- #
     def handle_find_emails(self, entities):
+        print("Finding emails with entities:", entities)
         emails = self.email_service.find_emails(
             sender=entities.get("sender"),
             subject=entities.get("subject"),
-            date=entities.get("date"),
+            date=entities.get("timeframe"),
             query_text=entities.get("query_text"),
         )
         return emails or "No emails found matching your query."

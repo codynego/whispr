@@ -154,6 +154,7 @@ from datetime import datetime, timedelta
 from sentence_transformers import SentenceTransformer
 from dateutil import parser as date_parser
 import dateparser
+import calendar
 
 
 
@@ -225,7 +226,7 @@ class IntentDetector:
             if command in self.command_map:
                 intent = self.command_map[command]
                 entities = self._extract_entities(message)
-                print(f"🧭 Explicit command detected: {command} → {intent}")
+
 
                 # Use LLM for structured extraction
                 if intent in ["send_email", "reply_email"]:
@@ -244,7 +245,7 @@ class IntentDetector:
         # 2️⃣ Rule-based fallback
         result = self._detect_with_rules_and_ner(message)
         intent = result["intent"]
-        print(f"🧭 Rule-based intent detected: {intent}")
+
 
         if intent in ["send_email", "reply_email"]:
             result["entities"].update(self._extract_send_reply_entities_with_llm(message))
@@ -277,36 +278,71 @@ class IntentDetector:
             "source": "rules_ner",
         }
 
-    # ----------------- Entity Extraction ----------------- #
+        # ----------------- Entity Extraction ----------------- #
     def _extract_entities(self, message: str) -> Dict[str, str]:
-        """Extracts people, orgs, and time-related entities using spaCy + regex."""
-        entities = {}
-        doc = self.nlp(message)
+            """Extracts sender, org, and timeframe (converted to actual date if possible)."""
+            entities = {}
+            doc = self.nlp(message)
+            message_lower = message.lower()
 
-        for ent in doc.ents:
-            if ent.label_ in ["PERSON", "ORG"] and "sender" not in entities:
-                entities["sender"] = ent.text
-            elif ent.label_ == "DATE" and "timeframe" not in entities:
-                entities["timeframe"] = ent.text
+            # Extract named entities
+            for ent in doc.ents:
+                if ent.label_ in ["PERSON", "ORG"] and "sender" not in entities:
+                    entities["sender"] = ent.text
+                elif ent.label_ == "DATE" and "timeframe" not in entities:
+                    entities["timeframe"] = ent.text
 
-        # Fallbacks
-        message_lower = message.lower()
-        if "today" in message_lower:
-            entities["timeframe"] = "today"
-        elif "yesterday" in message_lower:
-            entities["timeframe"] = "yesterday"
-        elif "tomorrow" in message_lower:
-            entities["timeframe"] = "tomorrow"
+            # Regex fallback for sender
+            if "sender" not in entities:
+                match_sender = re.search(r"from\s+([A-Za-z0-9&.\s]+)", message)
+                if match_sender:
+                    entities["sender"] = match_sender.group(1).strip()
 
-        if "sender" not in entities:
-            match_sender = re.search(r"from\s+([A-Za-z0-9&.\s]+)", message)
-            if match_sender:
-                entities["sender"] = match_sender.group(1).strip()
+            # Detect timeframe manually if not found
+            if "timeframe" not in entities:
+                if "today" in message_lower:
+                    entities["timeframe"] = "today"
+                elif "yesterday" in message_lower:
+                    entities["timeframe"] = "yesterday"
+                elif "tomorrow" in message_lower:
+                    entities["timeframe"] = "tomorrow"
+                elif "last week" in message_lower:
+                    entities["timeframe"] = "last week"
+                elif "this week" in message_lower:
+                    entities["timeframe"] = "this week"
+                elif "last month" in message_lower:
+                    entities["timeframe"] = "last month"
 
-        if message.strip():
-            entities["query_text"] = message.strip()
+            # Convert timeframe to actual date or range
+            if "timeframe" in entities:
+                now = datetime.now()
+                tf = entities["timeframe"].lower()
 
-        return entities
+                if tf == "today":
+                    entities["timeframe"] = now.strftime("%Y-%m-%d")
+                elif tf == "yesterday":
+                    entities["timeframe"] = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+                elif tf == "tomorrow":
+                    entities["timeframe"] = (now + timedelta(days=1)).strftime("%Y-%m-%d")
+                elif tf == "last week":
+                    start = now - timedelta(days=now.weekday() + 7)
+                    end = start + timedelta(days=6)
+                    entities["timeframe"] = f"{start.strftime('%Y-%m-%d')} to {end.strftime('%Y-%m-%d')}"
+                elif tf == "this week":
+                    start = now - timedelta(days=now.weekday())
+                    end = start + timedelta(days=6)
+                    entities["timeframe"] = f"{start.strftime('%Y-%m-%d')} to {end.strftime('%Y-%m-%d')}"
+                elif tf == "last month":
+                    first_day_this_month = now.replace(day=1)
+                    last_day_last_month = first_day_this_month - timedelta(days=1)
+                    start_last_month = last_day_last_month.replace(day=1)
+                    entities["timeframe"] = f"{start_last_month.strftime('%Y-%m-%d')} to {last_day_last_month.strftime('%Y-%m-%d')}"
+
+            # Always include query text
+            if message.strip():
+                entities["query_text"] = message.strip()
+
+            return entities
 
     # ----------------- Email Entity Extraction via LLM ----------------- #
     def _extract_send_reply_entities_with_llm(self, message: str) -> Dict[str, Any]:
@@ -391,7 +427,6 @@ class IntentDetector:
             parsed["due_datetime"] = parsed_dt  # ✅ real datetime object
             parsed["due_datetime_str"] = parsed_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-            print("✅ LLM Extracted Task Entities:", parsed)
             return parsed
 
         except Exception as e:

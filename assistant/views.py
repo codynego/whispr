@@ -81,7 +81,6 @@ class AssistantChatView(generics.GenericAPIView):
         AssistantMessage.objects.create(user=user, role="user", content=prompt)
         handler = MessageHandler(user=user)
         response_text = handler.handle(prompt)
-        print("Handler response:", response_text)
 
         # # Build personalized context
         # system_prompt = f"""

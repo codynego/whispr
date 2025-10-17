@@ -11,7 +11,13 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_exempt
 from itertools import chain
 from django.core.paginator import Paginator
-from django.db.models import Q
+
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from django.utils import timezone
+from datetime import timedelta
+from django.db.models import Count, Q
+from assistant.models import AssistantTask
 
 
 
@@ -92,9 +98,10 @@ class UnifiedMessagesView(View):
         # ]
 
         # --- APPLY CHANNEL FILTER ---
+
         if channel == 'all':
-            combined = email_normalized  # , whatsapp_normalized)
-        if channel == 'email':
+            combined = email_normalized
+        elif channel == 'email':
             combined = email_normalized
         else:
             combined = list()
@@ -148,3 +155,98 @@ class AllAccountsView(generics.ListAPIView):
         #     })
 
         return Response(data)
+
+
+
+
+
+
+class DashboardOverviewAPIView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        today = timezone.now().date()
+
+        # --- EMAIL STATS ---
+        email_today = Email.objects.filter(account__user=user, created_at__date=today)
+        total_emails = email_today.count()
+        unread_emails = email_today.filter(is_read=False).count()
+        important_emails = email_today.filter(importance_score__gte=0.5).count()
+
+        # # --- WHATSAPP STATS ---
+        # whatsapp_today = WhatsAppMessage.objects.filter(user=user, created_at__date=today)
+        # total_whatsapp = whatsapp_today.count()
+        # unread_whatsapp = whatsapp_today.filter(is_read=False).count()
+
+        total_whatsapp = 0
+        unread_whatsapp = 0
+
+        # --- COMBINED STATS ---
+        total_messages = total_emails + total_whatsapp
+        unread_messages = unread_emails + unread_whatsapp
+
+
+        # --- AI SUMMARY ---
+        ai_summary = {
+            "greeting": f"Good {self.get_time_of_day()}, {user.first_name or 'there'} 👋",
+            "summary_text": (
+                f"You’ve received {total_messages} messages today "
+                f"({total_emails} emails, {total_whatsapp} WhatsApp). "
+                f"{unread_messages} are still unread, and {important_emails} are important."
+            ),
+            "suggestions": [
+                "Reply to important messages",
+                "Review unread messages",
+                "Generate AI summary of today's inbox"
+            ]
+        }
+
+        # --- AI TASKS (Real from DB) ---
+        tasks_qs = AssistantTask.objects.filter(user=user).order_by('-created_at')[:5]
+        ai_tasks = [
+            {
+                "id": t.id,
+                "task_type": t.task_type,
+                "status": t.status,
+                "input_text": t.input_text[:120] + ("..." if len(t.input_text) > 120 else ""),
+                "due_datetime": t.due_datetime,
+                "is_completed": t.is_completed,
+                "created_at": t.created_at,
+            }
+            for t in tasks_qs
+        ]
+
+        # --- PERFORMANCE (Sample / Mock for now) ---
+        performance = {
+            "response_time_avg": "12m",
+            "ai_replies_sent": AssistantTask.objects.filter(user=user, task_type='reply', status='completed').count(),
+            "important_threads": important_emails,
+            "missed_messages": unread_messages,
+            "trend": "+9%",
+        }
+
+        data = {
+            "summary": ai_summary,
+            "stats": {
+                "total_messages": total_messages,
+                "unread_messages": unread_messages,
+                "important_emails": important_emails,
+                "channel_breakdown": {
+                    "email": total_emails,
+                    "whatsapp": total_whatsapp,
+                }
+            },
+            "tasks": ai_tasks,
+            "performance": performance,
+        }
+
+        return Response(data)
+
+    def get_time_of_day(self):
+        hour = timezone.now().hour
+        if hour < 12:
+            return "morning"
+        elif hour < 18:
+            return "afternoon"
+        return "evening"

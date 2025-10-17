@@ -66,7 +66,7 @@ class MessageHandler:
 
         # --- 3️⃣ Detect intent & entities ---
         intent_data = self.intent_detector.detect_intent(message, merged_context)
-        print("Detected intent data:", intent_data)
+
 
         # --- 4️⃣ Enforce required @commands ---
         required_cmd = self.required_commands.get(intent_data["intent"])
@@ -125,7 +125,7 @@ class MessageHandler:
             }
 
         result = handler(intent_data.get("entities", {}))
-        print("Handler result:", result)
+
 
         # --- 7️⃣ Generate AI reply ---
         ai_reply = self.llm.generate_reply(message, result)

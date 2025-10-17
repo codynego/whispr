@@ -25,14 +25,8 @@ class EmailService:
         if subject:
             emails = emails.filter(subject__icontains=subject)
         if date:
-            date = date.lower()
-            if date == "today":
-                emails = emails.filter(received_at__date=timezone.now().date())
-            elif date == "yesterday":
-                emails = emails.filter(received_at__date=timezone.now().date() - timedelta(days=1))
-            elif date == "last_week":
-                start = timezone.now().date() - timedelta(days=7)
-                emails = emails.filter(received_at__date__gte=start)
+            start = date
+            emails = emails.filter(received_at__date__gte=start)
 
         if query_text:
             semantic_emails = retrieve_relevant_emails(self.user, emails, query_text, top_k=top_k)
