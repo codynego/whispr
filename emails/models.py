@@ -79,11 +79,6 @@ class Email(models.Model):
         return f'{self.subject[:50]} - {self.sender}'
 
 
-# Once your production DB uses pgvector, you’ll replace the JSON field with:
-
-# from pgvector.django import VectorField
-
-# embedding = VectorField(dimensions=768, null=True, blank=True)  # depends on model
 
 
 class UserEmailRule(models.Model):

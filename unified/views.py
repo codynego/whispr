@@ -18,6 +18,7 @@ from django.utils import timezone
 from datetime import timedelta
 from django.db.models import Count, Q
 from assistant.models import AssistantTask
+from whatsapp.tasks import send_whatsapp_message_task
 
 
 

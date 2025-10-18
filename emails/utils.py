@@ -28,7 +28,7 @@ model = SentenceTransformer('all-MiniLM-L6-v2')
 # Example important keywords
 IMPORTANT_KEYWORDS = [
     "urgent", "action required", "meeting", "deadline", "CEO", "important", 
-    "follow up", "please review", "immediate attention"
+    "follow up", "please review", "immediate attention",  "project", "money"
 ]
 
 # Example important email snippets
@@ -156,7 +156,7 @@ def parse_gmail_date(date_str):
         return timezone.now()
 
 
-def fetch_gmail_emails(account):
+def fetch_gmail_emails(account, email_count=10):
     """
     Fetch and store latest Gmail messages for an account.
     """
@@ -169,7 +169,7 @@ def fetch_gmail_emails(account):
     )
 
     service = build("gmail", "v1", credentials=creds)
-    results = service.users().messages().list(userId="me", maxResults=10).execute()
+    results = service.users().messages().list(userId="me", maxResults=email_count).execute()
     messages = results.get("messages", [])
 
     count = 0

@@ -23,13 +23,14 @@ def sync_email_account(self, account_id):
     """
     Sync emails from Gmail or Outlook using stored tokens.
     """
+    email_count = 100
     try:
         account = EmailAccount.objects.get(id=account_id)
         provider = account.provider.lower()
 
         if provider == "gmail":
             logger.info(f"Syncing Gmail account {account.email_address}")
-            count = fetch_gmail_emails(account)
+            count = fetch_gmail_emails(account, email_count=email_count)
             return {"status": "success", "count": count}
 
         elif provider == "outlook":

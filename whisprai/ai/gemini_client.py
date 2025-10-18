@@ -106,6 +106,8 @@ def get_gemini_response(prompt, user_id, task_type="conversational", model="gemi
         Respond appropriately in plain text.
         """
 
+        print("system prompt", system_prompt, task_type, prompt)
+
     # === STEP 4: Generate response ===
     model_instance = genai.GenerativeModel(model)
     response = model_instance.generate_content(system_prompt)

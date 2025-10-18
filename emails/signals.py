@@ -39,9 +39,10 @@ def generate_email_embedding_and_importance(sender, instance, created, **kwargs)
             f"({'important' if is_important else 'normal'})"
         )
 
-        if importance_level in ["high", "critical"]:
+        if importance_level in ["medium", "high", "critical"]:
             analysis_text += " — Requires prompt attention."
             report = get_gemini_response(instance.body, user_id=user.id, task_type="report")
+            print("report for importance", report)
             response_message = WhatsAppMessage.objects.create(
                 user=user,
                 to_number=sender_number,
@@ -49,7 +50,9 @@ def generate_email_embedding_and_importance(sender, instance, created, **kwargs)
                 alert_type='importance_alert'
             )
             # Optionally, send WhatsApp alert about important email
-            send_whatsapp_message_task.delay(to_number=sender_number, message=f"⚠️ Important Email Alert\n\n{report}")
+            print("Sending WhatsApp alert for important email...")
+
+            send_whatsapp_message_task.delay(message_id=response_message.id)
             
 
         # Save updates
