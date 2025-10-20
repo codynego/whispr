@@ -135,8 +135,8 @@
 
 
 # assistant/intent_router.py
-from emails.services import EmailService
-from whatsapp.services import WhatsAppService
+from unified.services import MessageService
+# from whatsapp.services import WhatsAppService
 from .llm_service import LLMService
 from django.conf import settings
 from assistant.models import AssistantTask
@@ -153,8 +153,7 @@ class IntentRouter:
     def __init__(self, user=None):
         self.user = user
         self.llm_service = LLMService(user, APIKEY)
-        self.email_service = EmailService(user)
-        self.whatsapp_service = WhatsAppService(user)
+        self.message_service = MessageService(user)
         self.handlers = self._register_handlers()
         self.command_map = {
             "@read": "read_message",
@@ -303,8 +302,9 @@ class IntentRouter:
 
     # ---------------- SERVICE RESOLVER ---------------- #
     def _get_service(self, channel):
-        if channel == "email":
-            return self.email_service
-        elif channel == "whatsapp":
-            return self.whatsapp_service
-        return None
+        return self.message_service
+        # if channel == "email":
+        #     return self.email_service
+        # elif channel == "whatsapp":
+        #     return self.whatsapp_service
+        # return None

@@ -1,7 +1,7 @@
 # email_views.py
 from rest_framework import generics, permissions, status, filters
 from unified.models import ChannelAccount, Message, UserRule
-from unified.serializers import ChannelAccountSerializer, MessageSerializer, MessageSyncSerializer, UserRuleSerializer
+from unified.serializers import ChannelAccountSerializer, MessageSerializer, MessageSyncSerializer, UserRuleSerializer, ConversationWithMessagesSerializer
 from unified.tasks.common_tasks import sync_channel_account
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
@@ -124,7 +124,7 @@ class ConversationListView(generics.ListAPIView):
 
 
 class ConversationDetailView(generics.RetrieveAPIView):
-    serializer_class = ConversationSerializer
+    serializer_class = ConversationWithMessagesSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):

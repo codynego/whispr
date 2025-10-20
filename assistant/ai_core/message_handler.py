@@ -144,7 +144,7 @@ from .intent_detector import IntentDetector
 from .intent_schema_parser import IntentSchemaParser
 from .intent_router import IntentRouter
 from .llm_service import LLMService
-from .channel_manager import ChannelManager  # NEW: centralized channel fetch logic
+from .context_manager import ContextManager  # NEW: centralized channel fetch logic
 from django.conf import settings
 from typing import Dict, Any, Optional
 import re
@@ -164,7 +164,7 @@ class MessageHandler:
         self.intent_detector = IntentDetector()
         self.intent_schema_parser = IntentSchemaParser()
         self.intent_router = IntentRouter(self.user)
-        self.channel_manager = ChannelManager(self.user)
+        # self.channel_manager = ContextManager(self.user)
         self.llm = LLMService(self.user, APIKEY)
 
         # Known intents
@@ -207,18 +207,18 @@ class MessageHandler:
         print("Detected command:", user_command)
 
         # --- 3️⃣ Detect intent & entities ---
-        intent_data = self.intent_detector.detect_intent(message, merged_context)
+        intent_data = self.intent_detector.detect_intent(user=self.user, message=message, previous_context=merged_context)
 
         # --- 4️⃣ Detect or infer the channel ---
         # Try to infer channel based on message text, detected entities, or fallback
         channel = intent_data.get("channel")
-        if not channel:
-            channel = self.channel_manager.infer_channel(message, intent_data)
+        # if not channel:
+        #     channel = self.channel_manager.infer_channel(message, intent_data)
 
         # --- 5️⃣ Retrieve recent context for that channel ---
         # For example, last few emails, chats, or tasks (depending on channel)
-        recent_context = self.channel_manager.get_recent_context(channel)
-        print(f"Using channel: {channel}, context count: {len(recent_context)}")
+        # recent_context = self.channel_manager.get_recent_context(channel)
+        # print(f"Using channel: {channel}, context count: {len(recent_context)}")
 
         # --- 6️⃣ Enforce required @commands ---
         required_cmd = self.required_commands.get(intent_data["intent"])
@@ -235,11 +235,11 @@ class MessageHandler:
             }
 
         # --- 7️⃣ Validate schema completeness ---
-        validation_result = self.intent_schema_parser.validate(intent_data, previous_context)
+        validation_result = self.intent_schema_parser.validate(intent_data, merged_context)
 
         # If intent is unclear or missing
         if intent_data["intent"] not in self.intents:
-            ai_reply = self.llm.generate_reply(message, context_data=recent_context)
+            ai_reply = self.llm.generate_reply(user_message=message, context_data=merged_context)
             self.context_manager.update_context(self.user.id, intent_data)
             return {
                 "status": "unknown_intent",
@@ -274,7 +274,7 @@ class MessageHandler:
         result = handler(intent_data.get("entities", {}))
 
         # --- 🔟 Generate AI reply with channel context ---
-        ai_reply = self.llm.generate_reply(message, result, context_data=recent_context)
+        ai_reply = self.llm.generate_reply(user_message=message, task_result=result, context_data=merged_context)
         self.context_manager.update_context(self.user.id, intent_data)
 
         return {

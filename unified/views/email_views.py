@@ -76,7 +76,8 @@ class GmailOAuthCallbackView(generics.GenericAPIView):
         # Save/update unified ChannelAccount
         account, created = ChannelAccount.objects.update_or_create(
             user=user,
-            channel_type="email",
+            channel="email",
+            provider="gmail",
             address_or_id=email_address,
             defaults={
                 "access_token": creds.token,

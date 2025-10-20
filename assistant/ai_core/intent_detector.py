@@ -335,7 +335,7 @@ from typing import Dict, Any, Optional
 from sentence_transformers import SentenceTransformer
 import dateparser
 from dateutil import parser as date_parser
-from .retriever import retrieve_relevant_items  # 👈 integrated retriever
+from whisprai.ai.retriever import retrieve_relevant_messages
 
 
 # ----------------- Embedding Helper ----------------- #
@@ -424,7 +424,7 @@ class IntentDetector:
                     entities["input_text"] = message
 
                 # 🔹 Retrieve related context
-                relevant = retrieve_relevant_items(user, message, channel)
+                # relevant = retrieve_relevant_messages(user, message, channel)
 
                 return {
                     "intent": intent,
@@ -432,10 +432,6 @@ class IntentDetector:
                     "entities": entities,
                     "source": "command",
                     "channel": channel,
-                    "relevant": {
-                        "channel": channel,
-                        "items": self._format_relevant(relevant),
-                    },
                 }
 
         # 🔹 Otherwise, detect with rules + NER
@@ -449,7 +445,7 @@ class IntentDetector:
             result["entities"]["input_text"] = message
 
         # 🔹 Retrieve related content (emails, chats)
-        relevant = retrieve_relevant_items(user, message, channel)
+        relevant = retrieve_relevant_messages(user, message, channel)
 
         return {
             **result,

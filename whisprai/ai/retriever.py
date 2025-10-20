@@ -49,7 +49,7 @@
 # retriever.py
 from sentence_transformers import SentenceTransformer, util
 import numpy as np
-from .models import Message  # unified message model
+from unified.models import Message  # unified message model
 
 
 # Initialize embedding model
@@ -61,6 +61,7 @@ def retrieve_relevant_messages(user, data=None, query_text: str = None, channel:
     Retrieve top-k messages semantically related to a user's query across channels.
     Works for Email, WhatsApp, Slack, etc., using stored embeddings.
     """
+    print("data in retriever:", data)
     if not query_text or not query_text.strip():
         return []
 
@@ -93,5 +94,6 @@ def retrieve_relevant_messages(user, data=None, query_text: str = None, channel:
     # 4️⃣ Sort by highest similarity
     scored_messages.sort(key=lambda x: x[0], reverse=True)
     relevant_messages = [msg for _, msg in scored_messages[:top_k]]
+    print("relevant_messages in retriever:", relevant_messages)
 
     return relevant_messages

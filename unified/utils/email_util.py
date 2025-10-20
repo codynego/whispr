@@ -76,10 +76,11 @@ def parse_gmail_date(date_str):
         return timezone.now()
 
 
-def fetch_gmail_messages(account: ChannelAccount, email_count=10):
+def fetch_gmail_messages(account: ChannelAccount, limit=10):
     """
     Fetch and store latest Gmail messages for a ChannelAccount.
     Automatically attaches messages to a Conversation (thread).
+    Includes both plain text and HTML body in metadata.
     """
     creds = Credentials(
         token=account.access_token,
@@ -90,9 +91,8 @@ def fetch_gmail_messages(account: ChannelAccount, email_count=10):
     )
 
     service = build("gmail", "v1", credentials=creds)
-    results = service.users().messages().list(userId="me", maxResults=email_count).execute()
+    results = service.users().messages().list(userId="me", maxResults=limit).execute()
     messages = results.get("messages", [])
-
     synced = 0
 
     for msg in messages:
@@ -100,7 +100,7 @@ def fetch_gmail_messages(account: ChannelAccount, email_count=10):
         payload = msg_detail.get("payload", {})
         headers = payload.get("headers", [])
 
-        # normalize headers
+        # === Normalize headers ===
         header_map = {h["name"].lower(): h["value"] for h in headers}
         subject = header_map.get("subject", "")
         from_raw = header_map.get("from", "")
@@ -126,7 +126,7 @@ def fetch_gmail_messages(account: ChannelAccount, email_count=10):
             },
         )
 
-        # Update conversation metadata if newer
+        # Update conversation if newer message arrives
         if not conversation.last_message_at or received_at > conversation.last_message_at:
             conversation.last_message_at = received_at
             conversation.last_sender = sender_email
@@ -148,7 +148,11 @@ def fetch_gmail_messages(account: ChannelAccount, email_count=10):
                 "sender_name": sender_name,
                 "recipients": [recipient_email] if recipient_email else [],
                 "content": plain_body or snippet,
-                "metadata": msg_detail,
+                # ✅ Save subject, raw Gmail data, and HTML body in metadata
+                "metadata": {
+                    "subject": subject,
+                    "html_body": html_body,
+                },
                 "attachments": [],
                 "importance": "high" if is_important else "medium",
                 "importance_score": score,
@@ -162,6 +166,7 @@ def fetch_gmail_messages(account: ChannelAccount, email_count=10):
 
     logger.info(f"✅ Synced {synced} Gmail messages for {account.address_or_id}")
     return synced
+
 
 
 def send_gmail_email(account, to_email, subject, body, body_html=None, attachments=None, thread_id=None):

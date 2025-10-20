@@ -34,6 +34,7 @@ class MessagePreviewSerializer(serializers.ModelSerializer):
             "sender_name",
             "sender",
             "content",
+            "metadata",
             "is_read",
             "is_incoming",
             "sent_at",
@@ -79,6 +80,7 @@ class MessageSerializer(serializers.ModelSerializer):
 class ConversationSerializer(serializers.ModelSerializer):
     account = ChannelAccountSerializer(read_only=True)
     messages_count = serializers.SerializerMethodField()
+    last_message = serializers.SerializerMethodField()
 
     class Meta:
         model = Conversation
@@ -98,11 +100,18 @@ class ConversationSerializer(serializers.ModelSerializer):
             "messages_count",
             "created_at",
             "updated_at",
+            "last_message",
         ]
         read_only_fields = ["id", "created_at", "updated_at", "messages_count"]
 
     def get_messages_count(self, obj):
         return obj.messages.count()
+
+    def get_last_message(self, obj):
+        last_msg = obj.messages.order_by("-sent_at").first()
+        if last_msg:
+            return MessagePreviewSerializer(last_msg).data
+        return None
 
 
 # ---------------- NESTED CONVERSATION (WITH PREVIEWS) ---------------- #

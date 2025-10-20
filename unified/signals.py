@@ -1,12 +1,12 @@
-# unified/signals.py
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
 from unified.models import Message
-from unified.utils.common_utils import is_email_important
+from unified.utils.common_utils import is_message_important
 from whisprai.ai.gemini_client import get_gemini_response
 from whatsapp.models import WhatsAppMessage
 from whatsapp.tasks import send_whatsapp_message_task
+
 
 @receiver(post_save, sender=Message)
 def generate_message_embedding_and_importance(sender, instance, created, **kwargs):
@@ -15,20 +15,38 @@ def generate_message_embedding_and_importance(sender, instance, created, **kwarg
     - Generates importance embedding
     - Sends WhatsApp alert for important messages (if applicable)
     """
-    # Skip non-email messages for now
-    if not created or instance.channel != "email" or instance.embedding_generated:
+
+    # Only run on new messages
+    if not created or instance.embedding_generated:
         return
 
     user = instance.account.user
     sender_number = getattr(user, "whatsapp", None)
 
-    text = f"{instance.subject or ''}\n\n{instance.content or ''}\n\n{instance.sender_name or ''}".strip()
+    # Try to extract relevant text data
+    subject = getattr(instance, "subject", None)
+    body = getattr(instance, "content", None) or getattr(instance, "body", None)
+    sender_name = getattr(instance, "sender_name", None)
+
+    # Fallback to metadata if missing
+    metadata = getattr(instance, "metadata", {}) or {}
+    if not subject:
+        subject = metadata.get("subject", "")
+    if not body:
+        body = metadata.get("body", "")
+    if not sender_name:
+        sender_name = metadata.get("from", "") or metadata.get("sender_name", "")
+
+    # Combine available text for analysis
+    text_parts = [subject, body, sender_name]
+    text = "\n\n".join([t for t in text_parts if t]).strip()
     if not text:
-        return  # Skip empty or system messages
+        return  # Skip empty/system messages
 
     # === Compute importance & embedding ===
-    email_embedding, is_important, combined_score = is_email_important(text)
+    message_embedding, is_important, combined_score = is_message_important(text)
 
+    # Determine importance level
     if combined_score >= 0.9:
         importance_level = "critical"
     elif combined_score >= 0.75:
@@ -49,7 +67,11 @@ def generate_message_embedding_and_importance(sender, instance, created, **kwarg
         analysis_text += " — Requires prompt attention."
 
         try:
-            report = get_gemini_response(instance.content, user_id=user.id, task_type="report")
+            report = get_gemini_response(
+                text,
+                user_id=user.id,
+                task_type="report"
+            )
             response_message = WhatsAppMessage.objects.create(
                 user=user,
                 to_number=sender_number,
@@ -61,13 +83,22 @@ def generate_message_embedding_and_importance(sender, instance, created, **kwarg
             print(f"⚠️ WhatsApp alert failed: {e}")
 
     # === Save updates ===
-    instance.embedding = email_embedding.tolist() if email_embedding is not None else None
+    instance.embedding = (
+        message_embedding.tolist() if message_embedding is not None else None
+    )
     instance.importance = importance_level
     instance.importance_score = combined_score
     instance.importance_analysis = analysis_text
     instance.analyzed_at = timezone.now()
     instance.embedding_generated = True
-    instance.save(update_fields=[
-        "embedding", "importance", "importance_score",
-        "importance_analysis", "analyzed_at", "embedding_generated"
-    ])
+
+    instance.save(
+        update_fields=[
+            "embedding",
+            "importance",
+            "importance_score",
+            "importance_analysis",
+            "analyzed_at",
+            "embedding_generated",
+        ]
+    )
