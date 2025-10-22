@@ -31,9 +31,9 @@ def sync_channel_account(self, account_id: int):
 
         if channel == "email":
             if provider == "gmail":
-                count = fetch_gmail_messages(account, limit=100)
+                count = fetch_gmail_messages(account, limit=10)
             elif provider == "outlook":
-                count = fetch_gmail_messages(account, limit=100)
+                count = fetch_gmail_messages(account, limit=10)
             else:
                 logger.warning(f"⚠️ Unsupported email provider: {provider}")
                 return {"status": "error", "message": f"Unsupported provider {provider}"}
@@ -51,7 +51,7 @@ def sync_channel_account(self, account_id: int):
         account.last_synced = timezone.now()
         account.save(update_fields=["last_synced"])
 
-        logger.info(f"✅ Synced {count} messages for {account.email_or_id}")
+        logger.info(f"✅ Synced {count} messages for {account.address_or_id}")
         return {"status": "success", "count": count}
 
     except ChannelAccount.DoesNotExist:

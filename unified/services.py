@@ -2,6 +2,7 @@ from django.utils import timezone
 from datetime import timedelta
 from whisprai.ai.retriever import retrieve_relevant_messages
 from unified.models import ChannelAccount, Message, Conversation
+from unified.utils.email_util import send_gmail_email
 
 class MessageService:
     """
@@ -55,7 +56,9 @@ class MessageService:
         """
         Retrieve the most relevant or recent message from a channel.
         """
+        print("read_message called with:", sender, subject, date, query_text, channel)
         messages = Message.objects.filter(account__user=self.user)
+        print("initial message count", messages.count())
 
         if channel:
             messages = messages.filter(channel=channel)
@@ -63,6 +66,8 @@ class MessageService:
             messages = messages.filter(sender__icontains=sender)
         if subject:
             messages = messages.filter(metadata__subject__icontains=subject)
+
+        print("message after filters", messages.count())
 
         if date:
             date = date.lower()
@@ -73,9 +78,14 @@ class MessageService:
             elif date == "last_week":
                 start = timezone.now().date() - timedelta(days=7)
                 messages = messages.filter(sent_at__date__gte=start)
+        print("message after date filter", messages.count())
+
+        print("message before retriever", messages.count())
 
         if query_text:
             messages = retrieve_relevant_messages(self.user, messages, query_text, top_k=1)
+        
+        print(f"🔎 Found {len(messages)} relevant messages for query.", type(messages))
 
         if not messages.exists():
             return {"error": "No messages found."}
@@ -94,55 +104,92 @@ class MessageService:
             "is_read": message.is_read,
         }
 
-    # ---------------- SUMMARIZE MESSAGE ---------------- #
-    def summarize_message(self, sender=None, subject=None, date=None, query_text=None, channel=None):
-        """
-        Summarizes the most relevant message based on sender or query.
-        """
-        messages = Message.objects.filter(account__user=self.user)
-        if channel:
-            messages = messages.filter(channel=channel)
-        if sender:
-            messages = messages.filter(sender__icontains=sender)
-        if subject:
-            messages = messages.filter(metadata__subject__icontains=subject)
+        # ---------------- SUMMARIZE MESSAGE ---------------- #
+    def summarize_message(self, sender=None, subject=None, date=None, query_text=None, channel=None, limit=5):
+            """
+            Summarizes multiple relevant messages (default: top 5) based on filters.
+            """
+            print("summarize_message called with:", sender, subject, date, query_text, channel, limit)
+            messages = Message.objects.filter(account__user=self.user)
 
-        if date:
-            date = date.lower()
-            if date == "today":
-                messages = messages.filter(sent_at__date=timezone.now().date())
-            elif date == "yesterday":
-                messages = messages.filter(sent_at__date=timezone.now().date() - timedelta(days=1))
-            elif date == "last_week":
-                start = timezone.now().date() - timedelta(days=7)
-                messages = messages.filter(sent_at__date__gte=start)
+            if channel:
+                messages = messages.filter(channel=channel)
+            if sender:
+                messages = messages.filter(sender__icontains=sender)
+            if subject:
+                messages = messages.filter(metadata__subject__icontains=subject)
 
-        if query_text:
-            messages = retrieve_relevant_messages(self.user, messages, query_text, top_k=1)
+            # 🗓 Filter by timeframe
+            if date:
+                date = date.lower()
+                if date == "today":
+                    messages = messages.filter(sent_at__date=timezone.now().date())
+                elif date == "yesterday":
+                    messages = messages.filter(sent_at__date=timezone.now().date() - timedelta(days=1))
+                elif date == "last_week":
+                    start = timezone.now().date() - timedelta(days=7)
+                    messages = messages.filter(sent_at__date__gte=start)
 
-        if not messages:
-            return {"error": "No messages found for your query."}
+            # 🔍 Use semantic search for relevance if query_text is provided
+            if query_text:
+                messages = retrieve_relevant_messages(self.user, messages, query_text, top_k=limit)
+            else:
+                messages = messages.order_by("-sent_at")[:limit]
 
-        message = messages[0]
-        body = message.content or ""
-        summary = body[:200] + "..." if len(body) > 200 else body
+            if len(messages) == 0:
+                return {"error": "No messages found for your query."}
 
-        return {
-            "message_id": message.id,
-            "sender": message.sender,
-            "channel": message.channel,
-            "subject": message.metadata.get("subject"),
-            "summary": summary,
-        }
+            summaries = []
+            for msg in messages:
+                body = msg.content or ""
+                summary = body[:200] + "..." if len(body) > 200 else body
+
+                summaries.append({
+                    "message_id": msg.id,
+                    "sender": msg.sender,
+                    "subject": msg.metadata.get("subject") if msg.metadata else None,
+                    "channel": msg.channel,
+                    "date": msg.sent_at,
+                    "summary": summary,
+                })
+
+            combined_summary = "\n\n".join(
+                [f"• {s['sender']}: {s['summary']}" for s in summaries]
+            )
+
+            return {
+                "total_messages": len(summaries),
+                "channel": channel or "all",
+                "summaries": summaries,
+                "combined_summary": combined_summary
+            }
 
     # ---------------- SEND MESSAGE (Optional placeholder) ---------------- #
-    def send_message(self, to, content, subject=None, channel="email"):
+    def send_message(self, receiver_name, receiver, body, subject=None, channel="email"):
         """
         Send or reply depending on channel integration.
         """
+        print("send_message called with:", receiver_name, receiver, body, subject, channel)
         account = ChannelAccount.objects.filter(user=self.user, channel=channel, is_active=True).first()
+        print("Found account:", account)
         if not account:
+            print("No connected account found for channel:", channel)
             return {"error": f"No connected {channel} account found."}
+
+
+        # --- 2️⃣ Send email via Gmail API ---
+
+        to_email = receiver
+        success = send_gmail_email(
+            account,
+            to_email=to_email,
+            subject=subject,
+            body=body
+        )
+        
+
+        print(f"Sending email to {receiver_name} <{receiver}>")
+        return True
 
         # TODO: Add per-channel send logic (e.g., Gmail API, WhatsApp API)
         print(f"📤 Sending via {channel} → {to}: {content}")

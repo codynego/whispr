@@ -199,19 +199,19 @@ class MessageHandler:
         # --- 1️⃣ Retrieve and merge context ---
         previous_context = self.context_manager.get_context(self.user.id)
         merged_context = self.context_manager.merge(previous_context, message)
-        print("Merged Context:", merged_context)
+
 
         # --- 2️⃣ Detect @command in message ---
         command_match = re.search(r"(@\w+)", message)
         user_command = command_match.group(1).lower() if command_match else None
-        print("Detected command:", user_command)
+
 
         # --- 3️⃣ Detect intent & entities ---
         intent_data = self.intent_detector.detect_intent(user=self.user, message=message, previous_context=merged_context)
-
         # --- 4️⃣ Detect or infer the channel ---
         # Try to infer channel based on message text, detected entities, or fallback
         channel = intent_data.get("channel")
+
         # if not channel:
         #     channel = self.channel_manager.infer_channel(message, intent_data)
 
@@ -270,8 +270,7 @@ class MessageHandler:
                 "reply": f"I couldn’t find how to handle '{intent_data['intent']}'.",
                 "intent": intent_data["intent"],
             }
-
-        result = handler(intent_data.get("entities", {}))
+        result = handler(intent_data.get("entities"), channel=intent_data.get("channel"))
 
         # --- 🔟 Generate AI reply with channel context ---
         ai_reply = self.llm.generate_reply(user_message=message, task_result=result, context_data=merged_context)
@@ -284,3 +283,7 @@ class MessageHandler:
             "channel": channel,
             "data": result,
         }
+
+
+
+

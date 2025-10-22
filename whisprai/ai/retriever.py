@@ -72,7 +72,7 @@ def retrieve_relevant_messages(user, data=None, query_text: str = None, channel:
     if data:
         messages = data
     else:
-        messages = Message.objects.filter(user=user, embedding__isnull=False)
+        messages = Message.objects.filter(account__user=user, embedding__isnull=False)
 
     if channel:
         messages = messages.filter(channel=channel)

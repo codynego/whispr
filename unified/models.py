@@ -69,9 +69,14 @@ class Conversation(models.Model):
 
 
 
+from django.db import models
+from django.utils import timezone
+
+
 class Message(models.Model):
     """
     Unified message model for any communication platform (Email, WhatsApp, Slack, etc.)
+    Includes AI-generated insights for summaries, importance scoring, and contextual intelligence.
     """
     IMPORTANCE_CHOICES = [
         ("low", "Low"),
@@ -80,33 +85,42 @@ class Message(models.Model):
         ("critical", "Critical"),
     ]
 
-    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="messages")
+    conversation = models.ForeignKey("Conversation", on_delete=models.CASCADE, related_name="messages")
     channel = models.CharField(max_length=50, default="email", db_index=True)
-    account = models.ForeignKey(ChannelAccount, on_delete=models.CASCADE, related_name="messages")
+    account = models.ForeignKey("ChannelAccount", on_delete=models.CASCADE, related_name="messages")
 
     external_id = models.CharField(max_length=255, unique=True, db_index=True)  # message_id, ts, etc.
     sender = models.CharField(max_length=255)
     sender_name = models.CharField(max_length=255, blank=True, null=True)
     recipients = models.JSONField(default=list)
 
-    content = models.TextField(blank=True, null=True)  # Plain text message body
-    metadata = models.JSONField(default=dict, blank=True)  # Holds platform-specific data
+    content = models.TextField(blank=True, null=True)  # Plain text or main message body
+    metadata = models.JSONField(default=dict, blank=True)  # Holds platform-specific data (e.g., email headers, WhatsApp payload)
     attachments = models.JSONField(default=list, blank=True)
 
+    # ===== AI and Importance Analytics =====
     importance = models.CharField(max_length=20, choices=IMPORTANCE_CHOICES, default="medium")
     importance_score = models.FloatField(default=0.5)
     importance_analysis = models.TextField(blank=True, null=True)
 
+    ai_summary = models.TextField(blank=True, null=True)
+    ai_next_step = models.TextField(blank=True, null=True)
+    ai_people = models.JSONField(default=list, blank=True, null=True)
+    ai_organizations = models.JSONField(default=list, blank=True, null=True)
+    ai_related = models.JSONField(default=list, blank=True, null=True)
+
+    analyzed_at = models.DateTimeField(blank=True, null=True)
+
+    # ===== Embeddings =====
+    embedding = models.JSONField(blank=True, null=True)
+    embedding_generated = models.BooleanField(default=False)
+
+    # ===== Flags =====
     is_read = models.BooleanField(default=False)
     is_starred = models.BooleanField(default=False)
     is_incoming = models.BooleanField(default=True)
 
     sent_at = models.DateTimeField()
-    analyzed_at = models.DateTimeField(blank=True, null=True)
-
-    embedding = models.JSONField(blank=True, null=True)
-    embedding_generated = models.BooleanField(default=False)
-
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -121,6 +135,7 @@ class Message(models.Model):
 
     def __str__(self):
         return f"{self.channel.upper()} | {self.sender}: {self.content[:60]}"
+
 
 
 class UserRule(models.Model):

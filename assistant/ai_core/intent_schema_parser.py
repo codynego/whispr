@@ -14,13 +14,13 @@
 #                 "required_fields": [],  # sender or query_text can now trigger retrieval
 #                 "optional_fields": ["sender", "category", "timeframe", "subject", "query_text"],  # semantic-aware search
 #                 "data_source": "emails",
-#                 "handler": "read_email"
+#                 "handler": "read_message"
 #             },
-#             "find_email": {
+#             "find_message": {
 #                 "required_fields": [],  # no hard requirement; can search by filters or query
 #                 "optional_fields": ["sender", "category", "timeframe", "subject", "query_text"],  # allow embeddings-based query
 #                 "data_source": "emails",
-#                 "handler": "query_emails"
+#                 "handler": "query_messages"
 #             },
 #             "find_transaction": {
 #                 "required_fields": ["type"],
@@ -40,11 +40,11 @@
 #                 "data_source": "calendar",
 #                 "handler": "query_meetings"
 #             },
-#             "send_email": {
+#             "send_message": {
 #                 "required_fields": [],
-#                 "optional_fields": ["receiver", "receiver_email", "subject", "body"],
+#                 "optional_fields": ["receiver", "receiver_message", "subject", "body"],
 #                 "data_source": None,
-#                 "handler": "send_email"
+#                 "handler": "send_message"
 #             },
 #             "find_document": {
 #                 "required_fields": [],
@@ -52,11 +52,11 @@
 #                 "data_source": "files",
 #                 "handler": "query_documents"
 #             },
-#             "summarize_email": {
+#             "summarize_message": {
 #                 "required_fields": [],  # sender or query_text triggers summary
 #                 "optional_fields": ["sender", "category", "timeframe", "subject", "query_text"],
 #                 "data_source": "emails",
-#                 "handler": "summarize_email"
+#                 "handler": "summarize_message"
 #             },
 #         }
 
@@ -161,25 +161,25 @@ class IntentSchemaParser:
                 "required_fields": [],
                 "optional_fields": ["sender", "category", "timeframe", "subject", "query_text"],
                 "data_source": "emails",
-                "handler": "read_email"
+                "handler": "read_message"
             },
-            "find_email": {
+            "find_message": {
                 "required_fields": [],
                 "optional_fields": ["sender", "category", "timeframe", "subject", "query_text"],
                 "data_source": "emails",
-                "handler": "query_emails"
+                "handler": "query_messages"
             },
-            "send_email": {
+            "send_message": {
                 "required_fields": [],
-                "optional_fields": ["receiver", "receiver_email", "subject", "body"],
+                "optional_fields": ["receiver", "receiver_message", "subject", "body"],
                 "data_source": None,
-                "handler": "send_email"
+                "handler": "send_message"
             },
-            "summarize_email": {
+            "summarize_message": {
                 "required_fields": [],
                 "optional_fields": ["sender", "category", "timeframe", "subject", "query_text"],
                 "data_source": "emails",
-                "handler": "summarize_email"
+                "handler": "summarize_message"
             },
 
             # --- WhatsApp / Chat-related ---
@@ -243,6 +243,7 @@ class IntentSchemaParser:
         confidence = detected_intent.get("confidence", 0.5)
         channel = detected_intent.get("channel")
 
+
         # 1️⃣ Try to auto-infer channel based on intent name or context
         if not channel:
             channel = self._infer_channel(intent, entities, previous_context)
@@ -269,7 +270,19 @@ class IntentSchemaParser:
                 if k not in entities:
                     entities[k] = v
 
-        # 4️⃣ Validate required fields
+        # 4️⃣ Skip asking unnecessary follow-ups for intents with no required fields
+        if not schema["required_fields"]:
+            return {
+                "status": "ready",
+                "intent": intent,
+                "channel": channel,
+                "confidence": confidence,
+                "entities": entities,
+                "handler": schema["handler"],
+                "data_source": schema["data_source"]
+            }
+
+        # 5️⃣ Only check required fields if they exist
         missing_fields = [f for f in schema["required_fields"] if f not in entities]
 
         if missing_fields:
@@ -282,7 +295,7 @@ class IntentSchemaParser:
                 "message": self.generate_followup(intent, missing_fields)
             }
 
-        # 5️⃣ Return structured, validated command
+        # 6️⃣ Return structured, validated command
         return {
             "status": "ready",
             "intent": intent,
@@ -292,6 +305,7 @@ class IntentSchemaParser:
             "handler": schema["handler"],
             "data_source": schema["data_source"]
         }
+
 
     # 🧠 Infer channel when user didn’t specify one
     def _infer_channel(

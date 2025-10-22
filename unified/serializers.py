@@ -63,6 +63,11 @@ class MessageSerializer(serializers.ModelSerializer):
             "importance",
             "importance_score",
             "importance_analysis",
+            "ai_summary",
+            "ai_next_step",
+            "ai_people",
+            "ai_organizations",
+            "ai_related",
             "is_read",
             "is_starred",
             "is_incoming",
@@ -73,7 +78,23 @@ class MessageSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = [
+            "id",
+            "created_at",
+            "updated_at",
+            "importance",
+            "importance_score",
+            "importance_analysis",
+            "ai_summary",
+            "ai_next_step",
+            "ai_people",
+            "ai_organizations",
+            "ai_related",
+            "embedding",
+            "embedding_generated",
+            "analyzed_at",
+        ]
+
 
 
 # ---------------- CONVERSATION ---------------- #

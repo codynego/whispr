@@ -260,9 +260,10 @@ class IntentRouter:
 
         success = service.send_message(
             receiver_name=entities.get("receiver_name"),
-            receiver_address=entities.get("receiver_email") or entities.get("receiver_number"),
+            receiver=entities.get("receiver") or entities.get("receiver_number"),
             subject=entities.get("subject"),
             body=entities.get("body"),
+            channel=channel,
         )
         return "✅ Message sent successfully." if success else "❌ Failed to send message."
 

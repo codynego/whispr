@@ -445,15 +445,11 @@ class IntentDetector:
             result["entities"]["input_text"] = message
 
         # 🔹 Retrieve related content (emails, chats)
-        relevant = retrieve_relevant_messages(user, message, channel)
+        # relevant = retrieve_relevant_messages(user, message, channel)
 
         return {
             **result,
             "channel": channel,
-            "relevant": {
-                "channel": channel,
-                "items": self._format_relevant(relevant),
-            },
         }
 
     # ----------------- RULES + NER ----------------- #
@@ -520,10 +516,10 @@ class IntentDetector:
 
         Return valid JSON:
         {{
-            "receiver_name": "<name>",
-            "receiver_identifier": "<email/phone/channel>",
-            "subject": "<if applicable>",
-            "body": "<message body>"
+            "receiver_name": "<name gotten from either the message or email>",
+            "receiver": "<email/phone/channel>",
+            "subject": "<if applicable - generate one based on the message>",
+            "body": "<message body - write the body if not specified>"
         }}
         """
 
