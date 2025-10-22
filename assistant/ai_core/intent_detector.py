@@ -543,7 +543,7 @@ class IntentDetector:
         Return only valid JSON:
         {{
             "task_type": "<type>",
-            "task_title": "<short summary>",
+            "task_title": "<a short message to report the task>",
             "due_time": "<specific time if mentioned>",
             "due_date": "<specific date if mentioned>",
             "action": "<action type>",

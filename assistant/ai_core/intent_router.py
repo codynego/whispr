@@ -294,7 +294,7 @@ class IntentRouter:
         task = AssistantTask.objects.create(
             user=self.user,
             input_text=entities.get("input_text"),
-            task_type=entities.get("action") or "New Task",
+            task_type=entities.get("task_type") or "New Task",
             output_text=entities.get("task_title"),
             due_datetime=entities.get("due_datetime"),
             context=entities.get("context"),
