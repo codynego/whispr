@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 from django.contrib.auth import get_user_model
-from .serializers import UserSerializer, UserCreateSerializer, CustomTokenObtainPairSerializer
+from .serializers import UserSerializer, UserCreateSerializer, CustomTokenObtainPairSerializer, PasswordUpdateSerializer
 
 User = get_user_model()
 
@@ -37,4 +37,15 @@ class UserDetailView(generics.RetrieveUpdateAPIView):
 class CustomTokenObtainPairView(TokenObtainPairView):
     """Custom JWT token view"""
     serializer_class = CustomTokenObtainPairSerializer
+
+
+class UpdatePasswordView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = PasswordUpdateSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"message": "Password updated successfully."}, status=200)
+
 

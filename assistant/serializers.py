@@ -55,7 +55,6 @@ class AssistantTaskSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "id",
-            "status",
             "output_text",
             "error_message",
             "processing_time",

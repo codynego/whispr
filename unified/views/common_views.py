@@ -18,6 +18,14 @@ from unified.serializers import (
     ConversationWithMessagesSerializer,
 )
 from unified.tasks.common_tasks import sync_channel_account
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from django.utils import timezone
+from django.db.models import Q, Count
+
+from assistant.models import AssistantTask
+
+
 
 
 # --- Pagination Classes ---
@@ -230,3 +238,124 @@ class DeactivateChannelAccountView(generics.UpdateAPIView):
             {"detail": f"Account '{account.address_or_id}' deactivated."},
             status=status.HTTP_200_OK,
         )
+
+
+
+
+class DashboardOverviewAPIView(APIView):
+    """
+    Unified dashboard API for Whisone — aggregates messages, conversations,
+    and assistant task activity across all connected channels.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        today = timezone.now().date()
+
+        # --- CHANNEL ACCOUNTS ---
+        connected_accounts = ChannelAccount.objects.filter(user=user, is_active=True)
+        total_channels = connected_accounts.count()
+
+        # --- MESSAGES ---
+        messages_today = Message.objects.filter(
+            account__user=user,
+            created_at__date=today,
+        )
+        total_messages = messages_today.count()
+        unread_messages = messages_today.filter(is_read=False).count()
+        important_messages = messages_today.filter(
+            importance__in=["high", "critical"]
+        ).count()
+
+        # --- CONVERSATIONS ---
+        active_conversations = (
+            Conversation.objects.filter(account__user=user, is_archived=False)
+            .annotate(total_msgs=Count("messages"))
+            .order_by("-last_message_at")[:5]
+        )
+
+        # --- AI TASKS ---
+        tasks_qs = AssistantTask.objects.filter(user=user).order_by("-created_at")[:5]
+        ai_tasks = [
+            {
+                "id": t.id,
+                "task_type": t.task_type,
+                "status": t.status,
+                "input_text": t.input_text[:120] + ("..." if len(t.input_text) > 120 else ""),
+                "due_datetime": t.due_datetime,
+                "is_completed": t.is_completed,
+                "created_at": t.created_at,
+            }
+            for t in tasks_qs
+        ]
+
+        # --- PERFORMANCE METRICS (sample logic) ---
+        performance = {
+            "ai_tasks_completed": AssistantTask.objects.filter(
+                user=user, status="completed"
+            ).count(),
+            "important_threads": important_messages,
+            "missed_messages": unread_messages,
+            "connected_channels": total_channels,
+            "trend": "+9%",  # placeholder, could later be computed dynamically
+        }
+
+        # --- AI SUMMARY ---
+        ai_summary = {
+            "greeting": f"Good {self.get_time_of_day()}, {user.first_name or 'there'} 👋",
+            "summary_text": (
+                f"You’ve received {total_messages} messages today across {total_channels} channels. "
+                f"{unread_messages} are still unread, and {important_messages} are important."
+            ),
+            "suggestions": [
+                "Reply to important messages",
+                "Review unread conversations",
+                "Check your recent AI tasks",
+            ],
+        }
+
+        # --- DATA STRUCTURE ---
+        data = {
+            "summary": ai_summary,
+            "stats": {
+                "total_channels": total_channels,
+                "total_messages": total_messages,
+                "unread_messages": unread_messages,
+                "important_messages": important_messages,
+                "channel_breakdown": self.get_channel_breakdown(user),
+            },
+            "active_conversations": [
+                {
+                    "id": c.id,
+                    "title": c.title or "(No Title)",
+                    "channel": c.channel,
+                    "last_message_at": c.last_message_at,
+                    "message_count": c.total_msgs,
+                }
+                for c in active_conversations
+            ],
+            "tasks": ai_tasks,
+            "performance": performance,
+        }
+
+        return Response(data)
+
+    def get_time_of_day(self):
+        """Return current time of day label."""
+        hour = timezone.now().hour
+        if hour < 12:
+            return "morning"
+        elif hour < 18:
+            return "afternoon"
+        return "evening"
+
+    def get_channel_breakdown(self, user):
+        """Return per-channel message count for user."""
+        channels = (
+            Message.objects.filter(account__user=user)
+            .values("channel")
+            .annotate(total=Count("id"))
+        )
+        return {c["channel"]: c["total"] for c in channels}

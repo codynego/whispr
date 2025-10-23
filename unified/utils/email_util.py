@@ -18,6 +18,7 @@ from email import encoders
 import logging
 from unified.utils.common_utils import is_message_important
 from unified.models import ChannelAccount, Message, Conversation 
+from unified.models import UserRule
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +90,7 @@ def fetch_gmail_messages(account: ChannelAccount, limit=10):
         client_id=settings.GMAIL_CLIENT_ID,
         client_secret=settings.GMAIL_CLIENT_SECRET,
     )
+    user_rule = UserRule.objects.filter(user=account__user)
 
     service = build("gmail", "v1", credentials=creds)
     results = service.users().messages().list(userId="me", maxResults=limit).execute()
@@ -135,7 +137,7 @@ def fetch_gmail_messages(account: ChannelAccount, limit=10):
             conversation.save(update_fields=["last_message_at", "last_sender", "title", "updated_at"])
 
         # === Analyze importance ===
-        _, is_important, score = is_message_important(f"{subject} {snippet}")
+        _, is_important, score = is_message_important(f"{subject} {snippet}", user_rule)
 
         # === Save message ===
         Message.objects.update_or_create(

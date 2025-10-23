@@ -136,7 +136,6 @@
 
 # assistant/intent_router.py
 from unified.services import MessageService
-# from whatsapp.services import WhatsAppService
 from .llm_service import LLMService
 from django.conf import settings
 from assistant.models import AssistantTask
@@ -146,8 +145,9 @@ APIKEY = settings.GEMINI_API_KEY
 
 class IntentRouter:
     """
-    Routes user intents or @commands to appropriate channel handlers.
-    Auto-detects intent and channel if not specified.
+    Routes natural language user inputs to the correct handler.
+    Detects user intent (e.g., summarize, find, send, task creation)
+    and executes it through unified services.
     """
 
     def __init__(self, user=None):
@@ -155,16 +155,6 @@ class IntentRouter:
         self.llm_service = LLMService(user, APIKEY)
         self.message_service = MessageService(user)
         self.handlers = self._register_handlers()
-        self.command_map = {
-            "@read": "read_message",
-            "@find": "find_message",
-            "@send": "send_message",
-            "@reply": "reply_message",
-            "@summarize": "summarize_message",
-            "@task": "create_task",
-            "@todo": "create_task",
-            "@remind": "create_task",
-        }
 
     # ---------------- REGISTER HANDLERS ---------------- #
     def _register_handlers(self):
@@ -175,45 +165,44 @@ class IntentRouter:
             "reply_message": self.handle_reply_message,
             "summarize_message": self.handle_summarize_message,
             "create_task": self.handle_create_task,
+            "set_reminder": self.handle_create_task,
         }
 
     # ---------------- MAIN ENTRY ---------------- #
     def route(self, message, context=None):
         """
         Entry point:
-        1️⃣ Detects intent and entities (includes possible channel)
-        2️⃣ Resolves channel if not given
-        3️⃣ Routes to correct handler
+        1️⃣ Uses LLM to detect intent and extract entities.
+        2️⃣ Detects communication channel.
+        3️⃣ Routes to correct handler.
         """
         intent, entities = self._detect_intent(message, context)
         channel = entities.get("channel") or self._detect_channel(message)
 
         handler = self.get_handler(intent)
         if not handler:
-            return f"Unknown or unsupported intent: '{intent}'"
+            return f"🤔 Sorry, I couldn’t understand that request."
 
         try:
             return handler(entities, channel)
         except Exception as e:
             print(f"[IntentRouter] Error handling '{intent}': {e}")
-            return f"❌ Error while processing '{intent}'."
+            return f"❌ Something went wrong while processing '{intent}'."
 
     # ---------------- INTENT DETECTION ---------------- #
     def _detect_intent(self, message, context=None):
-        # Check for explicit @commands first
-        for cmd, intent in self.command_map.items():
-            if cmd in message.lower():
-                entities = self.llm_service.extract_entities(message, intent)
-                return intent, entities
-
-        # Otherwise infer using LLM
+        """
+        Uses LLM to infer intent & entities from natural language.
+        Example: "Summarize my last 3 emails" -> summarize_message
+                 "Remind me to call Alex tomorrow" -> create_task
+        """
         parsed = self.llm_service.parse_intent_and_entities(message, context)
         intent = parsed.get("intent", "unknown")
         entities = parsed.get("entities", {})
         return intent, entities
 
     def _detect_channel(self, message: str):
-        """Basic heuristic for channel detection."""
+        """Basic heuristic for guessing communication channel."""
         msg_lower = message.lower()
         if "email" in msg_lower or "inbox" in msg_lower:
             return "email"
@@ -221,7 +210,7 @@ class IntentRouter:
             return "whatsapp"
         elif "sms" in msg_lower:
             return "sms"
-        return "all"  # fallback if channel not mentioned
+        return "all"
 
     def get_handler(self, intent):
         return self.handlers.get(intent)
@@ -231,7 +220,7 @@ class IntentRouter:
         print(f"Finding messages in channel: {channel}")
         service = self._get_service(channel)
         if not service:
-            return "No matching channel found."
+            return "⚠️ No matching channel found."
 
         results = service.find_messages(
             sender=entities.get("sender"),
@@ -245,7 +234,7 @@ class IntentRouter:
         print(f"Reading message from channel: {channel}")
         service = self._get_service(channel)
         if not service:
-            return "No matching channel found."
+            return "⚠️ No matching channel found."
 
         result = service.read_message(
             sender=entities.get("sender"),
@@ -256,7 +245,7 @@ class IntentRouter:
     def handle_send_message(self, entities, channel="all"):
         service = self._get_service(channel)
         if not service:
-            return "No matching channel found."
+            return "⚠️ No matching channel found."
 
         success = service.send_message(
             receiver_name=entities.get("receiver_name"),
@@ -270,7 +259,7 @@ class IntentRouter:
     def handle_reply_message(self, entities, channel="all"):
         service = self._get_service(channel)
         if not service:
-            return "No matching channel found."
+            return "⚠️ No matching channel found."
 
         success = service.reply_to_message(
             message_id=entities.get("message_id"),
@@ -279,33 +268,30 @@ class IntentRouter:
         return "💬 Reply sent successfully." if success else "❌ Failed to send reply."
 
     def handle_summarize_message(self, entities, channel="all"):
+        """Summarizes a message or a group of messages."""
         service = self._get_service(channel)
         if not service:
-            return "No matching channel found."
+            return "⚠️ No matching channel found."
 
         summary = service.summarize_message(
             sender=entities.get("sender"),
             query_text=entities.get("query_text"),
         )
-        return f"🧠 Summary: {summary}" if summary else "Couldn't summarize this message."
+        return f"🧠 Summary:\n{summary}" if summary else "Couldn't summarize this message."
 
     def handle_create_task(self, entities, channel="all"):
+        """Creates a reminder or task."""
         print("Creating task:", entities)
         task = AssistantTask.objects.create(
             user=self.user,
-            input_text=entities.get("input_text"),
-            task_type=entities.get("task_type") or "New Task",
+            input_text=entities.get("query_text"),
+            task_type=entities.get("task_type") or "Task",
             output_text=entities.get("task_title"),
             due_datetime=entities.get("due_datetime"),
             context=entities.get("context"),
         )
-        return f"✅ Task '{task.task_type}' created." if task else "❌ Failed to create task."
+        return f"✅ Task '{task.task_type}' created successfully." if task else "❌ Failed to create task."
 
     # ---------------- SERVICE RESOLVER ---------------- #
     def _get_service(self, channel):
         return self.message_service
-        # if channel == "email":
-        #     return self.email_service
-        # elif channel == "whatsapp":
-        #     return self.whatsapp_service
-        # return None

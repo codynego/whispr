@@ -177,6 +177,7 @@ class MessageHandler:
             "find_meeting",
             "send_message",
             "find_document",
+            "set_reminder",
             "summarize_message",
             "create_task"
         ]
@@ -208,34 +209,28 @@ class MessageHandler:
 
         # --- 3️⃣ Detect intent & entities ---
         intent_data = self.intent_detector.detect_intent(user=self.user, message=message, previous_context=merged_context)
+        print("Detected intent data:", intent_data)
         # --- 4️⃣ Detect or infer the channel ---
         # Try to infer channel based on message text, detected entities, or fallback
         channel = intent_data.get("channel")
 
-        # if not channel:
-        #     channel = self.channel_manager.infer_channel(message, intent_data)
-
-        # --- 5️⃣ Retrieve recent context for that channel ---
-        # For example, last few emails, chats, or tasks (depending on channel)
-        # recent_context = self.channel_manager.get_recent_context(channel)
-        # print(f"Using channel: {channel}, context count: {len(recent_context)}")
-
         # --- 6️⃣ Enforce required @commands ---
         required_cmd = self.required_commands.get(intent_data["intent"])
-        if required_cmd and required_cmd != user_command:
-            clarification = (
-                f"Please include '{required_cmd}' in your message to confirm this action.\n"
-                f"Example: {required_cmd} Send a message to John saying 'I’ll be late'."
-            )
-            return {
-                "status": "confirmation_needed",
-                "reply": clarification,
-                "intent": intent_data["intent"],
-                "expected_command": required_cmd,
-            }
+        # if required_cmd and required_cmd != user_command:
+        #     clarification = (
+        #         f"Please include '{required_cmd}' in your message to confirm this action.\n"
+        #         f"Example: {required_cmd} Send a message to John saying 'I’ll be late'."
+        #     )
+        #     return {
+        #         "status": "confirmation_needed",
+        #         "reply": clarification,
+        #         "intent": intent_data["intent"],
+        #         "expected_command": required_cmd,
+        #     }
 
         # --- 7️⃣ Validate schema completeness ---
         validation_result = self.intent_schema_parser.validate(intent_data, merged_context)
+
 
         # If intent is unclear or missing
         if intent_data["intent"] not in self.intents:
@@ -272,9 +267,12 @@ class MessageHandler:
             }
         result = handler(intent_data.get("entities"), channel=intent_data.get("channel"))
 
+
         # --- 🔟 Generate AI reply with channel context ---
         ai_reply = self.llm.generate_reply(user_message=message, task_result=result, context_data=merged_context)
         self.context_manager.update_context(self.user.id, intent_data)
+        print("Final AI reply:", ai_reply)
+
 
         return {
             "status": "success",

@@ -19,6 +19,7 @@ class MessageService:
         Find messages using filters and semantic relevance.
         """
         messages = Message.objects.filter(account__user=self.user)
+        print("find_messages called with:", sender, subject, date, query_text, channel, top_k)
 
         if channel:
             messages = messages.filter(channel=channel)
@@ -28,10 +29,13 @@ class MessageService:
             messages = messages.filter(metadata__subject__icontains=subject)
         if date:
             messages = messages.filter(sent_at__date__gte=date)
+            print("message after date filter", messages.count())
 
+        print("message before retriever", messages.count())
         # Semantic filtering (vector search)
-        if query_text:
-            messages = retrieve_relevant_messages(self.user, messages, query_text, top_k=top_k)
+        # if query_text:
+        #     messages = retrieve_relevant_messages(self.user, messages, query_text, top_k=top_k)
+        print
 
         return {
             "count": len(messages),

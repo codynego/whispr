@@ -11,18 +11,41 @@ import json
 from .ai_core.message_handler import MessageHandler
 from django.utils import timezone
 
+from rest_framework import generics, permissions, pagination
+from rest_framework.response import Response
+from django.utils import timezone
+
+
+from rest_framework import generics, permissions, pagination
+from .models import AssistantTask
+from .serializers import AssistantTaskSerializer
+
+
+class StandardResultsSetPagination(pagination.PageNumberPagination):
+    """
+    Custom pagination for assistant tasks.
+    """
+    page_size = 5  # default items per page
+    page_size_query_param = 'page_size'  # allow client override ?page_size=20
+    max_page_size = 50  # limit max results per page
+
+
 class AssistantTaskListCreateView(generics.ListCreateAPIView):
     """
     Create or list assistant tasks (reminders, email_send, summarize, etc.)
     """
     serializer_class = AssistantTaskSerializer
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
-        return AssistantTask.objects.filter(user=self.request.user).order_by("-created_at")
+        return AssistantTask.objects.filter(
+            user=self.request.user
+        ).order_by("-created_at")
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
 
 
 class AssistantTaskDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -43,6 +66,7 @@ class AssistantDueTaskView(generics.ListAPIView):
     """
     serializer_class = AssistantTaskSerializer
     permission_classes = [permissions.IsAuthenticated]
+    pagination_class = pagination.PageNumberPagination
 
     def get_queryset(self):
         now = timezone.now()
@@ -51,8 +75,6 @@ class AssistantDueTaskView(generics.ListAPIView):
             status__in=["pending", "scheduled"],
             due_datetime__lte=now,
         )
-
-
 class AssistantChatView(generics.GenericAPIView):
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = AssistantMessageSerializer
