@@ -1,64 +1,8 @@
-# # whispr/ai_core/context_manager.py
-# import datetime
-
-# class ContextManager:
-#     """
-#     Handles conversation context — retrieves, merges, and updates the user's last intent and entities.
-#     """
-
-#     def __init__(self):
-#         # For now, use a simple in-memory store (you can swap this for Redis or DB later)
-#         self._context_store = {}
-
-#     def get_context(self, user_id: int):
-#         """
-#         Get the last known context for a user.
-#         """
-#         return self._context_store.get(user_id, {})
-
-#     def merge(self, previous_context: dict, new_message: str):
-#         """
-#         Merge previous context with the current message.
-#         If the new message looks like a follow-up, combine them for intent detection.
-#         """
-#         if not previous_context:
-#             # No prior context
-#             return new_message
-
-#         # Simple logic — you can make this smarter later
-#         last_intent = previous_context.get("intent")
-#         last_entities = previous_context.get("entities", {})
-#         merged = {
-#             "previous_intent": last_intent,
-#             "previous_entities": last_entities,
-#             "new_message": new_message,
-#         }
-#         return merged
-
-#     def update_context(self, user_id: int, intent_data: dict):
-#         """
-#         Save or update the user's context after each processed message.
-#         """
-#         context_entry = {
-#             "intent": intent_data.get("intent"),
-#             "entities": intent_data.get("entities", {}),
-#             "timestamp": datetime.datetime.utcnow().isoformat()
-#         }
-#         self._context_store[user_id] = context_entry
-
-#     def clear_context(self, user_id: int):
-#         """
-#         Clears the user's conversation context (for example, after long inactivity).
-#         """
-#         if user_id in self._context_store:
-#             del self._context_store[user_id]
-
-
-
 import datetime
 import json
 from collections import defaultdict
 from typing import Dict, List, Union, Any
+from threading import Lock  # For thread-safety in multi-threaded access
 
 
 class ContextManager:
@@ -67,10 +11,22 @@ class ContextManager:
     Supports multiple channels (email, WhatsApp, etc.) per user.
     """
 
+    _instance = None
+    _lock = Lock()  # Thread-safety for singleton init
+
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super(ContextManager, cls).__new__(cls)
+        return cls._instance
+
     def __init__(self):
-        # Structure: { user_id: { channel: [ {intent, entities, message, timestamp} ] } }
-        self._context_store: Dict[int, Dict[str, List[Dict[str, Any]]]] = defaultdict(lambda: defaultdict(list))
-        self.max_history = 5  # Keep only the last 5 messages per channel
+        if not hasattr(self, '_initialized'):  # Prevent re-init on subsequent __new__ calls
+            # Structure: { user_id: { channel: [ {intent, entities, message, timestamp} ] } }
+            self._context_store: Dict[int, Dict[str, List[Dict[str, Any]]]] = defaultdict(lambda: defaultdict(list))
+            self.max_history = 5  # Keep only the last 5 messages per channel
+            self._initialized = True
 
     # ----------------------------
     # Utility methods
@@ -96,13 +52,18 @@ class ContextManager:
         - If `channel` is specified: return the last few entries from that channel.
         - Otherwise: merge and return the latest context from all channels.
         """
-        user_context = self._ensure_dict(self._context_store.get(user_id, {}))
+        # Access user_id to ensure it's initialized in the defaultdict
+        _ = self._context_store[user_id]  # This populates if missing
+        # print("Getting context for user:", user_id, "context:", dict(self._context_store[user_id]))  # Convert to plain dict for cleaner print
+        user_context = self._ensure_dict(self._context_store[user_id])
 
         if not user_context:
             return {}
 
         if channel:
-            channel_context = self._ensure_dict(user_context.get(channel, []))
+            # Access channel to ensure it's initialized
+            _ = user_context[channel]  # Populates the inner defaultdict(list)
+            channel_context = self._ensure_dict(user_context[channel])
             return channel_context[-self.max_history:] if isinstance(channel_context, list) else []
 
         # Merge across all channels
@@ -127,7 +88,7 @@ class ContextManager:
             previous_context = [previous_context]
 
         recent_messages = " ".join(
-            [ctx.get("message", "") for ctx in previous_context if isinstance(ctx, dict)]
+            [ctx.get("message") or "" for ctx in previous_context if isinstance(ctx, dict)]
         )
 
         return {
@@ -139,31 +100,40 @@ class ContextManager:
         """
         Save or update the user's context for a specific channel.
         Keeps only the last few messages for that channel.
+        Thread-safe.
         """
         channel = intent_data.get("channel", "general")
+        print("checking intent", intent_data.get("relevant", {}).get("items", []))
 
         entry = {
             "intent": intent_data.get("intent"),
             "entities": intent_data.get("entities", {}),
             "message": intent_data.get("message"),
+            "data": intent_data.get("relevant", {}).get("items", []),
             "timestamp": datetime.datetime.utcnow().isoformat()
         }
 
-        # Append to user's channel history
-        self._context_store[user_id][channel].append(entry)
+        # Thread-safe append (lock around the whole operation for simplicity)
+        with self._lock:
+            # Append to user's channel history
+            self._context_store[user_id][channel].append(entry)
 
-        # Keep context size limited
-        if len(self._context_store[user_id][channel]) > self.max_history:
-            self._context_store[user_id][channel] = self._context_store[user_id][channel][-self.max_history:]
+            # Keep context size limited
+            if len(self._context_store[user_id][channel]) > self.max_history:
+                self._context_store[user_id][channel] = self._context_store[user_id][channel][-self.max_history:]
+
+        # print(f"Updated context for user {user_id} on channel '{channel}': {entry}")  # Debug print
 
     def clear_context(self, user_id: int, channel: str = None) -> None:
         """
         Clears the user's context entirely or for a specific channel.
+        Thread-safe.
         """
-        if user_id not in self._context_store:
-            return
+        with self._lock:
+            if user_id not in self._context_store:
+                return
 
-        if channel:
-            self._context_store[user_id].pop(channel, None)
-        else:
-            self._context_store.pop(user_id, None)
+            if channel:
+                self._context_store[user_id].pop(channel, None)
+            else:
+                self._context_store[user_id] = defaultdict(list)  # Reset to empty for that user

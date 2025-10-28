@@ -606,6 +606,7 @@ import google.generativeai as genai
 import dateparser
 import spacy
 from sentence_transformers import SentenceTransformer
+from unified.models import Message
 from django.conf import settings
 
 from whisprai.ai.retriever import retrieve_relevant_messages  # your existing retriever
@@ -729,17 +730,19 @@ class IntentDetector:
 
         # fetch relevant context (top_k_context)
         try:
-            relevant_items = retrieve_relevant_messages(user, message, inferred_channel, top_k=top_k_context) or []
+            data = Message.objects.filter(account__user=user)
+            relevant_items = retrieve_relevant_messages(user=user, query_text=message, data=data, channel=inferred_channel, top_k=top_k_context) or []
         except Exception as e:
             logger.exception("Retriever failed: %s", e)
             relevant_items = []
 
-        context_text = self._build_context_text(relevant_items, max_chars=3000)
+
 
         # Call Gemini to get structured intent
-        gemini_response = self._call_gemini_for_intent(message, inferred_channel, context_text, previous_context)
+        gemini_response = self._call_gemini_for_intent(message, inferred_channel, relevant_items, previous_context)
 
         parsed = _safe_parse_json(gemini_response)
+
         if parsed:
             # Normalize and return
             normalized = self._normalize_gemini_output(parsed, inferred_channel)
@@ -753,12 +756,11 @@ class IntentDetector:
         fallback = self._fallback_rules_and_ner(message, inferred_channel, relevant_items)
         fallback["source"] = "fallback"
         fallback["entities"]["input_text"] = message  # ensure query_text is always present
-        fallback["relevant"] = {"channel": inferred_channel, "items": self._format_relevant(relevant_items)}
         return fallback
 
 
 
-    def _call_gemini_for_intent(self, message: str, channel: str, context_text: str, previous_context: Optional[Dict[str, Any]] = None) -> str:
+    def _call_gemini_for_intent(self, message: str, channel: str, relevant_items: str, previous_context: Optional[Dict[str, Any]] = None) -> str:
         """
         Build a strict JSON output prompt for Gemini and return the raw text.
         The model is instructed to reply ONLY in JSON.
@@ -774,7 +776,7 @@ class IntentDetector:
 
         prev_ctx = ""
         today_str = datetime.now().strftime("%Y-%m-%d")
-        print("Today's date:", today_str)
+
         if previous_context:
             prev_ctx = str(previous_context)[:1000]
 
@@ -784,7 +786,6 @@ class IntentDetector:
     User Message: "{message}"
     Channel (hint): "{channel}"
     Previous Context: "{prev_ctx}"
-    Relevant Items (from user's mailbox / chat): "{context_text}"
     For better accuracy of date and time, today is {today_str}. Always calculate relative dates step-by-step using YYYY-MM-DD format:
     - Current week starts on the Monday of {today_str}.
     - "Next week [day]" = the [day] in the week starting next Monday (e.g., if today is Thursday Oct 23 2025, next week starts Mon Oct 27; next Wednesday = Oct 29 2025).
@@ -802,6 +803,7 @@ class IntentDetector:
     "confidence": 0.0,
     "channel": "<email|whatsapp|slack|calendar|all>",
     "entities": {{
+        "iD": - <required> "<the id of the message from Relevant Items (use the data e.g [12, 125])- if the intent is reply or send message or follow up, ensure only specific id is returned but if its a find or summarize or read message, return multiple ids as a list or one>",
         "sender": "<name or org>",
         "receiver_name": "<name of recipient>",
         "receiver": "<email/phone/channel>",
@@ -999,6 +1001,7 @@ class IntentDetector:
         """
         snippets = []
         for obj in items:
+            id = getattr(obj, "id", None)
             snippet = getattr(obj, "snippet", None) or getattr(obj, "content", None) or getattr(obj, "body", None) or ""
             sender = getattr(obj, "sender", "") or getattr(obj, "from_user", "") or ""
             subj = ""
@@ -1006,7 +1009,7 @@ class IntentDetector:
             subj = metadata.get("subject") or ""
             date_field = getattr(obj, "sent_at", None) or getattr(obj, "created_at", None)
             datestr = date_field.strftime("%Y-%m-%d %H:%M") if date_field else ""
-            entry = f"From: {sender} | Subject: {subj} | Date: {datestr} | Snippet: {snippet}"
+            entry = f"From: {sender} | Subject: {subj} | Date: {datestr} | Snippet: {snippet} | ID: {id}"
             snippets.append(entry)
         text = "\n\n".join(snippets)
         if len(text) > max_chars:

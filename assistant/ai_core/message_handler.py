@@ -202,6 +202,7 @@ class MessageHandler:
         merged_context = self.context_manager.merge(previous_context, message)
 
 
+
         # --- 2️⃣ Detect @command in message ---
         command_match = re.search(r"(@\w+)", message)
         user_command = command_match.group(1).lower() if command_match else None
@@ -210,6 +211,7 @@ class MessageHandler:
         # --- 3️⃣ Detect intent & entities ---
         intent_data = self.intent_detector.detect_intent(user=self.user, message=message, previous_context=merged_context)
         print("Detected intent data:", intent_data)
+
         # --- 4️⃣ Detect or infer the channel ---
         # Try to infer channel based on message text, detected entities, or fallback
         channel = intent_data.get("channel")
@@ -236,11 +238,16 @@ class MessageHandler:
         if intent_data["intent"] not in self.intents:
             ai_reply = self.llm.generate_reply(user_message=message, context_data=merged_context)
             self.context_manager.update_context(self.user.id, intent_data)
+
             return {
                 "status": "unknown_intent",
                 "reply": ai_reply,
                 "intent": intent_data,
             }
+
+        print("Validation result:", "got here")
+        contexty = self.context_manager.get_context(self.user.id)
+        print("Current context after update:", contexty)
 
         # --- 8️⃣ Handle incomplete schema ---
         if validation_result["status"] == "incomplete":
@@ -271,7 +278,6 @@ class MessageHandler:
         # --- 🔟 Generate AI reply with channel context ---
         ai_reply = self.llm.generate_reply(user_message=message, task_result=result, context_data=merged_context)
         self.context_manager.update_context(self.user.id, intent_data)
-        print("Final AI reply:", ai_reply)
 
 
         return {

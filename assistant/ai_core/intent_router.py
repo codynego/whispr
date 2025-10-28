@@ -139,6 +139,7 @@ from unified.services import MessageService
 from .llm_service import LLMService
 from django.conf import settings
 from assistant.models import AssistantTask
+from .context_manager import ContextManager
 
 APIKEY = settings.GEMINI_API_KEY
 
@@ -155,6 +156,7 @@ class IntentRouter:
         self.llm_service = LLMService(user, APIKEY)
         self.message_service = MessageService(user)
         self.handlers = self._register_handlers()
+        self.context_manager = ContextManager()
 
     # ---------------- REGISTER HANDLERS ---------------- #
     def _register_handlers(self):
@@ -186,7 +188,6 @@ class IntentRouter:
         try:
             return handler(entities, channel)
         except Exception as e:
-            print(f"[IntentRouter] Error handling '{intent}': {e}")
             return f"❌ Something went wrong while processing '{intent}'."
 
     # ---------------- INTENT DETECTION ---------------- #
@@ -217,7 +218,8 @@ class IntentRouter:
 
     # ---------------- HANDLER METHODS ---------------- #
     def handle_find_messages(self, entities, channel="all"):
-        print(f"Finding messages in channel: {channel}")
+        intent_data = {"intent": "find_message", "entities": entities, "channel": channel, "message": entities.get("query_text")}
+        self.context_manager.update_context(self.user.id, intent_data)
         service = self._get_service(channel)
         if not service:
             return "⚠️ No matching channel found."
@@ -228,10 +230,10 @@ class IntentRouter:
             date=entities.get("timeframe"),
             query_text=entities.get("query_text"),
         )
+
         return results or f"No {channel} messages found."
 
     def handle_read_message(self, entities, channel="all"):
-        print(f"Reading message from channel: {channel}")
         service = self._get_service(channel)
         if not service:
             return "⚠️ No matching channel found."
@@ -281,7 +283,6 @@ class IntentRouter:
 
     def handle_create_task(self, entities, channel="all"):
         """Creates a reminder or task."""
-        print("Creating task:", entities)
         task = AssistantTask.objects.create(
             user=self.user,
             input_text=entities.get("query_text"),

@@ -15,13 +15,12 @@ def retrieve_relevant_messages(user, data=None, query_text: str = None, channel:
     Enhanced with temporal filtering for queries like "any email from yesterday?".
     Works for Email, WhatsApp, Slack, etc., using stored embeddings.
     """
-    print("data in retriever:", data)
     if not query_text or not query_text.strip():
         return []
 
     # 1️⃣ Parse temporal constraints from query (e.g., "yesterday", "today", "last week")
     date_filter = _parse_temporal_filter(query_text)
-    print(f"Temporal filter parsed: {date_filter}")
+
 
     # 2️⃣ Get user's messages or use provided data
     if data:
@@ -67,7 +66,6 @@ def retrieve_relevant_messages(user, data=None, query_text: str = None, channel:
         scored_messages.sort(key=lambda x: x[0], reverse=True)
         relevant_messages = [msg for _, msg in scored_messages[:top_k]]
 
-    print("relevant_messages in retriever:", relevant_messages)
     return relevant_messages
 
 

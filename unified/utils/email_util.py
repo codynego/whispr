@@ -19,6 +19,7 @@ import logging
 from unified.utils.common_utils import is_message_important
 from unified.models import ChannelAccount, Message, Conversation 
 from unified.models import UserRule
+from celery import shared_task
 
 logger = logging.getLogger(__name__)
 
@@ -170,9 +171,10 @@ def fetch_gmail_messages(account: ChannelAccount, limit=10):
     return synced
 
 
-
-def send_gmail_email(account, to_email, subject, body, body_html=None, attachments=None, thread_id=None):
+@shared_task(bind=True, autoretry_for=(Exception,), max_retries=3)
+def send_gmail_email(self, account, to_email, subject, body, body_html=None, attachments=None, thread_id=None):
     """Send email using Gmail API."""
+    print("got to this point")
     creds = Credentials(
         token=account.access_token,
         refresh_token=account.refresh_token,

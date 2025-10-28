@@ -12,10 +12,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 # --- Security ---
 SECRET_KEY = config('SECRET_KEY')
 DEBUG = False
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='whisprai.com,www.whisprai.com').split(',')
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='whisprai.com,www.whisprai.com,whisone.vercel.app').split(',')
 CSRF_TRUSTED_ORIGINS = config(
     'CSRF_TRUSTED_ORIGINS',
-    default='https://whisprai.com,https://www.whisprai.com'
+    default='https://whisprai.com,https://www.whisprai.com, whisone.vercel.app'
 ).split(',')
 
 # --- Applications ---
@@ -131,7 +131,7 @@ MEDIA_ROOT = BASE_DIR / 'media'
 # --- CORS ---
 CORS_ALLOWED_ORIGINS = config(
     'CORS_ALLOWED_ORIGINS',
-    default='https://whisprai.com,https://www.whisprai.com'
+    default='https://whisprai.com,https://www.whisprai.com,whisone.vercel.app'
 ).split(',')
 CORS_ALLOW_CREDENTIALS = True
 

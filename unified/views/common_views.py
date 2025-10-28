@@ -24,6 +24,9 @@ from django.utils import timezone
 from django.db.models import Q, Count
 
 from assistant.models import AssistantTask
+from django.shortcuts import get_object_or_404
+from unified.serializers import MessageSendSerializer
+from unified.utils.email_util import send_gmail_email
 
 
 
@@ -359,3 +362,70 @@ class DashboardOverviewAPIView(APIView):
             .annotate(total=Count("id"))
         )
         return {c["channel"]: c["total"] for c in channels}
+
+
+
+# unified/views/send_message.py
+
+# (later you can import send_whatsapp_message, send_slack_message, etc.)
+
+class SendMessageView(generics.GenericAPIView):
+    serializer_class = MessageSendSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        print("Reached SendMessageView")
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        print("Validated data:", data)
+
+        message_id = data.get("message_id")
+        message = get_object_or_404(Message, id=message_id, account__user=request.user)
+
+        # Get linked account
+        account = message.account
+        if not account:
+            return Response({"error": "No account linked to this message."}, status=400)
+
+        channel = account.channel  # e.g., "email", "whatsapp"
+        provider = account.provider  # e.g., "gmail", "outlook", "meta"
+
+        result = None
+        print("Preparing to send message via", channel, provider)
+
+        try:
+            if channel == "email":
+                if provider == "gmail":
+                    print("Sending Gmail email...")
+                    result = send_gmail_email.delay(
+                        account=account,
+                        to_email=data.get("to") or message.to_email,
+                        subject=data.get("subject") or message.subject,
+                        body=data.get("body") or message.body,
+                        body_html=data.get("body_html"),
+                        attachments=data.get("attachments"),
+                        thread_id=message.thread_id,
+                    )
+                    print("Gmail email sent:", result)
+                elif provider == "outlook":
+                    # Placeholder for Microsoft API
+                    pass
+
+            elif channel == "whatsapp":
+                # call send_whatsapp_message(account, message)
+                pass
+
+            elif channel == "slack":
+                # call send_slack_message(account, message)
+                pass
+
+            else:
+                return Response({"error": "Unsupported channel"}, status=400)
+
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)
+
+        if result:
+            return Response({"status": "sent", "data": result}, status=200)
+        return Response({"status": "failed"}, status=500)

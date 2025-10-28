@@ -181,15 +181,15 @@
 #     def __str__(self):
 #         return f"{self.user.email} - {self.name} ({self.rule_type})"
 
-
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import base64
 import os
+import json
 from django.core.exceptions import ImproperlyConfigured
 
 # Key derivation for Fernet key from SECRET_KEY
@@ -222,6 +222,7 @@ class EncryptedTextField(models.TextField):
     """
     Custom field to encrypt text on save and decrypt on fetch.
     Uses Fernet symmetric encryption with a key derived from SECRET_KEY.
+    Handles legacy plaintext data gracefully.
     """
     description = "An encrypted text field"
 
@@ -234,7 +235,11 @@ class EncryptedTextField(models.TextField):
     def from_db_value(self, value, expression, connection):
         if value is None:
             return value
-        return cipher_suite.decrypt(value.encode()).decode()
+        try:
+            return cipher_suite.decrypt(value.encode()).decode()
+        except InvalidToken:
+            # Legacy plaintext data - return as is
+            return value
 
     def get_internal_type(self):
         return "TextField"
@@ -243,6 +248,7 @@ class EncryptedTextField(models.TextField):
 class EncryptedJSONField(models.JSONField):
     """
     Custom field to encrypt JSON data on save and decrypt on fetch.
+    Handles legacy plaintext JSON data.
     """
     description = "An encrypted JSON field"
 
@@ -250,16 +256,21 @@ class EncryptedJSONField(models.JSONField):
         value = super().get_prep_value(value)
         if value is None:
             return value
-        import json
         json_str = json.dumps(value)
         return cipher_suite.encrypt(json_str.encode()).decode()
 
     def from_db_value(self, value, expression, connection):
         if value is None:
             return value
-        import json
-        decrypted = cipher_suite.decrypt(value.encode()).decode()
-        return json.loads(decrypted)
+        try:
+            decrypted = cipher_suite.decrypt(value.encode()).decode()
+            return json.loads(decrypted)
+        except (InvalidToken, json.JSONDecodeError):
+            # Legacy plaintext JSON - try to parse directly
+            try:
+                return json.loads(value)
+            except json.JSONDecodeError:
+                return value  # Fallback if invalid
 
     def get_internal_type(self):
         return "JSONField"

@@ -193,3 +193,17 @@ class MessageSyncSerializer(serializers.Serializer):
     """Serializer for email sync request"""
     account_id = serializers.IntegerField(required=False)
 
+
+
+
+
+
+class MessageSendSerializer(serializers.Serializer):
+    message_id = serializers.CharField(required=True)
+    to = serializers.EmailField(required=False, allow_blank=True)
+    subject = serializers.CharField(required=False, allow_blank=True)
+    body = serializers.CharField(required=False, allow_blank=True)
+    body_html = serializers.CharField(required=False, allow_blank=True)
+    attachments = serializers.ListField(
+        child=serializers.CharField(), required=False, allow_empty=True
+    )

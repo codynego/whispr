@@ -29,5 +29,7 @@ urlpatterns = [
     path("rules/", common_views.UserMessageRuleListCreateView.as_view(), name="rule-list-create"),
     path("rules/<int:pk>/", common_views.UserMessageRuleDetailView.as_view(), name="rule-detail"),
 
-    path("overview/", common_views.DashboardOverviewAPIView.as_view(), name="overview")
+    path("overview/", common_views.DashboardOverviewAPIView.as_view(), name="overview"),
+
+    path("send/", common_views.SendMessageView.as_view(), name="send_message")
 ]
