@@ -60,3 +60,35 @@ celerybeat.pid
 # Docker
 .dockerignore
 emails/credentials/client_secret.json
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# Git and build files
+.git/
+.gitignore
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Static & media
+media/
+uploads/
+tmp/
+*.log
+
+# Local configs
+*.env
+.env
+.env.local
+db.sqlite3
+
+# Node modules
+node_modules/
+*.zip
+*.tar.gz
+*.rar

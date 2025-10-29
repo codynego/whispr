@@ -1,0 +1,26 @@
+# Virtual environments
+env/
+venv/
+.venv/
+
+# Node modules
+node_modules/
+
+# Build artifacts
+*.pyc
+__pycache__/
+*.log
+*.sqlite3
+*.db
+
+# Static and media
+staticfiles/
+media/
+uploads/
+*.tar.gz
+
+# Local files
+.git/
+.gitignore
+.idea/
+.vscode/
