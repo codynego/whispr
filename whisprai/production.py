@@ -21,7 +21,6 @@ CSRF_TRUSTED_ORIGINS = config(
     default='https://whisone.herokuapp.com,https://whisone.com,https://www.whisone.com,https://whisone.vercel.app'
 ).split(',')
 
-# --- Applications ---
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -45,7 +44,9 @@ INSTALLED_APPS = [
     'assistant',
     'billing',
     'notifications',
+    'unified',
 ]
+
 
 # --- Middleware ---
 MIDDLEWARE = [
