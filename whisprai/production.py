@@ -1,10 +1,13 @@
+
 """
-Production settings for WhisprAI
+Production settings for Whisone
 """
 
 from pathlib import Path
 from datetime import timedelta
 from decouple import config
+import dj_database_url
+import os
 
 # --- Base Paths ---
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -12,10 +15,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 # --- Security ---
 SECRET_KEY = config('SECRET_KEY')
 DEBUG = False
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='whisprai.com,www.whisprai.com,whisone.vercel.app').split(',')
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='whisone.herokuapp.com,whisone.com,www.whisone.com').split(',')
 CSRF_TRUSTED_ORIGINS = config(
     'CSRF_TRUSTED_ORIGINS',
-    default='https://whisprai.com,https://www.whisprai.com, whisone.vercel.app'
+    default='https://whisone.herokuapp.com,https://whisone.com,https://www.whisone.com,https://whisone.vercel.app'
 ).split(',')
 
 # --- Applications ---
@@ -47,6 +50,7 @@ INSTALLED_APPS = [
 # --- Middleware ---
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # ✅ add this for static files on Heroku
     'django.middleware.http.ConditionalGetMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -78,16 +82,13 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'whisprai.wsgi.application'
 
-# --- Database (PostgreSQL) ---
+# --- Database ---
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': config('DB_NAME'),
-        'USER': config('DB_USER'),
-        'PASSWORD': config('DB_PASSWORD'),
-        'HOST': config('DB_HOST', default='localhost'),
-        'PORT': config('DB_PORT', default='5432'),
-    }
+    'default': dj_database_url.config(
+        default=config('DATABASE_URL', default='postgres://user:password@localhost:5432/whisone'),
+        conn_max_age=600,
+        ssl_require=True
+    )
 }
 
 # --- Authentication ---
@@ -118,7 +119,7 @@ SIMPLE_JWT = {
 
 # --- Internationalization ---
 LANGUAGE_CODE = 'en-us'
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Africa/Lagos'
 USE_I18N = True
 USE_TZ = True
 
@@ -128,10 +129,13 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# ✅ Use Whitenoise compressed storage for production
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
 # --- CORS ---
 CORS_ALLOWED_ORIGINS = config(
     'CORS_ALLOWED_ORIGINS',
-    default='https://whisprai.com,https://www.whisprai.com,whisone.vercel.app'
+    default='https://whisone.com,https://www.whisone.com,https://whisone.vercel.app'
 ).split(',')
 CORS_ALLOW_CREDENTIALS = True
 
@@ -184,6 +188,3 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 
 # --- Default PK ---
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-# settings.py
-USE_TZ = True
-TIME_ZONE = "Africa/Lagos"  # or your local zone
