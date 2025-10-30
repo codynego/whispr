@@ -19,6 +19,7 @@ cloudpathlib==0.23.0
 colorama==0.4.6
 confection==0.1.5
 cron_descriptor==2.0.6
+celery-redis
 cryptography==46.0.3
 cymem==2.0.11
 dateparser==1.2.2
@@ -127,7 +128,7 @@ sympy==1.14.0
 thinc==8.3.6
 threadpoolctl==3.6.0
 tokenizers==0.22.1
-torch==2.8.0
+torch
 tqdm==4.67.1
 transformers==4.57.0
 typer==0.19.2
