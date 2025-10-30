@@ -1,7 +1,7 @@
 import os
 
 # Check DJANGO_ENV environment variable
-ENV = os.getenv('DJANGO_ENV', 'development').lower()
+ENV = os.getenv('DJANGO_ENV', 'production').lower()
 
 if ENV == 'production':
     from .production import *
