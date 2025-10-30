@@ -382,10 +382,9 @@ MEDIA_ROOT = BASE_DIR / 'media'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # --- CORS ---
-CORS_ALLOWED_ORIGINS = config(
-    'CORS_ALLOWED_ORIGINS',
-    default='https://whisone.app,https://www.whisone.app,https://api.whisone.app'
-).split(',')
+CORS_ALLOWED_ORIGINS = [
+    'https://whisone.app,https://www.whisone.app,https://api.whisone.app'
+]
 CORS_ALLOW_CREDENTIALS = True
 
 # --- Celery / Redis ---
