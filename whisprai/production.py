@@ -15,10 +15,10 @@
 # # --- Security ---
 # SECRET_KEY = config('SECRET_KEY')
 # DEBUG = False
-# ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='whisone.herokuapp.com,whisone.com,www.whisone.com').split(',')
+# ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='whisone.herokuapp.com,whisone.app,www.whisone.app').split(',')
 # CSRF_TRUSTED_ORIGINS = config(
 #     'CSRF_TRUSTED_ORIGINS',
-#     default='https://whisone.herokuapp.com,https://whisone.com,https://www.whisone.com,https://whisone.vercel.app'
+#     default='https://whisone.herokuapp.com,https://whisone.app,https://www.whisone.app,https://whisone.vercel.app'
 # ).split(',')
 
 # INSTALLED_APPS = [
@@ -136,7 +136,7 @@
 # # --- CORS ---
 # CORS_ALLOWED_ORIGINS = config(
 #     'CORS_ALLOWED_ORIGINS',
-#     default='https://whisone.com,https://www.whisone.com,https://whisone.vercel.app'
+#     default='https://whisone.app,https://www.whisone.app,https://whisone.vercel.app'
 # ).split(',')
 # CORS_ALLOW_CREDENTIALS = True
 
@@ -259,13 +259,16 @@ DEBUG = False
 
 ALLOWED_HOSTS = config(
     'ALLOWED_HOSTS',
-    default='whisone.com,www.whisone.com,api.whisone.com,localhost,127.0.0.1'
+    default='whisone.app,www.whisone.app,api.whisone.app,localhost,127.0.0.1'
 ).split(',')
 
 CSRF_TRUSTED_ORIGINS = config(
     'CSRF_TRUSTED_ORIGINS',
-    default='https://whisone.com,https://www.whisone.com,https://api.whisone.com'
+    default='https://whisone.app,https://www.whisone.app,https://api.whisone.app'
 ).split(',')
+
+broker_connection_retry_on_startup = True
+broker_connection_max_retries = 5
 
 # --- Installed Apps ---
 INSTALLED_APPS = [
@@ -381,7 +384,7 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 # --- CORS ---
 CORS_ALLOWED_ORIGINS = config(
     'CORS_ALLOWED_ORIGINS',
-    default='https://whisone.com,https://www.whisone.com,https://api.whisone.com'
+    default='https://whisone.app,https://www.whisone.app,https://api.whisone.app'
 ).split(',')
 CORS_ALLOW_CREDENTIALS = True
 
