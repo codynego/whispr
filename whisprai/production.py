@@ -257,10 +257,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 SECRET_KEY = config('SECRET_KEY')
 DEBUG = False
 
-ALLOWED_HOSTS = config(
-    'ALLOWED_HOSTS',
-    default='whisone.app,www.whisone.app,api.whisone.app,localhost,127.0.0.1'
-).split(',')
+CORS_ALLOWED_ORIGINS = [
+    origin.strip() for origin in config(
+        'CORS_ALLOWED_ORIGINS',
+        default='https://whisone.app,https://www.whisone.app,https://api.whisone.app'
+    ).split(',')
+]
+CORS_ALLOW_CREDENTIALS = True
 
 CSRF_TRUSTED_ORIGINS = config(
     'CSRF_TRUSTED_ORIGINS',
