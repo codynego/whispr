@@ -111,7 +111,7 @@ rich==14.2.0
 rsa==4.9.1
 safetensors==0.6.2
 scikit-learn==1.7.2
-scipy==1.16.2
+scipy
 sentence-transformers==5.1.1
 setuptools==80.9.0
 shellingham==1.5.4
