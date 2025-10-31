@@ -384,10 +384,7 @@ MEDIA_ROOT = BASE_DIR / 'media'
 # Use Whitenoise for Django-served static (Gunicorn)
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
-# --- CORS ---
-CORS_ALLOWED_ORIGINS = [
-    'https://whisone.app,https://www.whisone.app,https://api.whisone.app'
-]
+
 CORS_ALLOW_CREDENTIALS = True
 
 # --- Celery / Redis ---
