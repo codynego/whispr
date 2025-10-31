@@ -258,17 +258,17 @@ SECRET_KEY = config('SECRET_KEY')
 DEBUG = False
 
 CORS_ALLOWED_ORIGINS = [
-    origin.strip() for origin in config(
-        'CORS_ALLOWED_ORIGINS',
-        default='https://whisone.app,https://www.whisone.app,https://api.whisone.app'
-    ).split(',')
+    'https://whisone.app',
+    'https://www.whisone.app',
+    'https://api.whisone.app'
 ]
 CORS_ALLOW_CREDENTIALS = True
 
-CSRF_TRUSTED_ORIGINS = config(
-    'CSRF_TRUSTED_ORIGINS',
-    default='https://whisone.app,https://www.whisone.app,https://api.whisone.app'
-).split(',')
+CSRF_TRUSTED_ORIGINS = [
+    'https://whisone.app',
+    'https://www.whisone.app',
+    'https://api.whisone.app'
+]
 
 broker_connection_retry_on_startup = True
 broker_connection_max_retries = 5
