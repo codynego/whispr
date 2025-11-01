@@ -260,11 +260,9 @@ DEBUG = True
 
 
 ALLOWED_HOSTS = [
-    "https://whisone.app",
-    "https://www.whisone.app",
-    "https://api.whisone.app",
-    "localhost",
-    "127.0.0.1"
+    "whisone.app",
+    "www.whisone.app",
+    "api.whisone.app",
 ]
 
 CORS_ALLOWED_ORIGINS = [
