@@ -263,6 +263,8 @@ ALLOWED_HOSTS = [
     "whisone.app",
     "www.whisone.app",
     "api.whisone.app",
+    "localhost",
+    "127.0.0.1",
 ]
 
 CORS_ALLOWED_ORIGINS = [
