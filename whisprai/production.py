@@ -259,14 +259,14 @@ SECRET_KEY = config('SECRET_KEY')
 DEBUG = True
 
 
-# ALLOWED_HOSTS = [
-#     "https://whisone.app",
-#     "https://www.whisone.app",
-#     "https://api.whisone.app",
-#     "localhost",
-#     "127.0.0.1"
-# ]
-ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS = [
+    "https://whisone.app",
+    "https://www.whisone.app",
+    "https://api.whisone.app",
+    "localhost",
+    "127.0.0.1"
+]
+
 CORS_ALLOWED_ORIGINS = [
     'https://whisone.app',
     'https://www.whisone.app',
