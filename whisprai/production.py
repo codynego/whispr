@@ -253,16 +253,20 @@ import ssl
 # --- Base Paths ---
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
+
 # --- Security ---
 SECRET_KEY = config('SECRET_KEY')
 DEBUG = False
-ALLOWED_HOSTS = ["https://whisone.app",
-                 "https://www.whisone.app",
-                 "https://api.whisone.app",
-                 "localhost",
-                 "127.0.0.1"
-    ]
 
+
+# ALLOWED_HOSTS = [
+#     "https://whisone.app",
+#     "https://www.whisone.app",
+#     "https://api.whisone.app",
+#     "localhost",
+#     "127.0.0.1"
+# ]
+ALLOWED_HOSTS = ["*"]
 CORS_ALLOWED_ORIGINS = [
     'https://whisone.app',
     'https://www.whisone.app',
@@ -341,13 +345,25 @@ TEMPLATES = [
 WSGI_APPLICATION = 'whisprai.wsgi.application'
 
 # --- Database ---
+# DATABASES = {
+#     'default': dj_database_url.config(
+#         default=config('DATABASE_URL', default='postgres://whisone_user:your_secure_password@localhost:5432/whisone_db'),
+#         conn_max_age=600,
+#         ssl_require=False  # ❌ Disable SSL since it's local
+#     )
+# }
+
 DATABASES = {
-    'default': dj_database_url.config(
-        default=config('DATABASE_URL', default='postgres://whisone_user:your_secure_password@localhost:5432/whisone_db'),
-        conn_max_age=600,
-        ssl_require=False  # ❌ Disable SSL since it's local
-    )
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': config('DB_NAME', default='whisone'),
+        'USER': config('DB_USER', default='whisone_user'),
+        'PASSWORD': config('DB_PASSWORD', default='yourpassword'),
+        'HOST': config('DB_HOST', default='localhost'),
+        'PORT': config('DB_PORT', default='5432'),
+    }
 }
+
 
 # --- Authentication ---
 AUTH_USER_MODEL = 'users.User'
