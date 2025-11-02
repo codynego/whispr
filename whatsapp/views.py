@@ -69,8 +69,6 @@ def webhook(request):
         mode = request.GET.get('hub.mode')
         token = request.GET.get('hub.verify_token')
         challenge = request.GET.get('hub.challenge')
-        print("Webhook verification attempt:", mode, token, challenge)
-        print("Expected token:", settings.WHATSAPP_VERIFY_TOKEN)
         if mode == 'subscribe' and token == settings.WHATSAPP_VERIFY_TOKEN:
             return HttpResponse(challenge, content_type='text/plain')
         return HttpResponse('Forbidden', status=403)
@@ -82,8 +80,7 @@ def webhook(request):
             #     return HttpResponse('Invalid signature', status=403)
             
             data = json.loads(request.body)
-            print("Raw webhook payload:", json.dumps(data, indent=2))  # Debug: Log full payload (remove in prod)
-            
+ 
             # Extract common fields safely
             entry = data.get('entry', [{}])[0]
             change = entry.get('changes', [{}])[0]
@@ -91,7 +88,6 @@ def webhook(request):
             field = change.get('field')  # Should be 'messages' for WhatsApp
             
             if field != 'messages':
-                print("Unsupported field:", field)
                 return HttpResponse('OK', status=200)  # ACK unknown events
             
             # Determine event type: messages or statuses
@@ -100,19 +96,15 @@ def webhook(request):
             
             if messages:
                 # Incoming message: Process and reply
-                print("Processing incoming message...")
                 msg = messages[0]  # Assume single message
                 sender_number = msg.get('from')
-                print("Received message from:", sender_number)
                 
                 # Safely get user (use filter to avoid DoesNotExist exception)
                 users = User.objects.filter(whatsapp=sender_number)
                 if not users.exists():
-                    print("User not found for sender number:", sender_number)
                     return HttpResponse('OK', status=200)  # Still ACK to stop retries; handle offline later
                 
                 user = users.first()
-                print("Found user:", user.id)
                 
                 # Log event (now works for messages too)
                 event_type = 'message_received'  # Or derive from msg type
@@ -120,7 +112,6 @@ def webhook(request):
                 
                 # Generate reply
                 reply_msg = process_whatsapp_message(data)
-                print("Generated reply:", reply_msg)
                 
                 # Send reply
                 if reply_msg:
@@ -129,12 +120,10 @@ def webhook(request):
                 
             elif statuses:
                 # Status update: Just log and ACK (no reply)
-                print("Processing status update...")
                 status = statuses[0]  # Assume single status
                 status_id = status.get('id')
                 status_value = status.get('status')  # e.g., 'sent', 'delivered'
                 recipient = status.get('recipient_id')  # Or 'id' for outbound
-                print(f"Status '{status_value}' for message {status_id} to {recipient}")
                 
                 # Log event
                 event_type = status_value or 'unknown_status'
