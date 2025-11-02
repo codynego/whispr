@@ -39,7 +39,7 @@ def process_whatsapp_message(message_instance):
         # Call Gemini AI
 
         print("Getting Gemini response for user ID:", user.id)
-        ai_response = get_gemini_response(prompt=user_query, user=user)
+        ai_response = get_gemini_response(prompt=user_query, user_id=user.id)
         print("Received Gemini response:", ai_response)
 
 

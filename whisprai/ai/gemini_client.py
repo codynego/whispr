@@ -36,6 +36,7 @@ def get_gemini_response(
 
     Can auto-detect relevant channel if not provided.
     """
+    print("Generating Gemini response for user ID:", user_id)
     user = User.objects.get(id=user_id)
 
     # === STEP 1: Load conversation memory ===
