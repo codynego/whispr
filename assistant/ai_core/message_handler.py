@@ -159,6 +159,7 @@ class MessageHandler:
     """
 
     def __init__(self, user):
+        print("Initializing MessageHandler for user ID:", user.id)
         self.user = user
         self.context_manager = ContextManager()
         self.intent_detector = IntentDetector()

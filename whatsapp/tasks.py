@@ -42,7 +42,10 @@ def process_whatsapp_message(message_instance):
         print("Getting Gemini response for user ID:", user.id)
         # ai_response = get_gemini_response(prompt=user_query, user_id=user.id)
         handler = MessageHandler(user=user)
+        print("Handling message with MessageHandler for user ID:", user.id)
         ai_response = handler.handle(prompt=user_query)
+        response_text = ai_response["reply"]
+        print("Gemini response:", response_text)
         print("Received Gemini response:", ai_response)
 
 
