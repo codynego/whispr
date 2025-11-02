@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 from whisprai.ai.gemini_client import get_gemini_response
 from .models import WhatsAppMessage
+from assistant.ai_core.message_handler import MessageHandler
 import logging
 
 User = get_user_model()
@@ -39,7 +40,9 @@ def process_whatsapp_message(message_instance):
         # Call Gemini AI
 
         print("Getting Gemini response for user ID:", user.id)
-        ai_response = get_gemini_response(prompt=user_query, user_id=user.id)
+        # ai_response = get_gemini_response(prompt=user_query, user_id=user.id)
+        handler = MessageHandler(user=user)
+        ai_response = handler.handle(prompt=user_query)
         print("Received Gemini response:", ai_response)
 
 
