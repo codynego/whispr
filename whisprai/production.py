@@ -23,8 +23,7 @@ ALLOWED_HOSTS = [
     "whisone.app",
     "www.whisone.app",
     "api.whisone.app",
-    "localhost",
-    "127.0.0.1",
+    "104.248.249.124",
 ]
 
 CORS_ALLOWED_ORIGINS = [
@@ -37,7 +36,8 @@ CORS_ALLOW_CREDENTIALS = True
 CSRF_TRUSTED_ORIGINS = [
     'https://whisone.app',
     'https://www.whisone.app',
-    'https://api.whisone.app'
+    'https://api.whisone.app',
+
 ]
 
 broker_connection_retry_on_startup = True
