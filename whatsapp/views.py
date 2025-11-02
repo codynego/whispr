@@ -79,10 +79,12 @@ def webhook(request):
             sender_number = data['entry'][0]['changes'][0]['value']['messages'][0]['from']
             print("Received webhook POST from sender number:", sender_number)
 
-            user = User.objects.get(whatsapp__icontains=sender_number)
+            user = User.objects.get(whatsapp=sender_number)
             if not user:
                 print("User not found for sender number:", sender_number)
                 return HttpResponse('User not found', status=404)
+            else:
+                print("Found user for sender number:", sender_number, "User ID:", user.id)
 
 
             

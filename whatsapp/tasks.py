@@ -33,10 +33,14 @@ def process_whatsapp_message(message_instance):
 
         user_query = text_body
 
+        print("Processing WhatsApp message from:", sender_number)
+        print("User query:", user_query)
         user = User.objects.get(whatsapp=sender_number)
         # Call Gemini AI
 
+        print("Getting Gemini response for user ID:", user.id)
         ai_response = get_gemini_response(prompt=user_query, user=user)
+        print("Received Gemini response:", ai_response)
 
 
         # Save AI response as a new WhatsAppMessage (optional)
