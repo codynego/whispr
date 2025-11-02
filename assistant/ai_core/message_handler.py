@@ -198,6 +198,7 @@ class MessageHandler:
         Handles an incoming message from the user.
         """
         # --- 1️⃣ Retrieve and merge context ---
+        print("Retrieving and merging context for user ID:", self.user.id)
         previous_context = self.context_manager.get_context(self.user.id)
         merged_context = self.context_manager.merge(previous_context, message)
 
