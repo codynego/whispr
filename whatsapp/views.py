@@ -53,65 +53,116 @@ def send_message(request):
     }, status=status.HTTP_202_ACCEPTED)
 
 
+import json
+import hmac
+import hashlib
+
+
 @csrf_exempt
 def webhook(request):
     """
-    WhatsApp webhook endpoint for receiving status updates
+    WhatsApp webhook endpoint for receiving messages and status updates.
+    Returns 200 for all valid events to acknowledge and stop retries.
     """
     if request.method == 'GET':
-        # Webhook verification
+        # Webhook verification (unchanged)
         mode = request.GET.get('hub.mode')
         token = request.GET.get('hub.verify_token')
         challenge = request.GET.get('hub.challenge')
         print("Webhook verification attempt:", mode, token, challenge)
         print("Expected token:", settings.WHATSAPP_VERIFY_TOKEN)
-        
-        print("mode:", mode)
-        print("mode == 'subscribe' and token == settings.WHATSAPP_VERIFY_TOKEN:", mode == 'subscribe' and token == settings.WHATSAPP_VERIFY_TOKEN)
         if mode == 'subscribe' and token == settings.WHATSAPP_VERIFY_TOKEN:
             return HttpResponse(challenge, content_type='text/plain')
         return HttpResponse('Forbidden', status=403)
     
     elif request.method == 'POST':
-        # Handle webhook events
         try:
+            # Optional: Verify signature (add settings.WHATSAPP_APP_SECRET)
+            # if not verify_signature(request.body, request.META.get('HTTP_X_HUB_SIGNATURE_256'), settings.WHATSAPP_APP_SECRET):
+            #     return HttpResponse('Invalid signature', status=403)
+            
             data = json.loads(request.body)
-            sender_number = data['entry'][0]['changes'][0]['value']['messages'][0]['from']
-            print("Received webhook POST from sender number:", sender_number)
-
-            user = User.objects.get(whatsapp=sender_number)
-            if not user:
-                print("User not found for sender number:", sender_number)
-                return HttpResponse('User not found', status=404)
-            else:
-                print("Found user for sender number:", sender_number, "User ID:", user.id)
-
-
+            print("Raw webhook payload:", json.dumps(data, indent=2))  # Debug: Log full payload (remove in prod)
             
-            # Log webhook event
-            WhatsAppWebhook.objects.create(
-                event_type=data.get('entry', [{}])[0].get('changes', [{}])[0].get('value', {}).get('statuses', [{}])[0].get('status', 'unknown'),
-                payload=data
-            )
-            # Process with Gemin
-
-            try:
-                print("Processing incoming message with Gemini...")
+            # Extract common fields safely
+            entry = data.get('entry', [{}])[0]
+            change = entry.get('changes', [{}])[0]
+            value = change.get('value', {})
+            field = change.get('field')  # Should be 'messages' for WhatsApp
+            
+            if field != 'messages':
+                print("Unsupported field:", field)
+                return HttpResponse('OK', status=200)  # ACK unknown events
+            
+            # Determine event type: messages or statuses
+            messages = value.get('messages')
+            statuses = value.get('statuses')
+            
+            if messages:
+                # Incoming message: Process and reply
+                print("Processing incoming message...")
+                msg = messages[0]  # Assume single message
+                sender_number = msg.get('from')
+                print("Received message from:", sender_number)
+                
+                # Safely get user (use filter to avoid DoesNotExist exception)
+                users = User.objects.filter(whatsapp=sender_number)
+                if not users.exists():
+                    print("User not found for sender number:", sender_number)
+                    return HttpResponse('OK', status=200)  # Still ACK to stop retries; handle offline later
+                
+                user = users.first()
+                print("Found user:", user.id)
+                
+                # Log event (now works for messages too)
+                event_type = 'message_received'  # Or derive from msg type
+                WhatsAppWebhook.objects.create(event_type=event_type, payload=data)
+                
+                # Generate reply
                 reply_msg = process_whatsapp_message(data)
-            except Exception as e:
-                return HttpResponse(f'Error processing message: {str(e)}', status=400)
-            print("Generated reply message:", reply_msg)
-
-            # Send via WhatsApp
-            if reply_msg:
-                print("Sending reply message via WhatsApp:", reply_msg)
-                send_whatsapp_message_task(reply_msg.id)
-                print("Reply message sent.")
-                        
-            # TODO: Process webhook events (status updates, etc.)
+                print("Generated reply:", reply_msg)
+                
+                # Send reply
+                if reply_msg:
+                    send_whatsapp_message_task(reply_msg.id)
+                    print("Reply message sent.")
+                
+            elif statuses:
+                # Status update: Just log and ACK (no reply)
+                print("Processing status update...")
+                status = statuses[0]  # Assume single status
+                status_id = status.get('id')
+                status_value = status.get('status')  # e.g., 'sent', 'delivered'
+                recipient = status.get('recipient_id')  # Or 'id' for outbound
+                print(f"Status '{status_value}' for message {status_id} to {recipient}")
+                
+                # Log event
+                event_type = status_value or 'unknown_status'
+                WhatsAppWebhook.objects.create(event_type=event_type, payload=data)
+                
+            else:
+                print("No messages or statuses in payload")
+                # Still ACK unknown sub-events
             
-            return HttpResponse('OK', status=200)
+            return HttpResponse('OK', status=200)  # Always ACK successes
+            
+        except json.JSONDecodeError as e:
+            print(f"JSON decode error: {e}")
+            return HttpResponse('Invalid JSON', status=400)
+        except KeyError as e:
+            print(f"Missing key in payload: {e}")
+            return HttpResponse('OK', status=200)  # ACK malformed but don't retry forever
         except Exception as e:
-            return HttpResponse(f'Error: {str(e)}', status=400)
-    
+            print(f"Unexpected error: {e}")  # Use logger.error(traceback.format_exc()) in prod
+            return HttpResponse('OK', status=200)  # ACK to stop retries; investigate logs
+            
     return HttpResponse('Method not allowed', status=405)
+
+# Helper function for signature verification (uncomment and add to views.py or utils)
+def verify_signature(payload, signature, app_secret):
+    if not signature:
+        return False
+    expected_sig = 'sha256=' + hmac.new(
+        app_secret.encode(), payload, hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(signature, expected_sig)
