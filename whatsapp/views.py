@@ -63,6 +63,8 @@ def webhook(request):
         print("Webhook verification attempt:", mode, token, challenge)
         print("Expected token:", settings.WHATSAPP_VERIFY_TOKEN)
         
+        print("mode:", mode)
+        print("mode == 'subscribe' and token == settings.WHATSAPP_VERIFY_TOKEN:", mode == 'subscribe' and token == settings.WHATSAPP_VERIFY_TOKEN)
         if mode == 'subscribe' and token == settings.WHATSAPP_VERIFY_TOKEN:
             return HttpResponse(challenge, content_type='text/plain')
         return HttpResponse('Forbidden', status=403)
