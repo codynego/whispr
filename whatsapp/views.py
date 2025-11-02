@@ -9,6 +9,9 @@ from .serializers import WhatsAppMessageSerializer, SendWhatsAppMessageSerialize
 from .tasks import send_whatsapp_message_task
 import json
 from .tasks import process_whatsapp_message, send_whatsapp_message_task
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
 
 
 
@@ -73,6 +76,15 @@ def webhook(request):
         # Handle webhook events
         try:
             data = json.loads(request.body)
+            sender_number = data['entry'][0]['changes'][0]['value']['messages'][0]['from']
+            print("Received webhook POST from sender number:", sender_number)
+
+            user = User.objects.get(whatsapp__icontains=sender_number)
+            if not user:
+                print("User not found for sender number:", sender_number)
+                return HttpResponse('User not found', status=404)
+
+
             
             # Log webhook event
             WhatsAppWebhook.objects.create(

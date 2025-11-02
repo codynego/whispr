@@ -34,8 +34,6 @@ def process_whatsapp_message(message_instance):
         user_query = text_body
 
         user = User.objects.get(whatsapp=sender_number)
-
-
         # Call Gemini AI
 
         ai_response = get_gemini_response(prompt=user_query, user=user)
