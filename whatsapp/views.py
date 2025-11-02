@@ -105,7 +105,7 @@ def webhook(request):
             # Send via WhatsApp
             if reply_msg:
                 print("Sending reply message via WhatsApp:", reply_msg)
-                send_whatsapp_message_task.delay(reply_msg.id)
+                send_whatsapp_message_task(reply_msg.id)
                 print("Reply message sent.")
                         
             # TODO: Process webhook events (status updates, etc.)

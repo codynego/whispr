@@ -49,7 +49,7 @@ def process_whatsapp_message(message_instance):
             response_message = WhatsAppMessage.objects.create(
                 user=user,
                 to_number=sender_number,
-                message=ai_response,
+                message=response_text,
                 alert_type='auto_reply'
             )
 
