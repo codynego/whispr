@@ -35,8 +35,10 @@ class MessageService:
         # Semantic filtering (vector search)
         # if query_text:
         #     messages = retrieve_relevant_messages(self.user, messages, query_text, top_k=top_k)
-        print
-
+        print("🔎 Found", messages.count(), "messages after filters.")
+        
+        if messages.count() == 0:
+            return {"error": "No messages found."}
         return {
             "count": len(messages),
             "messages": [
