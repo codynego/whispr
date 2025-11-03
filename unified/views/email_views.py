@@ -14,8 +14,9 @@ from unified.serializers import ChannelAccountSerializer
 
 
 # === CONFIG ===
-REDIRECT_URI = "http://localhost:3000/dashboard/settings/integrations/callbacks"
-CLIENT_SECRET_FILE = "emails/credentials/client_secret.json"
+# REDIRECT_URI = "http://localhost:3000/dashboard/settings/integrations/callbacks"
+REDIRECT_URI = "https://www.whisone.app/dashboard/settings/integrations/callbacks"
+CLIENT_SECRET_FILE = "unified/credentials/client_secret.json"
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.send",
