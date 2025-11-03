@@ -14,7 +14,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # --- Security ---
 SECRET_KEY = config('SECRET_KEY')
-DEBUG = False  # Set to True only for local dev
+DEBUG = True  # Set to True only for local dev
 
 ALLOWED_HOSTS = [
     "whisone.app",
