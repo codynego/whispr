@@ -1,4 +1,3 @@
-
 """
 Production settings for Whisone (DigitalOcean deployment)
 """
@@ -13,11 +12,9 @@ import ssl
 # --- Base Paths ---
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
-
 # --- Security ---
 SECRET_KEY = config('SECRET_KEY')
-DEBUG = True
-
+DEBUG = False  # Set to True only for local dev
 
 ALLOWED_HOSTS = [
     "whisone.app",
@@ -31,7 +28,6 @@ CORS_ALLOWED_ORIGINS = [
     "https://www.whisone.app",
 ]
 CORS_ALLOW_CREDENTIALS = True
-# For preflight OPTIONS requests (login likely uses POST with custom headers)
 CORS_ALLOW_METHODS = [
     'DELETE',
     'GET',
@@ -40,7 +36,6 @@ CORS_ALLOW_METHODS = [
     'POST',
     'PUT',
 ]
-
 CORS_ALLOW_HEADERS = [
     'accept',
     'accept-encoding',
@@ -53,17 +48,15 @@ CORS_ALLOW_HEADERS = [
     'x-requested-with',
 ]
 
-
-
 CSRF_TRUSTED_ORIGINS = [
     'https://whisone.app',
     'https://www.whisone.app',
     'https://api.whisone.app',
-
 ]
 
+# --- Celery Retries ---
 broker_connection_retry_on_startup = True
-broker_connection_max_retries = 5
+broker_connection_max_retries = 20  # Increased for Upstash transients
 
 # --- Installed Apps ---
 INSTALLED_APPS = [
@@ -94,17 +87,16 @@ INSTALLED_APPS = [
 
 # --- Middleware ---
 MIDDLEWARE = [
-    'corsheaders.middleware.CorsMiddleware',   # must be first
+    'corsheaders.middleware.CorsMiddleware',  # Must be first
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
-
 
 ROOT_URLCONF = 'whisprai.urls'
 
@@ -128,14 +120,6 @@ TEMPLATES = [
 WSGI_APPLICATION = 'whisprai.wsgi.application'
 
 # --- Database ---
-# DATABASES = {
-#     'default': dj_database_url.config(
-#         default=config('DATABASE_URL', default='postgres://whisone_user:your_secure_password@localhost:5432/whisone_db'),
-#         conn_max_age=600,
-#         ssl_require=False  # ❌ Disable SSL since it's local
-#     )
-# }
-
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -146,7 +130,6 @@ DATABASES = {
         'PORT': config('DB_PORT', default='5432'),
     }
 }
-
 
 # --- Authentication ---
 AUTH_USER_MODEL = 'users.User'
@@ -185,15 +168,15 @@ STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
-
-# Use Whitenoise for Django-served static (Gunicorn)
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
+# --- Celery / Redis (Upstash-Optimized) ---
+REDIS_URL = config('REDIS_URL', default='redis://localhost:6379/0')  # Set to rediss://... in .env
 
-CORS_ALLOW_CREDENTIALS = True
-
-# --- Celery / Redis ---
-REDIS_URL = config('REDIS_URL', default='redis://localhost:6379/0')
+# Append SSL param if rediss:// (for Upstash self-signed certs)
+if REDIS_URL.startswith("rediss://"):
+    separator = "&" if "?" in REDIS_URL else "?"
+    REDIS_URL = f"{REDIS_URL}{separator}ssl_cert_reqs=none"
 
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
@@ -206,25 +189,21 @@ CELERY_ENABLE_UTC = True
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 
-REDIS_URL = config("REDIS_URL", "redis://localhost:6379")
-REDIS_SSL = config("REDIS_SSL", "False").lower() == "true"
-
-# Add ssl_cert_reqs parameter to the URL if using rediss://
-if REDIS_URL.startswith("rediss://"):
-    # Check if the URL already has parameters
-    separator = "&" if "?" in REDIS_URL else "?"
-    REDIS_URL = f"{REDIS_URL}{separator}ssl_cert_reqs=none"
-
-
-
-# Configure SSL for Celery if using rediss://
-if REDIS_URL.startswith("rediss://"):
-    CELERY_BROKER_USE_SSL = {
-        "ssl_cert_reqs": ssl.CERT_NONE
-    }
-    CELERY_RESULT_BACKEND_USE_SSL = {
-        "ssl_cert_reqs": ssl.CERT_NONE
-    }
+# Upstash-Specific: Keepalives & Retries to Prevent Idle Drops
+CELERY_BROKER_TRANSPORT_OPTIONS = {
+    'visibility_timeout': 3600,  # 1 hour
+    'socket_timeout': 30,
+    'socket_connect_timeout': 10,
+    'socket_keepalive': True,
+    'socket_keepalive_options': {3: 7200},  # Probe every 2 hours
+    'retry_policy': {
+        'interval_start': 0,
+        'interval_step': 1,
+        'max_retries': 20,
+    },
+    'ssl_cert_reqs': ssl.CERT_NONE if REDIS_URL.startswith('rediss://') else None,  # Upstash: Disable verification
+}
+CELERY_RESULT_BACKEND_TRANSPORT_OPTIONS = CELERY_BROKER_TRANSPORT_OPTIONS
 
 CELERY_BEAT_SCHEDULE = {
     'sync-emails-every-10-mins': {
