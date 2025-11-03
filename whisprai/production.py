@@ -29,7 +29,7 @@ ALLOWED_HOSTS = [
 CORS_ALLOWED_ORIGINS = [
     'https://whisone.app',
     'https://www.whisone.app',
-    'https://api.whisone.app',
+    "https://*.whisone.app",
 ]
 CORS_ALLOW_CREDENTIALS = True
 # For preflight OPTIONS requests (login likely uses POST with custom headers)
