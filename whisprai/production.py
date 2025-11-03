@@ -206,6 +206,26 @@ CELERY_ENABLE_UTC = True
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 
+REDIS_URL = config("REDIS_URL", "redis://localhost:6379")
+REDIS_SSL = config("REDIS_SSL", "False").lower() == "true"
+
+# Add ssl_cert_reqs parameter to the URL if using rediss://
+if REDIS_URL.startswith("rediss://"):
+    # Check if the URL already has parameters
+    separator = "&" if "?" in REDIS_URL else "?"
+    REDIS_URL = f"{REDIS_URL}{separator}ssl_cert_reqs=none"
+
+
+
+# Configure SSL for Celery if using rediss://
+if REDIS_URL.startswith("rediss://"):
+    CELERY_BROKER_USE_SSL = {
+        "ssl_cert_reqs": ssl.CERT_NONE
+    }
+    CELERY_RESULT_BACKEND_USE_SSL = {
+        "ssl_cert_reqs": ssl.CERT_NONE
+    }
+
 CELERY_BEAT_SCHEDULE = {
     'sync-emails-every-10-mins': {
         'task': 'emails.tasks.periodic_email_sync',
