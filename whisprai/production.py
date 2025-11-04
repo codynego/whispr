@@ -206,9 +206,9 @@ CELERY_BROKER_TRANSPORT_OPTIONS = {
 CELERY_RESULT_BACKEND_TRANSPORT_OPTIONS = CELERY_BROKER_TRANSPORT_OPTIONS
 
 CELERY_BEAT_SCHEDULE = {
-    'sync-emails-every-10-mins': {
-        'task': 'emails.tasks.periodic_email_sync',
-        'schedule': 600.0,
+    'sync-messages-every-2-mins': {
+        'task': 'unified.tasks.common_tasks.periodic_channel_sync',
+        'schedule': 120.0,
     },
 }
 
