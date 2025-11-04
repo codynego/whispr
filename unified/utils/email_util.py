@@ -91,7 +91,7 @@ def fetch_gmail_messages(account: ChannelAccount, limit=10):
         client_id=settings.GMAIL_CLIENT_ID,
         client_secret=settings.GMAIL_CLIENT_SECRET,
     )
-    user_rule = UserRule.objects.filter(user=account__user)
+    user_rule = UserRule.objects.filter(user=account.user)
 
     service = build("gmail", "v1", credentials=creds)
     results = service.users().messages().list(userId="me", maxResults=limit).execute()
