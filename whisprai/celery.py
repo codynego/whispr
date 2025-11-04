@@ -17,13 +17,9 @@ app.autodiscover_tasks()
 
 # Celery Beat schedule
 app.conf.beat_schedule = {
-    'sync-emails-every-15-minutes': {
-        'task': 'emails.tasks.sync_all_emails',
-        'schedule': crontab(minute='*/15'),
-    },
-    'check-email-importance-every-30-minutes': {
-        'task': 'emails.tasks.analyze_email_importance',
-        'schedule': crontab(minute='*/30'),
+    'sync-messages-every-2-minutes': {
+        'task': 'unified.tasks.common_tasks.periodic_channel_sync',
+        'schedule': crontab(minute='*/2'),
     },
 }
 

@@ -100,12 +100,13 @@ def analyze_message_importance():
         logger.error(f'Error in batch importance analysis: {str(e)}')
         return {'status': 'error', 'message': str(e)}
 
+
 # ==============================================================
 # === Periodic Scheduled Sync
 # ==============================================================
 
-@shared_task
-def periodic_channel_sync():
+@shared_task(bind=True, autoretry_for=(Exception,), max_retries=3)
+def periodic_channel_sync(self):
     """Periodically syncs all connected accounts."""
     logger.info("⏰ Starting periodic unified channel sync...")
     try:
