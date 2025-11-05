@@ -156,6 +156,67 @@ def fetch_gmail_messages(self, account: ChannelAccount, limit=50):
 
     return synced
 
+def _store_full_message(service, account, message_id):
+    msg_detail = service.users().messages().get(userId="me", id=message_id, format="full").execute()
+    payload = msg_detail.get("payload", {})
+    headers = payload.get("headers", [])
+    
+    header_map = {h["name"].lower(): h["value"] for h in headers}
+    subject = header_map.get("subject", "")
+    from_raw = header_map.get("from", "")
+    to_raw = header_map.get("to", "")
+    date_raw = header_map.get("date", "")
+
+    sender_name, sender_email = clean_sender_field(from_raw)
+    _, recipient_email = clean_sender_field(to_raw)
+    snippet = msg_detail.get("snippet", "")
+    plain_body, html_body = extract_bodies_recursive(payload)
+    received_at = parse_gmail_date(date_raw)
+    thread_id = msg_detail.get("threadId")
+
+    user_rule = UserRule.objects.filter(user=account.user)
+    _, is_important, score = is_message_important(f"{subject} {snippet}", user_rule)
+
+    # Conversation handling
+    conversation, _ = Conversation.objects.get_or_create(
+        account=account,
+        thread_id=thread_id,
+        defaults={
+            "channel": "email",
+            "title": subject[:200] or "No Subject",
+            "last_message_at": received_at,
+            "last_sender": sender_email,
+        },
+    )
+
+    if not conversation.last_message_at or received_at > conversation.last_message_at:
+        conversation.last_message_at = received_at
+        conversation.last_sender = sender_email
+        if subject:
+            conversation.title = subject[:200]
+        conversation.save(update_fields=["last_message_at", "last_sender", "title", "updated_at"])
+
+    Message.objects.update_or_create(
+        account=account,
+        conversation=conversation,
+        external_id=message_id,
+        defaults={
+            "channel": "email",
+            "sender": sender_email,
+            "sender_name": sender_name,
+            "recipients": [recipient_email] if recipient_email else [],
+            "content": plain_body or snippet,
+            "metadata": {"subject": subject, "html_body": html_body},
+            "attachments": [],
+            "importance": "high" if is_important else "medium",
+            "importance_score": score,
+            "is_read": "UNREAD" not in msg_detail.get("labelIds", []),
+            "is_incoming": True,
+            "sent_at": received_at,
+        },
+    )
+
+
 
 # def fetch_gmail_messages(account: ChannelAccount, limit=10):
 #     """
