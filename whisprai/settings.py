@@ -1,7 +1,7 @@
-import os
+from decouple import config
 
 # Check DJANGO_ENV environment variable
-ENV = os.getenv('DJANGO_ENV', 'production').lower()
+ENV = config('DJANGO_ENV', 'production').lower()
 
 if ENV == 'production':
     from .production import *
