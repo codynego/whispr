@@ -148,7 +148,7 @@ def sync_messages(request):
         )
 
     # Trigger async Celery task
-    task = sync_channel_account(account.id)
+    task = sync_channel_account.delay(account.id)
 
     return Response(
         {"message": "Sync started successfully"},

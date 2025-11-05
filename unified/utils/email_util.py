@@ -84,7 +84,7 @@ def parse_gmail_date(date_str):
 #     autoretry_for=(Exception,),
 #     max_retries=3
 # )
-def fetch_gmail_messages(account_id: int, limit=50):
+def fetch_gmail_messages(account_id: int, limit=20):
     from google.auth.transport.requests import Request
 
     account = ChannelAccount.objects.get(id=account_id, is_active=True)
