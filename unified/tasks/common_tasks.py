@@ -16,14 +16,8 @@ logger = logging.getLogger(__name__)
 # === Generic Unified Sync Task
 # ==============================================================
 
-@shared_task(
-    bind=True,
-    soft_time_limit=60,
-    time_limit=120,
-    autoretry_for=(Exception,),
-    max_retries=3
-)
-def sync_channel_account(self, account_id: int):
+
+def sync_channel_account(account_id: int):
     """
     Generic task to sync messages for any connected channel (email, WhatsApp, Slack, etc.).
     Uses provider to route to correct fetch function.
@@ -37,9 +31,9 @@ def sync_channel_account(self, account_id: int):
 
         if channel == "email":
             if provider == "gmail":
-                count = fetch_gmail_messages(account, limit=10)
+                count = fetch_gmail_messages.delay(account, limit=10)
             elif provider == "outlook":
-                count = fetch_gmail_messages(account, limit=10)
+                count = fetch_gmail_messages.delay(account, limit=10)
             else:
                 logger.warning(f"⚠️ Unsupported email provider: {provider}")
                 return {"status": "error", "message": f"Unsupported provider {provider}"}
@@ -78,7 +72,7 @@ def sync_all_channel_accounts():
         total_synced = 0
 
         for account in active_accounts:
-            sync_channel_account.delay(account.id)
+            sync_channel_account(account.id)
             total_synced += 1
 
         logger.info(f"Batch sync started for {total_synced} accounts.")

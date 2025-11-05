@@ -77,13 +77,17 @@ def parse_gmail_date(date_str):
     except Exception:
         return timezone.now()
 
-
-
-def fetch_gmail_messages(account: ChannelAccount, limit=10):
+@shared_task(
+    bind=True,
+    soft_time_limit=60,
+    time_limit=120,
+    autoretry_for=(Exception,),
+    max_retries=3
+)
+def fetch_gmail_messages(self, account: ChannelAccount, limit=50):
     """
-    Fetch and store latest Gmail messages for a ChannelAccount.
-    Automatically attaches messages to a Conversation (thread).
-    Includes both plain text and HTML body in metadata.
+    Gmail incremental sync using History API.
+    Falls back to initial fetch if no last_history_id exists.
     """
     creds = Credentials(
         token=account.access_token,
@@ -92,84 +96,158 @@ def fetch_gmail_messages(account: ChannelAccount, limit=10):
         client_id=settings.GMAIL_CLIENT_ID,
         client_secret=settings.GMAIL_CLIENT_SECRET,
     )
-    user_rule = UserRule.objects.filter(user=account.user)
 
     service = build("gmail", "v1", credentials=creds)
-    results = service.users().messages().list(userId="me", maxResults=limit).execute()
-    messages = results.get("messages", [])
+
+    # If first time syncing, fallback to initial fetch method
+    if not account.last_history_id:
+        logger.info(f"🆕 First sync for {account.address_or_id}, fetching {limit} latest messages")
+
+        results = service.users().messages().list(userId="me", maxResults=limit).execute()
+        messages = results.get("messages", [])
+
+        for msg in messages:
+            _store_full_message(service, account, msg["id"])
+
+        # Save starting history ID for future incremental sync
+        profile = service.users().getProfile(userId="me").execute()
+        account.last_history_id = profile.get("historyId")
+        account.save(update_fields=["last_history_id"])
+
+        logger.info(f"✅ Initial sync complete for {account.address_or_id}")
+        return len(messages)
+
+    # Incremental history sync
+    logger.info(f"🔄 Incremental sync for {account.address_or_id}, history since {account.last_history_id}")
+
+    try:
+        history_resp = service.users().history().list(
+            userId="me",
+            startHistoryId=account.last_history_id
+        ).execute()
+
+    except Exception as e:
+        logger.warning(f"⚠️ History expired for {account.address_or_id}, resetting history. {e}")
+        account.last_history_id = None
+        account.save(update_fields=["last_history_id"])
+        return fetch_gmail_messages(account, limit)
+
+    histories = history_resp.get("history", [])
+    msg_ids = set()
+
+    for h in histories:
+        for m in h.get("messagesAdded", []):
+            msg_ids.add(m["message"]["id"])
+        for m in h.get("messages", []):  # label changes etc
+            msg_ids.add(m["id"])
+
     synced = 0
-
-    for msg in messages:
-        msg_detail = service.users().messages().get(userId="me", id=msg["id"]).execute()
-        payload = msg_detail.get("payload", {})
-        headers = payload.get("headers", [])
-
-        # === Normalize headers ===
-        header_map = {h["name"].lower(): h["value"] for h in headers}
-        subject = header_map.get("subject", "")
-        from_raw = header_map.get("from", "")
-        to_raw = header_map.get("to", "")
-        date_raw = header_map.get("date", "")
-
-        sender_name, sender_email = clean_sender_field(from_raw)
-        _, recipient_email = clean_sender_field(to_raw)
-        snippet = msg_detail.get("snippet", "")
-        plain_body, html_body = extract_bodies_recursive(payload)
-        received_at = parse_gmail_date(date_raw)
-        thread_id = msg_detail.get("threadId")
-
-        # === Conversation handling ===
-        conversation, _ = Conversation.objects.get_or_create(
-            account=account,
-            thread_id=thread_id,
-            defaults={
-                "channel": "email",
-                "title": subject[:200] or "No Subject",
-                "last_message_at": received_at,
-                "last_sender": sender_email,
-            },
-        )
-
-        # Update conversation if newer message arrives
-        if not conversation.last_message_at or received_at > conversation.last_message_at:
-            conversation.last_message_at = received_at
-            conversation.last_sender = sender_email
-            if subject:
-                conversation.title = subject[:200]
-            conversation.save(update_fields=["last_message_at", "last_sender", "title", "updated_at"])
-
-        # === Analyze importance ===
-        _, is_important, score = is_message_important(f"{subject} {snippet}", user_rule)
-
-        # === Save message ===
-        Message.objects.update_or_create(
-            account=account,
-            conversation=conversation,
-            external_id=msg["id"],
-            defaults={
-                "channel": "email",
-                "sender": sender_email,
-                "sender_name": sender_name,
-                "recipients": [recipient_email] if recipient_email else [],
-                "content": plain_body or snippet,
-                # ✅ Save subject, raw Gmail data, and HTML body in metadata
-                "metadata": {
-                    "subject": subject,
-                    "html_body": html_body,
-                },
-                "attachments": [],
-                "importance": "high" if is_important else "medium",
-                "importance_score": score,
-                "is_read": "UNREAD" not in msg_detail.get("labelIds", []),
-                "is_incoming": True,
-                "sent_at": received_at,
-            },
-        )
-
+    for msg_id in msg_ids:
+        _store_full_message(service, account, msg_id)
         synced += 1
 
-    logger.info(f"✅ Synced {synced} Gmail messages for {account.address_or_id}")
+    # Update history pointer
+    new_history_id = history_resp.get("historyId")
+    if new_history_id:
+        account.last_history_id = new_history_id
+        account.save(update_fields=["last_history_id"])
+
+    logger.info(f"✅ Incremental sync complete for {account.address_or_id}. New messages: {synced}")
+
     return synced
+
+
+# def fetch_gmail_messages(account: ChannelAccount, limit=10):
+#     """
+#     Fetch and store latest Gmail messages for a ChannelAccount.
+#     Automatically attaches messages to a Conversation (thread).
+#     Includes both plain text and HTML body in metadata.
+#     """
+#     creds = Credentials(
+#         token=account.access_token,
+#         refresh_token=account.refresh_token,
+#         token_uri="https://oauth2.googleapis.com/token",
+#         client_id=settings.GMAIL_CLIENT_ID,
+#         client_secret=settings.GMAIL_CLIENT_SECRET,
+#     )
+#     user_rule = UserRule.objects.filter(user=account.user)
+
+#     service = build("gmail", "v1", credentials=creds)
+#     results = service.users().messages().list(userId="me", maxResults=limit).execute()
+#     messages = results.get("messages", [])
+#     synced = 0
+
+#     for msg in messages:
+#         msg_detail = service.users().messages().get(userId="me", id=msg["id"]).execute()
+#         payload = msg_detail.get("payload", {})
+#         headers = payload.get("headers", [])
+
+#         # === Normalize headers ===
+#         header_map = {h["name"].lower(): h["value"] for h in headers}
+#         subject = header_map.get("subject", "")
+#         from_raw = header_map.get("from", "")
+#         to_raw = header_map.get("to", "")
+#         date_raw = header_map.get("date", "")
+
+#         sender_name, sender_email = clean_sender_field(from_raw)
+#         _, recipient_email = clean_sender_field(to_raw)
+#         snippet = msg_detail.get("snippet", "")
+#         plain_body, html_body = extract_bodies_recursive(payload)
+#         received_at = parse_gmail_date(date_raw)
+#         thread_id = msg_detail.get("threadId")
+
+#         # === Conversation handling ===
+#         conversation, _ = Conversation.objects.get_or_create(
+#             account=account,
+#             thread_id=thread_id,
+#             defaults={
+#                 "channel": "email",
+#                 "title": subject[:200] or "No Subject",
+#                 "last_message_at": received_at,
+#                 "last_sender": sender_email,
+#             },
+#         )
+
+#         # Update conversation if newer message arrives
+#         if not conversation.last_message_at or received_at > conversation.last_message_at:
+#             conversation.last_message_at = received_at
+#             conversation.last_sender = sender_email
+#             if subject:
+#                 conversation.title = subject[:200]
+#             conversation.save(update_fields=["last_message_at", "last_sender", "title", "updated_at"])
+
+#         # === Analyze importance ===
+#         _, is_important, score = is_message_important(f"{subject} {snippet}", user_rule)
+
+#         # === Save message ===
+#         Message.objects.update_or_create(
+#             account=account,
+#             conversation=conversation,
+#             external_id=msg["id"],
+#             defaults={
+#                 "channel": "email",
+#                 "sender": sender_email,
+#                 "sender_name": sender_name,
+#                 "recipients": [recipient_email] if recipient_email else [],
+#                 "content": plain_body or snippet,
+#                 # ✅ Save subject, raw Gmail data, and HTML body in metadata
+#                 "metadata": {
+#                     "subject": subject,
+#                     "html_body": html_body,
+#                 },
+#                 "attachments": [],
+#                 "importance": "high" if is_important else "medium",
+#                 "importance_score": score,
+#                 "is_read": "UNREAD" not in msg_detail.get("labelIds", []),
+#                 "is_incoming": True,
+#                 "sent_at": received_at,
+#             },
+#         )
+
+#         synced += 1
+
+#     logger.info(f"✅ Synced {synced} Gmail messages for {account.address_or_id}")
+#     return synced
 
 
 @shared_task(bind=True, autoretry_for=(Exception,), max_retries=3)
