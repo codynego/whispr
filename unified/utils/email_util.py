@@ -77,14 +77,14 @@ def parse_gmail_date(date_str):
     except Exception:
         return timezone.now()
 
-@shared_task(
-    bind=True,
-    soft_time_limit=300,   # 5 min soft
-    time_limit=360,       # 6 min hard
-    autoretry_for=(Exception,),
-    max_retries=3
-)
-def fetch_gmail_messages(self, account_id: int, limit=50):
+# @shared_task(
+#     bind=True,
+#     soft_time_limit=300,   # 5 min soft
+#     time_limit=360,       # 6 min hard
+#     autoretry_for=(Exception,),
+#     max_retries=3
+# )
+def fetch_gmail_messages(account_id: int, limit=50):
     from google.auth.transport.requests import Request
 
     account = ChannelAccount.objects.get(id=account_id, is_active=True)
@@ -135,7 +135,7 @@ def fetch_gmail_messages(self, account_id: int, limit=50):
         account.last_history_id = None
         account.save(update_fields=["last_history_id"])
         # Recall task as NEW task instead of recursion
-        fetch_gmail_messages.delay(account_id, limit)
+        fetch_gmail_messages(account_id, limit)
         return 0
 
     histories = history_resp.get("history", [])
