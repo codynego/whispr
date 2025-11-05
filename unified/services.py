@@ -137,10 +137,10 @@ class MessageService:
                     messages = messages.filter(sent_at__date__gte=start)
 
             # 🔍 Use semantic search for relevance if query_text is provided
-            if query_text:
-                messages = retrieve_relevant_messages(self.user, messages, query_text, top_k=limit)
-            else:
-                messages = messages.order_by("-sent_at")[:limit]
+            # if query_text:
+            #     messages = retrieve_relevant_messages(self.user, messages, query_text, top_k=limit)
+            # else:
+            #     messages = messages.order_by("-sent_at")[:limit]
 
             if len(messages) == 0:
                 return {"error": "No messages found for your query."}
