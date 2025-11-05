@@ -174,7 +174,9 @@ def _store_full_message(service, account, message_id):
     thread_id = msg_detail.get("threadId")
 
     user_rule = UserRule.objects.filter(user=account.user)
-    _, is_important, score = tuple(1, False, 0.0)
+    # _, is_important, score = is_message_important(f"{subject} {snippet}", user_rule)
+    is_important = False
+    score = 0.0
 
     # Conversation handling
     conversation, _ = Conversation.objects.get_or_create(
