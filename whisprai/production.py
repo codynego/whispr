@@ -302,6 +302,15 @@ CSRF_TRUSTED_ORIGINS = [
     "https://api.whisone.app",
 ]
 
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+
 # --- Installed Apps ---
 INSTALLED_APPS = [
     "django.contrib.admin",
