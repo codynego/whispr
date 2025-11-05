@@ -89,6 +89,7 @@ def fetch_gmail_messages(self, account_id: int, limit=50):
     Gmail incremental sync using History API.
     Falls back to initial fetch if no last_history_id exists.
     """
+    account = ChannelAccount.objects.get(id=account_id, is_active=True)
     creds = Credentials(
         token=account.access_token,
         refresh_token=account.refresh_token,
@@ -97,7 +98,7 @@ def fetch_gmail_messages(self, account_id: int, limit=50):
         client_secret=settings.GMAIL_CLIENT_SECRET,
     )
 
-    account = ChannelAccount.objects.get(id=account_id, is_active=True)
+    
     service = build("gmail", "v1", credentials=creds)
 
     # If first time syncing, fallback to initial fetch method
