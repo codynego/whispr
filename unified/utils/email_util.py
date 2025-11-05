@@ -79,17 +79,16 @@ def parse_gmail_date(date_str):
 
 @shared_task(
     bind=True,
-    soft_time_limit=60,
-    time_limit=120,
+    soft_time_limit=300,   # 5 min soft
+    time_limit=360,       # 6 min hard
     autoretry_for=(Exception,),
     max_retries=3
 )
 def fetch_gmail_messages(self, account_id: int, limit=50):
-    """
-    Gmail incremental sync using History API.
-    Falls back to initial fetch if no last_history_id exists.
-    """
+    from google.auth.transport.requests import Request
+
     account = ChannelAccount.objects.get(id=account_id, is_active=True)
+
     creds = Credentials(
         token=account.access_token,
         refresh_token=account.refresh_token,
@@ -98,12 +97,18 @@ def fetch_gmail_messages(self, account_id: int, limit=50):
         client_secret=settings.GMAIL_CLIENT_SECRET,
     )
 
-    
-    service = build("gmail", "v1", credentials=creds)
+    # ✅ Refresh token ONCE at beginning (avoid repeated slow refresh)
+    if not creds.valid and creds.refresh_token:
+        logger.info(f"🔁 Refreshing Gmail token for {account.address_or_id}")
+        creds.refresh(Request())
+        account.access_token = creds.token
+        account.save(update_fields=["access_token"])
 
-    # If first time syncing, fallback to initial fetch method
+    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+
+    # ✅ FIRST SYNC — fetch last X emails only
     if not account.last_history_id:
-        logger.info(f"🆕 First sync for {account.address_or_id}, fetching {limit} latest messages")
+        logger.info(f"🆕 First sync for {account.address_or_id}, fetch {limit} messages")
 
         results = service.users().messages().list(userId="me", maxResults=limit).execute()
         messages = results.get("messages", [])
@@ -111,17 +116,14 @@ def fetch_gmail_messages(self, account_id: int, limit=50):
         for msg in messages:
             _store_full_message(service, account, msg["id"])
 
-        # Save starting history ID for future incremental sync
         profile = service.users().getProfile(userId="me").execute()
         account.last_history_id = profile.get("historyId")
         account.save(update_fields=["last_history_id"])
 
-        logger.info(f"✅ Initial sync complete for {account.address_or_id}")
+        logger.info(f"✅ Initial sync done for {account.address_or_id} ({len(messages)} messages)")
         return len(messages)
 
-    # Incremental history sync
-    logger.info(f"🔄 Incremental sync for {account.address_or_id}, history since {account.last_history_id}")
-
+    # ✅ INCREMENTAL SYNC
     try:
         history_resp = service.users().history().list(
             userId="me",
@@ -129,34 +131,29 @@ def fetch_gmail_messages(self, account_id: int, limit=50):
         ).execute()
 
     except Exception as e:
-        logger.warning(f"⚠️ History expired for {account.address_or_id}, resetting history. {e}")
+        logger.warning(f"⚠️ Gmail history expired for {account.address_or_id}, fallback. {e}")
         account.last_history_id = None
         account.save(update_fields=["last_history_id"])
-        return fetch_gmail_messages(account, limit)
+        # Recall task as NEW task instead of recursion
+        fetch_gmail_messages.delay(account_id, limit)
+        return 0
 
     histories = history_resp.get("history", [])
-    msg_ids = set()
-
-    for h in histories:
-        for m in h.get("messagesAdded", []):
-            msg_ids.add(m["message"]["id"])
-        for m in h.get("messages", []):  # label changes etc
-            msg_ids.add(m["id"])
+    msg_ids = {m["message"]["id"] for h in histories for m in h.get("messagesAdded", [])}
 
     synced = 0
     for msg_id in msg_ids:
         _store_full_message(service, account, msg_id)
         synced += 1
 
-    # Update history pointer
     new_history_id = history_resp.get("historyId")
     if new_history_id:
         account.last_history_id = new_history_id
         account.save(update_fields=["last_history_id"])
 
-    logger.info(f"✅ Incremental sync complete for {account.address_or_id}. New messages: {synced}")
-
+    logger.info(f"✅ Incremental sync: {synced} new messages for {account.address_or_id}")
     return synced
+
 
 def _store_full_message(service, account, message_id):
     msg_detail = service.users().messages().get(userId="me", id=message_id, format="full").execute()
