@@ -16,7 +16,13 @@ logger = logging.getLogger(__name__)
 # === Generic Unified Sync Task
 # ==============================================================
 
-@shared_task
+@shared_task(
+    bind=True,
+    soft_time_limit=60,
+    time_limit=120,
+    autoretry_for=(Exception,),
+    max_retries=3
+)
 def sync_channel_account(account_id: int):
     """
     Generic task to sync messages for any connected channel (email, WhatsApp, Slack, etc.).
@@ -72,7 +78,7 @@ def sync_all_channel_accounts():
         total_synced = 0
 
         for account in active_accounts:
-            sync_channel_account(account.id)
+            sync_channel_account.delay(account.id)
             total_synced += 1
 
         logger.info(f"Batch sync started for {total_synced} accounts.")

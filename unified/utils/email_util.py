@@ -78,6 +78,7 @@ def parse_gmail_date(date_str):
         return timezone.now()
 
 
+
 def fetch_gmail_messages(account: ChannelAccount, limit=10):
     """
     Fetch and store latest Gmail messages for a ChannelAccount.
