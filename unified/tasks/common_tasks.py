@@ -70,7 +70,7 @@ def sync_channel_account(self, account_id: int):
 # === Batch Sync All Accounts
 # ==============================================================
 
-@shared_task
+
 def sync_all_channel_accounts():
     """Sync messages for all active channel accounts (email, WhatsApp, Slack, etc.)."""
     try:
@@ -116,7 +116,7 @@ def periodic_channel_sync(self):
     """Periodically syncs all connected accounts."""
     logger.info("⏰ Starting periodic unified channel sync...")
     try:
-        sync_all_channel_accounts.delay()
+        sync_all_channel_accounts()
     except Exception as e:
         logger.error(f"❌ Failed periodic sync: {e}")
     logger.info("✅ Finished periodic unified channel sync.")
