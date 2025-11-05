@@ -151,7 +151,7 @@ def sync_messages(request):
     task = sync_channel_account(account.id)
 
     return Response(
-        {"message": "Sync started successfully", "task_id": task.id},
+        {"message": "Sync started successfully"},
         status=status.HTTP_202_ACCEPTED,
     )
 
