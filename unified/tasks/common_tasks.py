@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 # === Generic Unified Sync Task
 # ==============================================================
 
-
+@shared_task
 def sync_channel_account(account_id: int):
     """
     Generic task to sync messages for any connected channel (email, WhatsApp, Slack, etc.).
@@ -64,7 +64,7 @@ def sync_channel_account(account_id: int):
 # === Batch Sync All Accounts
 # ==============================================================
 
-
+@shared_task
 def sync_all_channel_accounts():
     """Sync messages for all active channel accounts (email, WhatsApp, Slack, etc.)."""
     try:
