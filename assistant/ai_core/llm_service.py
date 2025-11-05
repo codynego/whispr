@@ -130,13 +130,14 @@ You are **Whisone**, an intelligent assistant that helps users manage and summar
 {json.dumps(task_result, indent=2, default=self._json_serializable) if task_result else "None"}
 
 Instructions:
-- Reply in 1–2 short sentences.
+- Reply in 2-3 short sentences.
 - Be direct, factual, and clear.
 - Avoid generic phrases like “I’ll check that for you.”
-- For summaries → give a clean summary sentence.
+- For summaries → give a clean summary sentence for all items.
 - For counts or lists → give numbers or concise overviews.
 - For confirmed actions → affirm completion naturally.
 - For mixed insights → synthesize key highlights only.
+- for items that need action, always suggest next step action
 """
         response = self.model_obj.generate_content(prompt)
         reply = response.text.strip()

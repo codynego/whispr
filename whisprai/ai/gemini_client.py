@@ -112,6 +112,7 @@ def get_gemini_response(
         - Group related ideas logically.
         - Avoid filler or repetition.
         - End with a short "Next Steps" or "Main Takeaway" section if relevant.
+        - if more than 1 item to summarize, summarize them in a clear and understandable manner
 
         --- TEXT TO SUMMARIZE ---
         {prompt}
