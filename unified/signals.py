@@ -13,6 +13,7 @@ from django.utils import timezone
 import json
 import re
 import traceback  # For better logging
+from django.db import transaction
 
 @shared_task
 def compute_message_importance_and_alert(message_id):
