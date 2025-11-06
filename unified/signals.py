@@ -116,11 +116,11 @@ def handle_new_message(sender, instance, created, **kwargs):
     # else:
     #     importance_level = "low"
 
-    analysis_text = (
-        f"Importance score: {combined_score:.2f} — "
-        f"Marked as {importance_level.upper()} "
-        f"({'important' if is_important else 'normal'})"
-    )
+    # analysis_text = (
+    #     f"Importance score: {combined_score:.2f} — "
+    #     f"Marked as {importance_level.upper()} "
+    #     f"({'important' if is_important else 'normal'})"
+    # )
 
     # === Update the instance immediately ===
     instance.embedding = message_embedding.tolist() if message_embedding is not None else None
