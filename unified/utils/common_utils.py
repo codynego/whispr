@@ -8,7 +8,17 @@ import hashlib  # Correct: Standard lib for md5
 import time  # For optional timing
 
 # Global refs (unchanged)
-model = SentenceTransformer("all-MiniLM-L6-v2")
+
+model = None
+
+def get_model():
+    global model
+    if model is None:
+        print("Loading SentenceTransformer model once per worker…")
+        from sentence_transformers import SentenceTransformer
+        model = SentenceTransformer("all-MiniLM-L6-v2")
+    return model
+
 IMPORTANT_KEYWORDS = [
     "urgent", "action required", "meeting", "deadline", "CEO", "important",
     "follow up", "please review", "immediate attention", "project", "money",
@@ -100,6 +110,7 @@ def is_message_important(
     if needs_embedding:
         encode_start = time.perf_counter()
         try:
+            model = get_model()
             embedding = model.encode([text])
             print(f"DEBUG: Encoded in {time.perf_counter() - encode_start:.3f}s")  # Optional log
         except Exception as e:
