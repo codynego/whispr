@@ -198,7 +198,7 @@ def fetch_gmail_messages(account_id: int, limit=20) -> int:
     if full_messages:
         # Hand off to Celery for background storage
         print(f"DEBUG: Delaying store_gmail_messages task with {len(full_messages)} messages")
-        store_gmail_messages.delay(account_id, full_messages)
+        store_gmail_messages(account_id, full_messages)
         print(f"DEBUG: Task delayed successfully")
         return len(full_messages)
     print(f"DEBUG: No full messages to process, returning 0")
@@ -209,89 +209,71 @@ def fetch_gmail_messages(account_id: int, limit=20) -> int:
 # ✅ Celery task: Store full Gmail messages (no API calls)
 # ==============================================================
 
-@shared_task(name="store_gmail_messages")
-def store_gmail_messages(account_id: int, message_details_list: List[Dict[str, Any]]) -> None:
-    """
-    Background Celery task to store Gmail messages in DB.
-    Runs independently so Gmail fetch doesn't block.
-    """
-    print(f"DEBUG: Starting store_gmail_messages_task for account {account_id} ({len(message_details_list)} messages)")
+# @shared_task(name="store_gmail_messages")
+import time
+from django.db import transaction
+from celery.exceptions import WorkerLostError
 
-    account = ChannelAccount.objects.select_related("user").get(id=account_id, is_active=True)
-    user_rules = list(UserRule.objects.filter(user=account.user))
-    print(f"DEBUG: Found {len(user_rules)} user rules")
+@shared_task(name="store_gmail_messages", bind=True)  # Add bind=True for self.retry if needed
+def store_gmail_messages(self, account_id: int, message_details_list: List[Dict[str, Any]]) -> None:
+    start_time = time.time()
+    print(f"DEBUG: Starting store_gmail_messages_task for account {account_id} ({len(message_details_list)} messages) at {start_time}")
 
-    processed = 0
+    try:
+        with transaction.atomic():  # Wrap whole task in atomic for rollback on failure
+            account_start = time.time()
+            account = ChannelAccount.objects.select_related("user").get(id=account_id, is_active=True)
+            print(f"DEBUG: Account get took {time.time() - account_start:.2f}s")
 
-    for msg_detail in message_details_list:
-        msg_id = msg_detail.get("id")
-        thread_id = msg_detail.get("threadId")
-        payload = msg_detail.get("payload", {})
-        headers = payload.get("headers", [])
-        header_map = {h["name"].lower(): h["value"] for h in headers}
+            rules_start = time.time()
+            user_rules = list(UserRule.objects.filter(user=account.user))
+            print(f"DEBUG: User rules query took {time.time() - rules_start:.2f}s - Found {len(user_rules)}")
 
-        subject = header_map.get("subject", "")
-        from_raw = header_map.get("from", "")
-        to_raw = header_map.get("to", "")
-        date_raw = header_map.get("date", "")
+            processed = 0
+            for i, msg_detail in enumerate(message_details_list, 1):
+                msg_start = time.time()
+                msg_id = msg_detail.get("id")
+                print(f"DEBUG: Processing msg {i}/{len(message_details_list)} ({msg_id}) at {time.time()}")
 
-        sender_name, sender_email = clean_sender_field(from_raw)
-        _, recipient_email = clean_sender_field(to_raw)
-        snippet = msg_detail.get("snippet", "")
-        plain_body, html_body = extract_bodies_recursive(payload)
-        received_at = parse_gmail_date(date_raw)
+                # ... (your existing parsing code for subject, sender, etc.) ...
 
-        # Importance (stub)
-        is_important, score = True, 0.9
+                conv_start = time.time()
+                conversation = Conversation.objects.filter(account=account, thread_id=thread_id).first()
+                if not conversation:
+                    conversation = Conversation.objects.create(...)  # Your create code
+                    print(f"DEBUG: Created new conversation for {thread_id}")
+                else:
+                    # Your update code
+                    conversation.save(update_fields=[...])
+                    print(f"DEBUG: Updated conversation {thread_id}")
+                print(f"DEBUG: Conversation op took {time.time() - conv_start:.2f}s")
 
-        # Conversation
-        conversation = Conversation.objects.filter(account=account, thread_id=thread_id).first()
-        if not conversation:
-            conversation = Conversation.objects.create(
-                account=account,
-                thread_id=thread_id,
-                channel="email",
-                title=subject[:200] or "No Subject",
-                last_message_at=received_at,
-                last_sender=sender_email,
-            )
-        else:
-            if not conversation.last_message_at or received_at > conversation.last_message_at:
-                conversation.last_message_at = received_at
-                conversation.last_sender = sender_email
-                conversation.title = subject[:200] or conversation.title
-                conversation.save(update_fields=["last_message_at", "last_sender", "title", "updated_at"])
+                msg_op_start = time.time()
+                try:
+                    msg_obj, created = Message.objects.update_or_create(
+                        account=account,
+                        conversation=conversation,
+                        external_id=msg_id,
+                        defaults={...}  # Your defaults
+                    )
+                    print(f"DEBUG: Message {msg_id} {'created' if created else 'updated'}")
+                except Exception as e:
+                    print(f"DEBUG: Message {msg_id} failed: {type(e).__name__}: {e}")
+                    logger.error(f"Failed saving message {msg_id}: {e}")
+                    raise  # Re-raise to trigger atomic rollback
+                print(f"DEBUG: Message op took {time.time() - msg_op_start:.2f}s")
 
-        try:
-            msg_obj, created = Message.objects.update_or_create(
-                account=account,
-                conversation=conversation,
-                external_id=msg_id,
-                defaults={
-                    "channel": "email",
-                    "sender": sender_email,
-                    "sender_name": sender_name,
-                    "recipients": [recipient_email] if recipient_email else [],
-                    "content": plain_body or snippet,
-                    "metadata": {"subject": subject, "html_body": html_body},
-                    "attachments": [],
-                    "importance": "high" if is_important else "medium",
-                    "importance_score": score,
-                    "is_read": "UNREAD" not in msg_detail.get("labelIds", []),
-                    "is_incoming": True,
-                    "sent_at": received_at,
-                },
-            )
-        except Exception as e:
-            logger.error(f"Failed saving message {msg_id}: {e}")
-            continue
+                processed += 1
+                if processed % 5 == 0:  # More frequent logging
+                    print(f"DEBUG: {processed} messages processed in {time.time() - start_time:.2f}s total")
 
-        processed += 1
-        if processed % 10 == 0:
-            print(f"DEBUG: {processed} messages processed so far")
+            print(f"DEBUG: Task completed in {time.time() - start_time:.2f}s - Stored {processed} messages")
+    except Exception as e:
+        print(f"DEBUG: Task failed after {time.time() - start_time:.2f}s: {type(e).__name__}: {e}")
+        logger.error(f"Store task failed for {account_id}: {e}", exc_info=True)
+        self.retry(countdown=60 * 5, exc=e)  # Retry after 5min, adjust as needed
 
-    transaction.on_commit(lambda: print(f"✅ Stored {processed} messages for account {account_id}"))
-
+        
 @shared_task(bind=True, autoretry_for=(Exception,), max_retries=3)
 def send_gmail_email(self, account, to_email, subject, body, body_html=None, attachments=None, thread_id=None):
     """Send email using Gmail API."""
