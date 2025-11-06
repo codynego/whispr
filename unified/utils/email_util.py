@@ -121,7 +121,7 @@ def fetch_gmail_messages(account_id: int, limit=20):
 
         for msg in messages:
             print("Storing message ID:", msg["id"])
-            _store_full_message(service, account, msg["id"])
+            _store_full_message(service, account.id, msg["id"])
         print("Stored full messages for first sync.")
 
         profile = service.users().getProfile(userId="me").execute()
@@ -157,7 +157,7 @@ def fetch_gmail_messages(account_id: int, limit=20):
     synced = 0
     for msg_id in msg_ids:
         print("Storing incremental message ID:", msg_id)
-        _store_full_message.delay(service, account, msg_id)
+        _store_full_message.delay(service, account.id, msg_id)
         synced += 1
 
     new_history_id = history_resp.get("historyId")
@@ -176,8 +176,9 @@ def fetch_gmail_messages(account_id: int, limit=20):
     autoretry_for=(Exception,),
     max_retries=3
 )
-def _store_full_message(self, service, account, message_id):
+def _store_full_message(self, service, account_id, message_id):
     print("Storing full message for ID:", message_id)
+    account = ChannelAccount.objects.get(id=account_id, is_active=True)
     msg_detail = service.users().messages().get(userId="me", id=message_id, format="full").execute()
     payload = msg_detail.get("payload", {})
     headers = payload.get("headers", [])
