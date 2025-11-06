@@ -123,14 +123,14 @@ def handle_new_message(sender, instance, created, **kwargs):
     # )
 
     # === Update the instance immediately ===
-    instance.embedding = message_embedding.tolist() if message_embedding is not None else None
+    # instance.embedding = message_embedding.tolist() if message_embedding is not None else None
     # instance.importance = importance_level
     # instance.importance_score = combined_score
     # # instance.importance_analysis = analysis_text
     instance.analyzed_at = timezone.now()
     instance.embedding_generated = True
     instance.save(update_fields=[
-        "embedding",
+
         "analyzed_at",
         "embedding_generated",
     ])
