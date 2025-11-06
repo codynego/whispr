@@ -37,9 +37,7 @@ app.conf.beat_schedule = {
     },
 }
 
-# Suppress Hugging Face tokenizers warning by disabling parallelism early.
-# Set this env var in your startup script: export TOKENIZERS_PARALLELISM=false
-# Or add here if needed (but env var is preferred for workers).
+
 os.environ.setdefault('TOKENIZERS_PARALLELISM', 'false')
 
 

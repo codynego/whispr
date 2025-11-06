@@ -212,119 +212,97 @@ def fetch_gmail_messages(account_id: int, limit=20) -> int:
 
 def store_gmail_messages(account_id: int, message_details_list: List[Dict[str, Any]]) -> None:
     """
-    Parses and stores a list of full Gmail message details for the given account.
-    No API calls — uses pre-fetched data.
+    Stores pre-fetched Gmail messages in the DB. No API calls here.
+    Optimized for PostgreSQL + Celery single concurrency.
     """
-    print(f"DEBUG: Entering store_gmail_messages task for account {account_id} with {len(message_details_list)} messages")
-    # print(f"DEBUG: Task ID: {request.id}")
+    print(f"DEBUG: Starting store_gmail_messages for account {account_id} ({len(message_details_list)} messages)")
 
-    account = ChannelAccount.objects.get(id=account_id, is_active=True)
-    print(f"DEBUG: Retrieved account {account.id} - {account.address_or_id}")
-    
-    user_rules = UserRule.objects.filter(user=account.user)
-    print(f"DEBUG: Retrieved {len(user_rules)} user rules")
+    account = ChannelAccount.objects.select_related("user").get(id=account_id, is_active=True)
+    user_rules = list(UserRule.objects.filter(user=account.user))
+    print(f"DEBUG: Found {len(user_rules)} user rules")
 
-    processed_count = 0
+    processed = 0
+
     for idx, msg_detail in enumerate(message_details_list):
-        print(f"DEBUG: Processing message {idx + 1}/{len(message_details_list)} for ID: {msg_detail.get('id', 'UNKNOWN')}")
+        msg_id = msg_detail.get("id")
+        thread_id = msg_detail.get("threadId")
 
         payload = msg_detail.get("payload", {})
-        print(f"DEBUG: Payload keys: {list(payload.keys())}")
-        
         headers = payload.get("headers", [])
-        print(f"DEBUG: Number of headers: {len(headers)}")
         header_map = {h["name"].lower(): h["value"] for h in headers}
-        print(f"DEBUG: Header keys in map: {list(header_map.keys())}")
 
         subject = header_map.get("subject", "")
-        print(f"DEBUG: Subject: {subject[:50]}..." if len(subject) > 50 else f"DEBUG: Subject: {subject}")
-        
         from_raw = header_map.get("from", "")
         to_raw = header_map.get("to", "")
         date_raw = header_map.get("date", "")
-        print(f"DEBUG: From raw: {from_raw}")
-        print(f"DEBUG: To raw: {to_raw}")
-        print(f"DEBUG: Date raw: {date_raw}")
 
         sender_name, sender_email = clean_sender_field(from_raw)
-        print(f"DEBUG: Parsed sender - name: {sender_name}, email: {sender_email}")
-        
         _, recipient_email = clean_sender_field(to_raw)
-        print(f"DEBUG: Parsed recipient email: {recipient_email}")
-        
         snippet = msg_detail.get("snippet", "")
-        print(f"DEBUG: Snippet preview: {snippet[:50]}...")
-        
         plain_body, html_body = extract_bodies_recursive(payload)
-        print(f"DEBUG: Extracted bodies - plain len: {len(plain_body or '')}, html len: {len(html_body or '')}")
-        
         received_at = parse_gmail_date(date_raw)
-        print(f"DEBUG: Parsed received_at: {received_at}")
-        
-        thread_id = msg_detail.get("threadId")
-        print(f"DEBUG: Thread ID: {thread_id}")
 
-        # _, is_important, score = is_message_important(f"{subject} {snippet}", user_rules)
-        is_important = True
-        score = 0.9
-        print(f"DEBUG: Message importance for ID {msg_detail.get('id')}: is_important={is_important}, score={score}")
+        # Determine importance (placeholder)
+        print("getting importance")
+        is_important, score = is_message_important(f"{subject} {snippet}", user_rules)
 
-        # Conversation handling
-        print(f"DEBUG: Getting or creating conversation for thread {thread_id}")
-        
-        # with transaction.atomic():
-        #     conversation, created = Conversation.objects.get_or_create(
-        #         account=account,
-        #         thread_id=thread_id,
-        #         defaults={
-        #             "channel": "email",
-        #             "title": subject[:200] or "No Subject",
-        #             "last_message_at": received_at,
-        #             "last_sender": sender_email,
-        #         },
-        #     )
-        # print(f"DEBUG: Conversation {conversation.id} - created: {created}, title: {conversation.title}")
 
-        # if not created and (not conversation.last_message_at or received_at > conversation.last_message_at):
-        #     print(f"DEBUG: Updating conversation last_message_at from {conversation.last_message_at} to {received_at}")
-        #     conversation.last_message_at = received_at
-        #     conversation.last_sender = sender_email
-        #     if subject:
-        #         conversation.title = subject[:200]
-        #     conversation.save(update_fields=["last_message_at", "last_sender", "title", "updated_at"])
-        #     print(f"DEBUG: Conversation updated successfully")
+        # ----- Conversation handling -----
+        conversation = Conversation.objects.filter(
+            account=account, thread_id=thread_id
+        ).first()
+        print(f"DEBUG: Conversation lookup for thread_id={thread_id}: {'found' if conversation else 'not found'}")
 
-        print(f"DEBUG: Updating or creating Message for external_id {msg_detail.get('id')}")
-        # try:
-        #     message_obj, created_msg = Message.objects.update_or_create(
-        #         account=account,
-        #         conversation=conversation,
-        #         external_id=msg_detail["id"],
-        #         defaults={
-        #             "channel": "email",
-        #             "sender": sender_email,
-        #             "sender_name": sender_name,
-        #             "recipients": [recipient_email] if recipient_email else [],
-        #             "content": plain_body or snippet,
-        #             "metadata": {"subject": subject, "html_body": html_body},
-        #             "attachments": [],  # TODO: Parse attachments from payload if needed
-        #             "importance": "high" if is_important else "medium",
-        #             "importance_score": score,
-        #             "is_read": "UNREAD" not in msg_detail.get("labelIds", []),
-        #             "is_incoming": True,
-        #             "sent_at": received_at,
-        #         },
-        #     )
-        # except Exception as e:
-        #     print(f"DEBUG: Exception creating/updating Message for {msg_detail.get('id')}: {type(e).__name__}: {e}")
-        #     logger.error(f"Failed to create/update Message for {msg_detail.get('id')}: {e}")
-        #     continue
-        # print(f"DEBUG: Message {message_obj.id} - created: {created_msg}")
+        if not conversation:
+            conversation = Conversation.objects.create(
+                account=account,
+                thread_id=thread_id,
+                channel="email",
+                title=subject[:200] or "No Subject",
+                last_message_at=received_at,
+                last_sender=sender_email,
+            )
+            print(f"DEBUG: Created new conversation for thread_id={thread_id}")
+        else:
+            # Update only if newer message
+            if not conversation.last_message_at or received_at > conversation.last_message_at:
+                conversation.last_message_at = received_at
+                conversation.last_sender = sender_email
+                conversation.title = subject[:200] or conversation.title
+                conversation.save(update_fields=["last_message_at", "last_sender", "title", "updated_at"])
+                print(f"DEBUG: Updated conversation for thread_id={thread_id}")
+        # ----- Message handling -----
+        try:
+            msg_obj, created_msg = Message.objects.update_or_create(
+                account=account,
+                conversation=conversation,
+                external_id=msg_id,
+                defaults={
+                    "channel": "email",
+                    "sender": sender_email,
+                    "sender_name": sender_name,
+                    "recipients": [recipient_email] if recipient_email else [],
+                    "content": plain_body or snippet,
+                    "metadata": {"subject": subject, "html_body": html_body},
+                    "attachments": [],
+                    "importance": "high" if is_important else "medium",
+                    "importance_score": score,
+                    "is_read": "UNREAD" not in msg_detail.get("labelIds", []),
+                    "is_incoming": True,
+                    "sent_at": received_at,
+                },
+            )
+            print(f"DEBUG: Message {msg_id} {'created' if created_msg else 'updated'} successfully")
+        except Exception as e:
+            logger.error(f"Failed saving message {msg_id}: {e}")
+            continue
 
-        processed_count += 1
-        print(f"DEBUG: Successfully processed message {msg_detail.get('id')}")
+        processed += 1
+        if processed % 10 == 0:
+            print(f"DEBUG: {processed} messages processed so far")
 
-    print(f"DEBUG: Task completed - processed {processed_count} messages successfully.")
+    # Commit once after all loop iterations
+    transaction.on_commit(lambda: print(f"DEBUG: ✅ Committed {processed} messages for account {account_id}"))
 
 
 @shared_task(bind=True, autoretry_for=(Exception,), max_retries=3)
