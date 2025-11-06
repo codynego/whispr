@@ -3,8 +3,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 from typing import List, Optional, Tuple
 from django.core.cache import cache
-from hashlib import md5  # Wait, fix this too: Use stdlib hashlib (from prior error)
-import hashlib  # Correct: Standard lib for md5
+from hashlib import md5  
+import hashlib
 import time  # For optional timing
 
 # Global refs (unchanged)
