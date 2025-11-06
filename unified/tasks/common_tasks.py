@@ -17,13 +17,7 @@ logger = logging.getLogger(__name__)
 # === Generic Unified Sync Task
 # ==============================================================
 
-@shared_task(
-    bind=True,
-    soft_time_limit=600,   # 10 min soft
-    time_limit=660,       # 11 min hard
-    autoretry_for=(Exception,),
-    max_retries=3
-)
+@shared_task
 def sync_channel_account(self, account_id: int):
     """
     Generic task to sync messages for any connected channel (email, WhatsApp, Slack, etc.).
