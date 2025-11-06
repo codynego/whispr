@@ -393,9 +393,6 @@ DATABASES = {
         "HOST": config("DB_HOST", default="localhost"),
         "PORT": config("DB_PORT", default="5432"),
         'CONN_MAX_AGE': 0,  # Disable persistent connections in workers to avoid stale ones
-        'OPTIONS': {
-            'MAX_CONNS': 20,  # Bump if low
-        },
     }
 }
 # Celery-specific
