@@ -8,6 +8,7 @@ from unified.models import ChannelAccount, Message, Conversation
 from unified.utils.email_util import (
     fetch_gmail_messages
 )
+import os
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -28,6 +29,9 @@ def sync_channel_account(self, account_id: int):
     Generic task to sync messages for any connected channel (email, WhatsApp, Slack, etc.).
     Uses provider to route to correct fetch function.
     """
+    import os
+    print("🔍 ENVIRONMENT SNAPSHOT:", {k: v for k, v in os.environ.items() if 'GMAIL' in k or 'DJANGO' in k})
+
     try:
         account = ChannelAccount.objects.get(id=account_id, is_active=True)
         provider = account.provider.lower()
