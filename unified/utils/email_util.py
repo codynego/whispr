@@ -298,25 +298,30 @@ def store_gmail_messages(self, account_id: int, message_details_list: List[Dict[
             print(f"DEBUG: Conversation updated successfully")
 
         print(f"DEBUG: Updating or creating Message for external_id {msg_detail.get('id')}")
-        message_obj, created_msg = Message.objects.update_or_create(
-            account=account,
-            conversation=conversation,
-            external_id=msg_detail["id"],
-            defaults={
-                "channel": "email",
-                "sender": sender_email,
-                "sender_name": sender_name,
-                "recipients": [recipient_email] if recipient_email else [],
-                "content": plain_body or snippet,
-                "metadata": {"subject": subject, "html_body": html_body},
-                "attachments": [],  # TODO: Parse attachments from payload if needed
-                "importance": "high" if is_important else "medium",
-                "importance_score": score,
-                "is_read": "UNREAD" not in msg_detail.get("labelIds", []),
-                "is_incoming": True,
-                "sent_at": received_at,
-            },
-        )
+        try:
+            message_obj, created_msg = Message.objects.update_or_create(
+                account=account,
+                conversation=conversation,
+                external_id=msg_detail["id"],
+                defaults={
+                    "channel": "email",
+                    "sender": sender_email,
+                    "sender_name": sender_name,
+                    "recipients": [recipient_email] if recipient_email else [],
+                    "content": plain_body or snippet,
+                    "metadata": {"subject": subject, "html_body": html_body},
+                    "attachments": [],  # TODO: Parse attachments from payload if needed
+                    "importance": "high" if is_important else "medium",
+                    "importance_score": score,
+                    "is_read": "UNREAD" not in msg_detail.get("labelIds", []),
+                    "is_incoming": True,
+                    "sent_at": received_at,
+                },
+            )
+        except Exception as e:
+            print(f"DEBUG: Exception creating/updating Message for {msg_detail.get('id')}: {type(e).__name__}: {e}")
+            logger.error(f"Failed to create/update Message for {msg_detail.get('id')}: {e}")
+            continue
         print(f"DEBUG: Message {message_obj.id} - created: {created_msg}")
 
         processed_count += 1
