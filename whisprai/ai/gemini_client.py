@@ -205,7 +205,9 @@ Your mission: Analyze the content and output JSON that's insightful yet concise�
     "next_steps": ["<1–3 realistic, prioritized actions—e.g., 'Chat with Jordan to align on deliverables'>", "<follow-up if needed>"],
     "people": ["<Detected names—e.g., 'Jordan Smith', 'Team Lead'>"],
     "organizations": ["<Spotted orgs—e.g., 'Acme Corp'>"],
-    "topics": ["<Emerging themes—e.g., 'Q4 Budget', 'Client Feedback'>"]
+    "topics": ["<Emerging themes—e.g., 'Q4 Budget', 'Client Feedback'>"],
+    "importance_score": "<0.0–1.0 float indicating urgency or significance>",
+    "importance_level": "<'low'|'medium'|'high' based on score>"
 }}
 
 🧭 Guidelines:
