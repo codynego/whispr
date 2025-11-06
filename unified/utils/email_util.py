@@ -279,28 +279,57 @@ def store_gmail_messages(self, account_id: int, message_details_list: List[Dict[
                 try:
                     print(f"DEBUG: About to run update_or_create for msg {msg_id} (thread {thread_id})")
                     print(f"DEBUG: Defaults preview: channel={sender_email[:20]}..., content_len={len(plain_body or snippet)}, sent_at={received_at}, is_read={ 'UNREAD' not in msg_detail.get('labelIds', []) }")  # Sanitize for logs
-
-                    # Split: Manual get_or_create to isolate SELECT vs INSERT
-                    msg_obj, created = Message.objects.get_or_create(
+                    message = Message.objects.filter(
                         account=account,
-                        conversation=conversation,
-                        external_id=msg_id,
-                        defaults={
-                            "channel": "email",
-                            "sender": sender_email,
-                            "sender_name": sender_name,
-                            "recipients": [recipient_email] if recipient_email else [],
-                            "content": plain_body or snippet,
-                            "metadata": {"subject": subject, "html_body": html_body},
-                            "attachments": [],
-                            "importance": "high" if is_important else "medium",
-                            "importance_score": score,
-                            "is_read": "UNREAD" not in msg_detail.get("labelIds", []),
-                            "is_incoming": True,
-                            "sent_at": received_at,
-                        },
-                    )
-                    print(f"DEBUG: get_or_create completed for {msg_id} - {'created' if created else 'updated'} in {time.time() - msg_op_start:.2f}s")
+                        external_id=msg_id
+                    ).first()
+                    # Split: Manual get_or_create to isolate SELECT vs INSERT
+                    print(f"DEBUG: Fetched existing message for {msg_id}, now checking existence")
+                    if not message:
+                        msg_obj, created = Message.objects.create(
+                            account=account,
+                            conversation=conversation,
+                            external_id=msg_id,
+                            defaults={
+                                "channel": "email",
+                                "sender": sender_email,
+                                "sender_name": sender_name,
+                                "recipients": [recipient_email] if recipient_email else [],
+                                "content": plain_body or snippet,
+                                "metadata": {"subject": subject, "html_body": html_body},
+                                "attachments": [],
+                                "importance": "high" if is_important else "medium",
+                                "importance_score": score,
+                                "is_read": "UNREAD" not in msg_detail.get("labelIds", []),
+                                "is_incoming": True,
+                                "sent_at": received_at,
+                            },
+                        )
+                        print(f"DEBUG: get_or_create completed for {msg_id} - {'created' if created else 'updated'} in {time.time() - msg_op_start:.2f}s")
+                    else:
+                        print(f"DEBUG: Message {msg_id} exists, updating fields if needed")
+                        # Update existing message
+                        updated = False
+                        if message.content != (plain_body or snippet):
+                            message.content = plain_body or snippet
+                            updated = True
+                        if message.sender != sender_email:
+                            message.sender = sender_email
+                            updated = True
+                        if message.sent_at != received_at:
+                            message.sent_at = received_at
+                            updated = True
+                        if not message.is_read and "UNREAD" not in msg_detail.get("labelIds", []):
+                            message.is_read = True
+                            updated = True
+                        if updated:
+                            message.metadata = {"subject": subject, "html_body": html_body}
+                            message.importance = "high" if is_important else "medium"
+                            message.importance_score = score
+                            message.save()
+                            print(f"DEBUG: Updated existing message {msg_id} in {time.time() - msg_op_start:.2f}s")
+                        else:
+                            print(f"DEBUG: No update needed for existing message {msg_id}")
                 except Exception as e:
                     print(f"DEBUG: Message {msg_id} failed: {type(e).__name__}: {e}")
                     logger.error(f"Failed saving message {msg_id}: {e}")
