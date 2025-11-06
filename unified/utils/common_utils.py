@@ -185,7 +185,7 @@ Message:
     try:
         response = genai.generate_content(
             prompt,
-            model="gemini-1.5-flash",
+            model="gemini-1.5-flash-lite",
             generation_config=genai.types.GenerationConfig(
                 temperature=0.1,
                 max_output_tokens=10,
@@ -299,7 +299,7 @@ def is_message_important(
 
     is_important = combined >= threshold
 
-    
+
     # Cache
     cache.set(cache_key, (embedding, is_important, combined), 300)
     print(f"DEBUG: Final Scores - Rule: {rule_score}, Keyword: {keyword_score:.3f}, Semantic: {semantic_score:.3f}, Combined: {combined:.3f}")
