@@ -157,7 +157,7 @@ def fetch_gmail_messages(account_id: int, limit=20):
     synced = 0
     for msg_id in msg_ids:
         print("Storing incremental message ID:", msg_id)
-        _store_full_message(service, account, msg_id)
+        _store_full_message.delay(service, account, msg_id)
         synced += 1
 
     new_history_id = history_resp.get("historyId")
@@ -169,8 +169,15 @@ def fetch_gmail_messages(account_id: int, limit=20):
     logger.info(f"✅ Incremental sync: {synced} new messages for {account.address_or_id}")
     return synced
 
-
-def _store_full_message(service, account, message_id):
+@shared_task(
+    bind=True,
+    soft_time_limit=300,   # 5 min soft
+    time_limit=360,       # 6 min hard
+    autoretry_for=(Exception,),
+    max_retries=3
+)
+def _store_full_message(self, service, account, message_id):
+    print("Storing full message for ID:", message_id)
     msg_detail = service.users().messages().get(userId="me", id=message_id, format="full").execute()
     payload = msg_detail.get("payload", {})
     headers = payload.get("headers", [])
@@ -190,6 +197,7 @@ def _store_full_message(service, account, message_id):
 
     user_rule = UserRule.objects.filter(user=account.user)
     _, is_important, score = is_message_important(f"{subject} {snippet}", user_rule)
+    print(f"Message importance for ID {message_id}: is_important={is_important}, score={score}")
     # is_important = False
     # score = 0.0
 
