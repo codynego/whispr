@@ -3,7 +3,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 from typing import List, Optional, Tuple
 from django.core.cache import cache
-from django.utils.hashlib import md5
+from hashlib import md5
 import time  # For optional timing
 
 # Global refs (preload in worker init if possible)
