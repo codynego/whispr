@@ -286,7 +286,7 @@ def store_gmail_messages(self, account_id: int, message_details_list: List[Dict[
                         account=account,
                         external_id=msg_id
                     ).first()
-                    # Split: Manual get_or_create to isolate SELECT vs INSERT
+                    # Split: Manual
                     print(f"DEBUG: Fetched existing message for {msg_id}, now checking existence")
                     if not message:
                         msg_obj = Message.objects.create(
