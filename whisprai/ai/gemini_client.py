@@ -249,6 +249,8 @@ Generate a response that's concise (2–4 sentences), actionable, and leaves the
     )
 
     # === STEP 6: Parse JSON safely ===
+    if response is None or not hasattr(response, "text"):
+        raise ValueError("No response from Gemini API")
     text = response.text.strip()
     try:
         clean_json = text.strip("```json").strip("```").strip()
