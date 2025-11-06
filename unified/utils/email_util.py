@@ -244,10 +244,14 @@ def store_gmail_messages(account_id: int, message_details_list: List[Dict[str, A
 
         # Determine importance (placeholder)
         print("getting importance")
-        is_important, score = is_message_important(f"{subject} {snippet}", user_rules)
+        is_important = True
+        score = 0.9
+        # is_important, score = is_message_important(f"{subject} {snippet}", user_rules)
+        print(f"DEBUG: Message {msg_id} importance: {is_important} (score: {score})")
 
 
         # ----- Conversation handling -----
+        print("handling conversation")
         conversation = Conversation.objects.filter(
             account=account, thread_id=thread_id
         ).first()
