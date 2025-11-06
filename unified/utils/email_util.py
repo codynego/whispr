@@ -94,48 +94,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-import logging
-from typing import List, Dict, Any
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
-from googleapiclient.discovery import build
-from django.conf import settings
-from .models import ChannelAccount, Conversation, Message, UserRule  # Assuming your models
-from celery import shared_task
-# Assuming these helpers are defined elsewhere:
-# clean_sender_field, parse_gmail_date, extract_bodies_recursive, is_message_important
-
-logger = logging.getLogger(__name__)
-
-
-import logging
-from typing import List, Dict, Any
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
-from googleapiclient.discovery import build
-from django.conf import settings
-from .models import ChannelAccount, Conversation, Message, UserRule  # Assuming your models
-from celery import shared_task
-# Assuming these helpers are defined elsewhere:
-# clean_sender_field, parse_gmail_date, extract_bodies_recursive, is_message_important
-
-logger = logging.getLogger(__name__)
-
-
-import logging
-from typing import List, Dict, Any
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
-from googleapiclient.discovery import build
-from django.conf import settings
-from .models import ChannelAccount, Conversation, Message, UserRule  # Assuming your models
-from celery import shared_task
-# Assuming these helpers are defined elsewhere:
-# clean_sender_field, parse_gmail_date, extract_bodies_recursive, is_message_important
-
-logger = logging.getLogger(__name__)
-
-
 def fetch_gmail_messages(account_id: int, limit=20) -> int:
     """
     Fetch full Gmail message details (including bodies).
