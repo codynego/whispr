@@ -139,8 +139,10 @@ def fetch_gmail_messages(account_id: int, limit=20):
             userId="me",
             startHistoryId=account.last_history_id
         ).execute()
+        print("Gmail history fetched for incremental sync.")
 
     except Exception as e:
+        print("Gmail history fetch error:", str(e))
         logger.warning(f"⚠️ Gmail history expired for {account.address_or_id}, fallback. {e}")
         account.last_history_id = None
         account.save(update_fields=["last_history_id"])
@@ -150,14 +152,17 @@ def fetch_gmail_messages(account_id: int, limit=20):
 
     histories = history_resp.get("history", [])
     msg_ids = {m["message"]["id"] for h in histories for m in h.get("messagesAdded", [])}
+    print("Fetched message IDs for incremental sync:", msg_ids)
 
     synced = 0
     for msg_id in msg_ids:
+        print("Storing incremental message ID:", msg_id)
         _store_full_message(service, account, msg_id)
         synced += 1
 
     new_history_id = history_resp.get("historyId")
     if new_history_id:
+        print("getting history")
         account.last_history_id = new_history_id
         account.save(update_fields=["last_history_id"])
 
