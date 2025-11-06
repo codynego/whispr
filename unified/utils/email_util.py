@@ -112,17 +112,21 @@ def fetch_gmail_messages(account_id: int, limit=20):
 
     # ✅ FIRST SYNC — fetch last X emails only
     if not account.last_history_id:
+        print(f"🔄 Syncing {provider} ({channel}) for {account.user.email}")
         logger.info(f"🆕 First sync for {account.address_or_id}, fetch {limit} messages")
 
         results = service.users().messages().list(userId="me", maxResults=limit).execute()
+        print("Gmail message list fetched.")
         messages = results.get("messages", [])
 
         for msg in messages:
+            print("Storing message ID:", msg["id"])
             _store_full_message(service, account, msg["id"])
         print("Stored full messages for first sync.")
 
         profile = service.users().getProfile(userId="me").execute()
         account.last_history_id = profile.get("historyId")
+        print("Setting last history ID to:", account.last_history_id)
         account.save(update_fields=["last_history_id"])
 
         logger.info(f"✅ Initial sync done for {account.address_or_id} ({len(messages)} messages)")
@@ -130,6 +134,7 @@ def fetch_gmail_messages(account_id: int, limit=20):
 
     # ✅ INCREMENTAL SYNC
     try:
+        print("Performing incremental sync using history ID:", account.last_history_id)
         history_resp = service.users().history().list(
             userId="me",
             startHistoryId=account.last_history_id
