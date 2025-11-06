@@ -4,6 +4,7 @@ import numpy as np
 from typing import List, Optional, Tuple
 from django.db import models
 from django.conf import settings
+from celery import shared_task
 
 
 model = SentenceTransformer("all-MiniLM-L6-v2")
