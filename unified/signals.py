@@ -46,6 +46,8 @@ def analyze_message_insights(message_id):
         else:
             insights = json.loads(raw_text) if raw_text.strip().startswith("{") else {}
 
+        print(f"✅ Gemini insights received for message {message_id}: {insights}")
+
         # Parse structured insights
         ai_summary = insights.get("summary")
         ai_next_step = insights.get("next_step")
