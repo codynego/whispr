@@ -174,6 +174,9 @@ def get_embedding(text: str) -> Optional[List[float]]:
 
 def get_importance_score(text: str) -> float:
     """Get importance score using Gemini."""
+    if not text or not text.strip():
+        return 0.0
+
     prompt = f"""Rate the importance of this email message on a scale from 0.0 to 1.0.
 0.0: Not important at all.
 1.0: Extremely important, requires immediate attention.
@@ -191,12 +194,25 @@ Message:
                 max_output_tokens=10,
             ),
         )
+
+        # ✅ Safely check response
+        if not hasattr(response, "text") or not response.text:
+            print("⚠️ Gemini returned no text (possibly filtered or empty).")
+            return 0.0
+
         score_str = response.text.strip()
-        score = float(score_str)
+        try:
+            score = float(score_str)
+        except ValueError:
+            print(f"⚠️ Unexpected score format: {score_str}")
+            return 0.0
+
         return max(0.0, min(1.0, score))
+
     except Exception as e:
         print(f"⚠️ Score generation failed: {e}")
         return 0.0
+
 
 def is_message_important(
     text: str,
