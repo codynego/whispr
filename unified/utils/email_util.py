@@ -251,9 +251,9 @@ def store_gmail_messages(self, account_id: int, message_details_list: List[Dict[
                 print(f"DEBUG: Processing msg {i}/{len(message_details_list)} ({msg_id}) at {time.time()}")
 
                 # ... (your existing parsing code for subject, sender, etc.) ...
-                print(f"DEBUG: Parsed headers for msg {msg_id} in {time.time() - msg_start:.2f}s")
-                _, is_important, score = is_message_important(plain_body or snippet, user_rules=user_rules)
-                print(f"DEBUG: Importance analysis for msg {msg_id} in {time.time() - msg_start:.2f}s - Important: {is_important}, Score: {score}")
+                # print(f"DEBUG: Parsed headers for msg {msg_id} in {time.time() - msg_start:.2f}s")
+                # _, is_important, score = is_message_important(plain_body or snippet, user_rules=user_rules)
+                # print(f"DEBUG: Importance analysis for msg {msg_id} in {time.time() - msg_start:.2f}s - Important: {is_important}, Score: {score}")
                 
 
                 conv_start = time.time()
@@ -300,8 +300,6 @@ def store_gmail_messages(self, account_id: int, message_details_list: List[Dict[
                             content=plain_body or snippet,
                             metadata={"subject": subject, "html_body": html_body},
                             attachments=[],
-                            importance="high" if is_important else "medium",
-                            importance_score=score,
                             is_read="UNREAD" not in msg_detail.get("labelIds", []),
                             is_incoming=True,
                             sent_at=received_at,
