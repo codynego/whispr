@@ -141,7 +141,7 @@
 
 import os
 import google.generativeai as genai
-from sklearn.metrics.pairwise import cosine_similarity  # Removed: no longer needed
+from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 from typing import List, Optional, Tuple
 from django.core.cache import cache
@@ -156,6 +156,36 @@ IMPORTANT_KEYWORDS = [
     "follow up", "please review", "immediate attention", "project", "money",
     "credit alert", "transaction successful"
 ]
+
+IMPORTANT_EXAMPLES = [
+    "Please respond immediately",
+    "Action required for your account",
+    "Meeting invite from CEO",
+    "Project deadline approaching",
+    "Critical update",
+    "Please review this document",
+    "Follow up required",
+    "Payment received",
+]
+
+# Lazy init for important examples
+important_example_embeddings = None
+
+def get_important_examples() -> Optional[np.ndarray]:
+    """Lazy load embeddings for important examples using Gemini."""
+    global important_example_embeddings
+    if important_example_embeddings is None:
+        print("Loading important example embeddings once…")
+        ex_embs = []
+        for ex in IMPORTANT_EXAMPLES:
+            emb = get_embedding(ex)
+            if emb is not None:
+                ex_embs.append(emb)
+        if ex_embs:
+            important_example_embeddings = np.array(ex_embs)
+        else:
+            important_example_embeddings = np.empty((0, 768))  # Fallback empty
+    return important_example_embeddings
 
 def get_embedding(text: str) -> Optional[List[float]]:
     """Get embedding using Gemini embedding model."""
@@ -172,48 +202,6 @@ def get_embedding(text: str) -> Optional[List[float]]:
         print(f"⚠️ Embedding failed: {e}")
         return None
 
-def get_importance_score(text: str) -> float:
-    """Get importance score using Gemini."""
-    if not text or not text.strip():
-        return 0.0
-
-    prompt = f"""Rate the importance of this email message on a scale from 0.0 to 1.0.
-0.0: Not important at all.
-1.0: Extremely important, requires immediate attention.
-
-Respond with ONLY the number, e.g., 0.85
-
-Message:
-{text}"""
-    try:
-        response = genai.generate_content(
-            prompt,
-            model="gemini-2.0-flash-lite",
-            generation_config=genai.types.GenerationConfig(
-                temperature=0.1,
-                max_output_tokens=10,
-            ),
-        )
-
-        # ✅ Safely check response
-        if not hasattr(response, "text") or not response.text:
-            print("⚠️ Gemini returned no text (possibly filtered or empty).")
-            return 0.0
-
-        score_str = response.text.strip()
-        try:
-            score = float(score_str)
-        except ValueError:
-            print(f"⚠️ Unexpected score format: {score_str}")
-            return 0.0
-
-        return max(0.0, min(1.0, score))
-
-    except Exception as e:
-        print(f"⚠️ Score generation failed: {e}")
-        return 0.0
-
-
 def is_message_important(
     text: str,
     user_rules: Optional[List['UserRule']] = None,
@@ -225,7 +213,7 @@ def is_message_important(
 ) -> Tuple[Optional[np.ndarray], bool, float]:
     """Return (embedding, is_important, score)
     
-    Analyzes message importance using Gemini for semantic scoring and keywords.
+    Analyzes message importance using Gemini embeddings for semantic similarity and keywords.
     Overrides with user rules if provided and matching. Caches results.
     """
     if not text or not text.strip():
@@ -296,8 +284,10 @@ def is_message_important(
             kw_matches = sum(1 for kw in IMPORTANT_KEYWORDS if kw in text_lower)
             keyword_score = min(kw_matches / max(len(IMPORTANT_KEYWORDS) * 0.3, 1), 1.0)
             
-            # Gemini importance score
-            semantic_score = get_importance_score(text)
+            # Semantic similarity calculation
+            imp_embs = get_important_examples()
+            if imp_embs.size > 0:
+                semantic_score = float(np.max(cosine_similarity(embedding, imp_embs)))
             print(f"DEBUG: Analyzed in {time.perf_counter() - analysis_start:.3f}s")  # Optional log
         else:
             print(f"⚠️ Embedding failed, using fallback")
@@ -314,7 +304,6 @@ def is_message_important(
         combined = keyword_weight * keyword_score + semantic_weight * semantic_score
 
     is_important = combined >= threshold
-
 
     # Cache
     cache.set(cache_key, (embedding, is_important, combined), 300)

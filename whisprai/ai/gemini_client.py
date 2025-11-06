@@ -19,7 +19,7 @@ def get_gemini_response(
     prompt,
     user_id,
     task_type="conversational",
-    model="gemini-2.0-flash-lite",
+    model="gemini-2.0-flash",
     temperature=0.7,
     max_output_tokens=800,
     channel=None,
