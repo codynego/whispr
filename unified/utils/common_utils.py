@@ -3,21 +3,21 @@ from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 from typing import List, Optional, Tuple
 from django.core.cache import cache
-from hashlib import md5  
-import hashlib
+import hashlib  # For md5 hashing
 import time  # For optional timing
 
-# Global refs (unchanged)
-
+# Global model (lazy init)
+model = None  # Init here to avoid NameError in get_model
 
 def get_model():
     global model
     if model is None:
         print("Loading SentenceTransformer model once per worker…")
-        from sentence_transformers import SentenceTransformer
         model = SentenceTransformer("all-MiniLM-L6-v2")
     return model
 
+# Load model and compute static embeddings at module import
+model = get_model()
 IMPORTANT_KEYWORDS = [
     "urgent", "action required", "meeting", "deadline", "CEO", "important",
     "follow up", "please review", "immediate attention", "project", "money",
@@ -33,8 +33,6 @@ IMPORTANT_EXAMPLES = [
     "Follow up required",
     "Payment received",
 ]
-
-model = get_model()
 important_example_embeddings = model.encode(IMPORTANT_EXAMPLES)
 
 
