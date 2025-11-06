@@ -303,7 +303,7 @@ def store_gmail_messages(self, account_id: int, message_details_list: List[Dict[
                             is_incoming=True,
                             sent_at=received_at,
                         )
-                        print(f"DEBUG: get_or_create completed for {msg_id} - {'created' if created else 'updated'} in {time.time() - msg_op_start:.2f}s")
+                        print(f"DEBUG: get_or_create completed for {msg_id} - in {time.time() - msg_op_start:.2f}s")
                     else:
                         print(f"DEBUG: Message {msg_id} exists, updating fields if needed")
                         # Update existing message
