@@ -301,4 +301,5 @@ def is_message_important(
 
     # Cache
     cache.set(cache_key, (embedding, is_important, combined), 300)
+    print(f"DEBUG: Final Scores - Rule: {rule_score}, Keyword: {keyword_score:.3f}, Semantic: {semantic_score:.3f}, Combined: {combined:.3f}")
     return embedding, is_important, combined

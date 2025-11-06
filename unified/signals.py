@@ -44,6 +44,7 @@ def compute_message_importance_and_alert(message_id):
 
         # Compute importance (now async)
         message_embedding, is_important, combined_score = is_message_important(text)
+        print(f"🔍 Importance computed: Important={is_important}, Score={combined_score:.2f}, embedding_length={len(message_embedding) if message_embedding else 0}")
 
         if combined_score >= 0.9:
             importance_level = "critical"
