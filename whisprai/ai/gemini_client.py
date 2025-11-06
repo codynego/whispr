@@ -207,7 +207,8 @@ Your mission: Analyze the content and output JSON that's insightful yet concise�
     "organizations": ["<Spotted orgs—e.g., 'Acme Corp'>"],
     "topics": ["<Emerging themes—e.g., 'Q4 Budget', 'Client Feedback'>"],
     "importance_score": "<0.0–1.0 float indicating urgency or significance>",
-    "importance_level": "<'low'|'medium'|'high' based on score>"
+    "importance_level": "<'low'|'medium'|'high' based on score>",
+    "embedding": "<base64-encoded string of the message embedding>"
 }}
 
 🧭 Guidelines:

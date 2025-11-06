@@ -46,9 +46,7 @@ def analyze_message_insights(message_id):
         else:
             insights = json.loads(raw_text) if raw_text.strip().startswith("{") else {}
 
-        # print(f"✅ Gemini insights received for message {message_id}: {insights}")
-        embedding = get_embedding(text)
-        print(f"✅ Gemini embedding generated for message {message_id}")
+        print(f"✅ Gemini insights received for message {message_id}: {insights}")
 
         # Parse structured insights
         ai_summary = insights.get("summary")
@@ -66,6 +64,7 @@ def analyze_message_insights(message_id):
         message.analyzed_at = timezone.now()
         message.importance = insights.get("importance_level", message.importance)
         message.importance_score = insights.get("importance_score", message.importance_score)
+        message.embedding = insights.get("embedding", message.embedding)
         message.save(update_fields=[
             "ai_summary",
             "ai_next_step",
@@ -73,6 +72,9 @@ def analyze_message_insights(message_id):
             "ai_organizations",
             "ai_related",
             "analyzed_at",
+            "importance",
+            "importance_score",
+            "embedding",
         ])
 
         print(f"✅ Gemini insights saved for message {message_id}")
