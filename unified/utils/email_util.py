@@ -88,6 +88,7 @@ def fetch_gmail_messages(account_id: int, limit=20):
     from google.auth.transport.requests import Request
 
     account = ChannelAccount.objects.get(id=account_id, is_active=True)
+    print("Fetched account for Gmail messages:", account.address_or_id)
 
     creds = Credentials(
         token=account.access_token,
@@ -96,6 +97,7 @@ def fetch_gmail_messages(account_id: int, limit=20):
         client_id=settings.GMAIL_CLIENT_ID,
         client_secret=settings.GMAIL_CLIENT_SECRET,
     )
+    print("Gmail credentials prepared.")
 
     # ✅ Refresh token ONCE at beginning (avoid repeated slow refresh)
     if not creds.valid and creds.refresh_token:
@@ -103,6 +105,7 @@ def fetch_gmail_messages(account_id: int, limit=20):
         creds.refresh(Request())
         account.access_token = creds.token
         account.save(update_fields=["access_token"])
+    print("Gmail credentials valid.")
 
     service = build("gmail", "v1", credentials=creds, cache_discovery=False)
 
@@ -115,6 +118,7 @@ def fetch_gmail_messages(account_id: int, limit=20):
 
         for msg in messages:
             _store_full_message(service, account, msg["id"])
+        print("Stored full messages for first sync.")
 
         profile = service.users().getProfile(userId="me").execute()
         account.last_history_id = profile.get("historyId")
