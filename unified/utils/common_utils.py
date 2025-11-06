@@ -147,9 +147,10 @@ from typing import List, Optional, Tuple
 from django.core.cache import cache
 import hashlib  # For md5 hashing
 import time  # For optional timing
+from django.conf import settings
 
 # Configure Gemini API
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+genai.configure(api_key=settings.GEMINI_API_KEY)
 
 IMPORTANT_KEYWORDS = [
     "urgent", "action required", "meeting", "deadline", "CEO", "important",
