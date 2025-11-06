@@ -33,6 +33,8 @@ IMPORTANT_EXAMPLES = [
     "Follow up required",
     "Payment received",
 ]
+
+model = get_model()
 important_example_embeddings = model.encode(IMPORTANT_EXAMPLES)
 
 
@@ -109,7 +111,6 @@ def is_message_important(
     if needs_embedding:
         encode_start = time.perf_counter()
         try:
-            model = get_model()
             embedding = model.encode([text])
             print(f"DEBUG: Encoded in {time.perf_counter() - encode_start:.3f}s")  # Optional log
         except Exception as e:
