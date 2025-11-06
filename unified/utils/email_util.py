@@ -277,7 +277,11 @@ def store_gmail_messages(self, account_id: int, message_details_list: List[Dict[
 
                 msg_op_start = time.time()
                 try:
-                    msg_obj, created = Message.objects.update_or_create(
+                    print(f"DEBUG: About to run update_or_create for msg {msg_id} (thread {thread_id})")
+                    print(f"DEBUG: Defaults preview: channel={sender_email[:20]}..., content_len={len(plain_body or snippet)}, sent_at={received_at}, is_read={ 'UNREAD' not in msg_detail.get('labelIds', []) }")  # Sanitize for logs
+
+                    # Split: Manual get_or_create to isolate SELECT vs INSERT
+                    msg_obj, created = Message.objects.get_or_create(
                         account=account,
                         conversation=conversation,
                         external_id=msg_id,
@@ -296,7 +300,7 @@ def store_gmail_messages(self, account_id: int, message_details_list: List[Dict[
                             "sent_at": received_at,
                         },
                     )
-                    print(f"DEBUG: Message {msg_id} {'created' if created else 'updated'}")
+                    print(f"DEBUG: get_or_create completed for {msg_id} - {'created' if created else 'updated'} in {time.time() - msg_op_start:.2f}s")
                 except Exception as e:
                     print(f"DEBUG: Message {msg_id} failed: {type(e).__name__}: {e}")
                     logger.error(f"Failed saving message {msg_id}: {e}")
