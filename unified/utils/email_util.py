@@ -269,7 +269,9 @@ def store_gmail_messages(self, account_id: int, message_details_list: List[Dict[
         thread_id = msg_detail.get("threadId")
         print(f"DEBUG: Thread ID: {thread_id}")
 
-        _, is_important, score = is_message_important(f"{subject} {snippet}", user_rules)
+        # _, is_important, score = is_message_important(f"{subject} {snippet}", user_rules)
+        is_important = True
+        score = 0.9
         print(f"DEBUG: Message importance for ID {msg_detail.get('id')}: is_important={is_important}, score={score}")
 
         # Conversation handling
