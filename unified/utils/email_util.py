@@ -252,7 +252,7 @@ def store_gmail_messages(self, account_id: int, message_details_list: List[Dict[
 
                 # ... (your existing parsing code for subject, sender, etc.) ...
                 print(f"DEBUG: Parsed headers for msg {msg_id} in {time.time() - msg_start:.2f}s")
-                _, is_important, score = is_message_important(plain_body or snippet, user_rules=user_rules)
+                _, is_important, score = is_message_important.delay(plain_body or snippet, user_rules=user_rules)
                 print(f"DEBUG: Importance analysis for msg {msg_id} in {time.time() - msg_start:.2f}s - Important: {is_important}, Score: {score}")
 
                 conv_start = time.time()

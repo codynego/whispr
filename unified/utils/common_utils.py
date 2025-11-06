@@ -30,7 +30,7 @@ important_example_embeddings = model.encode(IMPORTANT_EXAMPLES)
 
 
 # === Importance Analyzer ===
-
+@shared_task
 def is_message_important(
     text: str,
     user_rules: Optional[List['UserRule']] = None,
