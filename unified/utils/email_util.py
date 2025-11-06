@@ -90,6 +90,7 @@ from google.auth.transport.requests import Request
 from celery import shared_task
 from django.conf import settings
 import logging
+from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
 
