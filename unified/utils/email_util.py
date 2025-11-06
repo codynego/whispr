@@ -22,6 +22,7 @@ from unified.models import UserRule
 from celery import shared_task
 from google.auth.transport.requests import Request
 from typing import List, Dict, Any
+from django.db import transaction
 
 logger = logging.getLogger(__name__)
 
@@ -270,16 +271,18 @@ def store_gmail_messages(account_id: int, message_details_list: List[Dict[str, A
 
         # Conversation handling
         print(f"DEBUG: Getting or creating conversation for thread {thread_id}")
-        conversation, created = Conversation.objects.get_or_create(
-            account=account,
-            thread_id=thread_id,
-            defaults={
-                "channel": "email",
-                "title": subject[:200] or "No Subject",
-                "last_message_at": received_at,
-                "last_sender": sender_email,
-            },
-        )
+        
+        with transaction.atomic():
+            conversation, created = Conversation.objects.get_or_create(
+                account=account,
+                thread_id=thread_id,
+                defaults={
+                    "channel": "email",
+                    "title": subject[:200] or "No Subject",
+                    "last_message_at": received_at,
+                    "last_sender": sender_email,
+                },
+            )
         print(f"DEBUG: Conversation {conversation.id} - created: {created}, title: {conversation.title}")
 
         if not created and (not conversation.last_message_at or received_at > conversation.last_message_at):

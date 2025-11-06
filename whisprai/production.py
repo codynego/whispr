@@ -392,8 +392,15 @@ DATABASES = {
         "PASSWORD": config("DB_PASSWORD", default="yourpassword"),
         "HOST": config("DB_HOST", default="localhost"),
         "PORT": config("DB_PORT", default="5432"),
+        'CONN_MAX_AGE': 0,  # Disable persistent connections in workers to avoid stale ones
+        'OPTIONS': {
+            'MAX_CONNS': 20,  # Bump if low
+        },
     }
 }
+# Celery-specific
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1  # Process one task at a time to reduce DB load
+CELERYD_CONCURRENCY = 2  # Lower if 1vCPU is bottleneck
 
 # --- Authentication ---
 AUTH_USER_MODEL = "users.User"
