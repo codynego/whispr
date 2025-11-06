@@ -94,14 +94,59 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def fetch_gmail_messages(account_id: int, limit=20):
-    """
-    Fetches Gmail messages for the given account.
-    Performs first sync or incremental sync based on historyId.
-    """
+import logging
+from typing import List, Dict, Any
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
+from django.conf import settings
+from .models import ChannelAccount, Conversation, Message, UserRule  # Assuming your models
+from celery import shared_task
+# Assuming these helpers are defined elsewhere:
+# clean_sender_field, parse_gmail_date, extract_bodies_recursive, is_message_important
 
+logger = logging.getLogger(__name__)
+
+
+import logging
+from typing import List, Dict, Any
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
+from django.conf import settings
+from .models import ChannelAccount, Conversation, Message, UserRule  # Assuming your models
+from celery import shared_task
+# Assuming these helpers are defined elsewhere:
+# clean_sender_field, parse_gmail_date, extract_bodies_recursive, is_message_important
+
+logger = logging.getLogger(__name__)
+
+
+import logging
+from typing import List, Dict, Any
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
+from django.conf import settings
+from .models import ChannelAccount, Conversation, Message, UserRule  # Assuming your models
+from celery import shared_task
+# Assuming these helpers are defined elsewhere:
+# clean_sender_field, parse_gmail_date, extract_bodies_recursive, is_message_important
+
+logger = logging.getLogger(__name__)
+
+
+def fetch_gmail_messages(account_id: int, limit=20) -> int:
+    """
+    Fetch full Gmail message details (including bodies).
+    Does NOT store anything — passes data to Celery for storage.
+    """
+    print(f"DEBUG: Entering fetch_gmail_messages with account_id={account_id}, limit={limit}")
+    
     account = ChannelAccount.objects.get(id=account_id, is_active=True)
-    print("Fetched account for Gmail messages:", account.address_or_id)
+    print(f"DEBUG: Retrieved account {account.id} - {account.address_or_id}")
+    
+    logger.info(f"🔍 Fetching Gmail messages for {account.address_or_id}")
 
     creds = Credentials(
         token=account.access_token,
@@ -110,170 +155,228 @@ def fetch_gmail_messages(account_id: int, limit=20):
         client_id=settings.GMAIL_CLIENT_ID,
         client_secret=settings.GMAIL_CLIENT_SECRET,
     )
-    print("Gmail credentials prepared.")
+    print(f"DEBUG: Created credentials object for account {account_id}")
 
-    # ✅ Refresh token once
     if not creds.valid and creds.refresh_token:
-        print("Gmail credentials invalid, refreshing...")
-        logger.info(f"🔁 Refreshing Gmail token for {account.address_or_id}")
+        print(f"DEBUG: Credentials invalid, refreshing for account {account_id}")
         creds.refresh(Request())
         account.access_token = creds.token
         account.save(update_fields=["access_token"])
+        print(f"DEBUG: Refreshed and saved new access token for account {account_id}")
 
-    print("Gmail credentials valid.")
     service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+    print(f"DEBUG: Built Gmail service for account {account_id}")
 
-    # ✅ FIRST SYNC — fetch last X messages only
+    message_ids: List[str] = []
+    full_messages: List[Dict[str, Any]] = []
+    
     if not account.last_history_id:
-        logger.info(f"🆕 First sync for {account.address_or_id}, fetching {limit} messages...")
-        results = service.users().messages().list(userId="me", maxResults=limit).execute()
-        messages = results.get("messages", [])
+        # First sync
+        print(f"DEBUG: Starting first sync for account {account_id}")
+        logger.info(f"🆕 First Gmail sync for {account.address_or_id}")
+        resp = service.users().messages().list(userId="me", maxResults=limit).execute()
+        print(f"DEBUG: List response keys: {list(resp.keys())}")
+        message_ids = [m["id"] for m in resp.get("messages", [])]
+        print(f"DEBUG: Extracted {len(message_ids)} message IDs: {message_ids}")
+        logger.info(f"Fetched {len(message_ids)} initial Gmail message IDs")
 
-        for msg in messages:
-            print("Storing message ID:", msg["id"])
-            _store_full_message.delay(account.id, msg["id"])
+        # Fetch full details for each
+        for msg_id in message_keys():
+            print(f"DEBUG: Fetching full details for message {msg_id}")
+            try:
+                msg_detail = service.users().messages().get(
+                    userId="me", id=msg_id, format="full"
+                ).execute()
+                print(f"DEBUG: Full message keys for {msg_id}: {list(msg_detail.keys())}")
+                full_messages.append(msg_detail)
+                logger.debug(f"Fetched full details for message {msg_id}")
+            except Exception as e:
+                print(f"DEBUG: Exception fetching {msg_id}: {type(e).__name__}: {e}")
+                logger.warning(f"Failed to fetch full details for {msg_id}: {e}")
+                continue
 
+        # Save last history ID
+        print(f"DEBUG: Fetching profile for history ID")
         profile = service.users().getProfile(userId="me").execute()
+        print(f"DEBUG: Profile historyId: {profile.get('historyId')}")
         account.last_history_id = profile.get("historyId")
         account.save(update_fields=["last_history_id"])
+        print(f"DEBUG: Saved last_history_id={account.last_history_id} for account {account_id}")
 
-        logger.info(f"✅ Initial sync done for {account.address_or_id} ({len(messages)} messages)")
-        return len(messages)
+    else:
+        # Incremental sync
+        print(f"DEBUG: Starting incremental sync with last_history_id={account.last_history_id}")
+        try:
+            history = service.users().history().list(
+                userId="me", startHistoryId=account.last_history_id
+            ).execute()
+            print(f"DEBUG: History response keys: {list(history.keys())}")
+            print(f"DEBUG: Number of histories: {len(history.get('history', []))}")
+            histories = history.get("history", [])
+            message_ids = {
+                m["message"]["id"] for h in histories for m in h.get("messagesAdded", [])
+            }
+            print(f"DEBUG: Extracted {len(message_ids)} incremental message IDs: {list(message_ids)}")
+            logger.info(f"Fetched {len(message_ids)} incremental Gmail message IDs")
 
-    # ✅ INCREMENTAL SYNC
-    try:
-        print("Performing incremental sync using history ID:", account.last_history_id)
-        history_resp = service.users().history().list(
-            userId="me",
-            startHistoryId=account.last_history_id
-        ).execute()
-        print("Gmail history fetched for incremental sync.")
-    except Exception as e:
-        print("⚠️ Gmail history fetch error:", str(e))
-        logger.warning(f"⚠️ Gmail history expired for {account.address_or_id}, resetting. {e}")
-        account.last_history_id = None
-        account.save(update_fields=["last_history_id"])
-        fetch_gmail_messages(account_id, limit)  # re-run as first sync
-        return 0
+            # Fetch full details for each
+            for msg_id in message_ids:
+                print(f"DEBUG: Fetching full details for incremental message {msg_id}")
+                try:
+                    msg_detail = service.users().messages().get(
+                        userId="me", id=msg_id, format="full"
+                    ).execute()
+                    print(f"DEBUG: Full message keys for {msg_id}: {list(msg_detail.keys())}")
+                    full_messages.append(msg_detail)
+                    logger.debug(f"Fetched full details for message {msg_id}")
+                except Exception as e:
+                    print(f"DEBUG: Exception fetching incremental {msg_id}: {type(e).__name__}: {e}")
+                    logger.warning(f"Failed to fetch full details for {msg_id}: {e}")
+                    continue
 
-    histories = history_resp.get("history", [])
-    msg_ids = {m["message"]["id"] for h in histories for m in h.get("messagesAdded", [])}
-    print("Fetched message IDs for incremental sync:", msg_ids)
+            new_history_id = history.get("historyId")
+            print(f"DEBUG: New history ID: {new_history_id}")
+            if new_history_id:
+                account.last_history_id = new_history_id
+                account.save(update_fields=["last_history_id"])
+                print(f"DEBUG: Updated last_history_id to {new_history_id} for account {account_id}")
+        except Exception as e:
+            print(f"DEBUG: Exception in incremental sync: {type(e).__name__}: {e}")
+            logger.warning(f"⚠️ History expired for {account.address_or_id}, resetting: {e}")
+            account.last_history_id = None
+            account.save(update_fields=["last_history_id"])
+            print(f"DEBUG: Reset last_history_id to None and recursing")
+            return fetch_gmail_messages(account_id, limit)
 
-    synced = 0
-    for msg_id in msg_ids:
-        print("Storing incremental message ID:", msg_id)
-        _store_full_message.delay(account.id, msg_id)
-        synced += 1
-
-    new_history_id = history_resp.get("historyId")
-    if new_history_id:
-        account.last_history_id = new_history_id
-        account.save(update_fields=["last_history_id"])
-
-    logger.info(f"✅ Incremental sync: {synced} new messages for {account.address_or_id}")
-    return synced
+    print(f"DEBUG: Total full_messages collected: {len(full_messages)}")
+    
+    if full_messages:
+        # Hand off to Celery for background storage
+        print(f"DEBUG: Delaying store_gmail_messages task with {len(full_messages)} messages")
+        store_gmail_messages.delay(account_id, full_messages)
+        print(f"DEBUG: Task delayed successfully")
+        return len(full_messages)
+    print(f"DEBUG: No full messages to process, returning 0")
+    return 0
 
 
 # ==============================================================
-# ✅ Celery task: Store full Gmail message (rebuilt service inside)
+# ✅ Celery task: Store full Gmail messages (no API calls)
 # ==============================================================
 
 @shared_task(
     bind=True,
-    soft_time_limit=300,   # 5 min soft
-    time_limit=360,       # 6 min hard
+    soft_time_limit=300,  # 5 min soft
+    time_limit=360,  # 6 min hard
     autoretry_for=(Exception,),
     max_retries=3
 )
-def _store_full_message(self, account_id, message_id):
+def store_gmail_messages(self, account_id: int, message_details_list: List[Dict[str, Any]]) -> None:
     """
-    Downloads, parses, and stores a full Gmail message for the given account.
-    Rebuilds Gmail service inside the task to avoid serialization issues.
+    Parses and stores a list of full Gmail message details for the given account.
+    No API calls — uses pre-fetched data.
     """
-    print("Storing full message for ID:", message_id)
+    print(f"DEBUG: Entering store_gmail_messages task for account {account_id} with {len(message_details_list)} messages")
+    print(f"DEBUG: Task ID: {self.request.id}")
 
     account = ChannelAccount.objects.get(id=account_id, is_active=True)
+    print(f"DEBUG: Retrieved account {account.id} - {account.address_or_id}")
+    
+    user_rules = UserRule.objects.filter(user=account.user)
+    print(f"DEBUG: Retrieved {len(user_rules)} user rules")
 
-    creds = Credentials(
-        token=account.access_token,
-        refresh_token=account.refresh_token,
-        token_uri="https://oauth2.googleapis.com/token",
-        client_id=settings.GMAIL_CLIENT_ID,
-        client_secret=settings.GMAIL_CLIENT_SECRET,
-    )
+    processed_count = 0
+    for idx, msg_detail in enumerate(message_details_list):
+        print(f"DEBUG: Processing message {idx + 1}/{len(message_details_list)} for ID: {msg_detail.get('id', 'UNKNOWN')}")
 
-    # Refresh if necessary
-    if not creds.valid and creds.refresh_token:
-        print("Refreshing Gmail credentials in Celery task...")
-        creds.refresh(Request())
-        account.access_token = creds.token
-        account.save(update_fields=["access_token"])
+        payload = msg_detail.get("payload", {})
+        print(f"DEBUG: Payload keys: {list(payload.keys())}")
+        
+        headers = payload.get("headers", [])
+        print(f"DEBUG: Number of headers: {len(headers)}")
+        header_map = {h["name"].lower(): h["value"] for h in headers}
+        print(f"DEBUG: Header keys in map: {list(header_map.keys())}")
 
-    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
-    msg_detail = service.users().messages().get(userId="me", id=message_id, format="full").execute()
+        subject = header_map.get("subject", "")
+        print(f"DEBUG: Subject: {subject[:50]}..." if len(subject) > 50 else f"DEBUG: Subject: {subject}")
+        
+        from_raw = header_map.get("from", "")
+        to_raw = header_map.get("to", "")
+        date_raw = header_map.get("date", "")
+        print(f"DEBUG: From raw: {from_raw}")
+        print(f"DEBUG: To raw: {to_raw}")
+        print(f"DEBUG: Date raw: {date_raw}")
 
-    payload = msg_detail.get("payload", {})
-    headers = payload.get("headers", [])
-    header_map = {h["name"].lower(): h["value"] for h in headers}
+        sender_name, sender_email = clean_sender_field(from_raw)
+        print(f"DEBUG: Parsed sender - name: {sender_name}, email: {sender_email}")
+        
+        _, recipient_email = clean_sender_field(to_raw)
+        print(f"DEBUG: Parsed recipient email: {recipient_email}")
+        
+        snippet = msg_detail.get("snippet", "")
+        print(f"DEBUG: Snippet preview: {snippet[:50]}...")
+        
+        plain_body, html_body = extract_bodies_recursive(payload)
+        print(f"DEBUG: Extracted bodies - plain len: {len(plain_body or '')}, html len: {len(html_body or '')}")
+        
+        received_at = parse_gmail_date(date_raw)
+        print(f"DEBUG: Parsed received_at: {received_at}")
+        
+        thread_id = msg_detail.get("threadId")
+        print(f"DEBUG: Thread ID: {thread_id}")
 
-    subject = header_map.get("subject", "")
-    from_raw = header_map.get("from", "")
-    to_raw = header_map.get("to", "")
-    date_raw = header_map.get("date", "")
+        _, is_important, score = is_message_important(f"{subject} {snippet}", user_rules)
+        print(f"DEBUG: Message importance for ID {msg_detail.get('id')}: is_important={is_important}, score={score}")
 
-    sender_name, sender_email = clean_sender_field(from_raw)
-    _, recipient_email = clean_sender_field(to_raw)
-    snippet = msg_detail.get("snippet", "")
-    plain_body, html_body = extract_bodies_recursive(payload)
-    received_at = parse_gmail_date(date_raw)
-    thread_id = msg_detail.get("threadId")
+        # Conversation handling
+        print(f"DEBUG: Getting or creating conversation for thread {thread_id}")
+        conversation, created = Conversation.objects.get_or_create(
+            account=account,
+            thread_id=thread_id,
+            defaults={
+                "channel": "email",
+                "title": subject[:200] or "No Subject",
+                "last_message_at": received_at,
+                "last_sender": sender_email,
+            },
+        )
+        print(f"DEBUG: Conversation {conversation.id} - created: {created}, title: {conversation.title}")
 
-    user_rule = UserRule.objects.filter(user=account.user)
-    _, is_important, score = is_message_important(f"{subject} {snippet}", user_rule)
-    print(f"Message importance for ID {message_id}: is_important={is_important}, score={score}")
+        if not created and (not conversation.last_message_at or received_at > conversation.last_message_at):
+            print(f"DEBUG: Updating conversation last_message_at from {conversation.last_message_at} to {received_at}")
+            conversation.last_message_at = received_at
+            conversation.last_sender = sender_email
+            if subject:
+                conversation.title = subject[:200]
+            conversation.save(update_fields=["last_message_at", "last_sender", "title", "updated_at"])
+            print(f"DEBUG: Conversation updated successfully")
 
-    # Conversation handling
-    conversation, _ = Conversation.objects.get_or_create(
-        account=account,
-        thread_id=thread_id,
-        defaults={
-            "channel": "email",
-            "title": subject[:200] or "No Subject",
-            "last_message_at": received_at,
-            "last_sender": sender_email,
-        },
-    )
+        print(f"DEBUG: Updating or creating Message for external_id {msg_detail.get('id')}")
+        message_obj, created_msg = Message.objects.update_or_create(
+            account=account,
+            conversation=conversation,
+            external_id=msg_detail["id"],
+            defaults={
+                "channel": "email",
+                "sender": sender_email,
+                "sender_name": sender_name,
+                "recipients": [recipient_email] if recipient_email else [],
+                "content": plain_body or snippet,
+                "metadata": {"subject": subject, "html_body": html_body},
+                "attachments": [],  # TODO: Parse attachments from payload if needed
+                "importance": "high" if is_important else "medium",
+                "importance_score": score,
+                "is_read": "UNREAD" not in msg_detail.get("labelIds", []),
+                "is_incoming": True,
+                "sent_at": received_at,
+            },
+        )
+        print(f"DEBUG: Message {message_obj.id} - created: {created_msg}")
 
-    if not conversation.last_message_at or received_at > conversation.last_message_at:
-        conversation.last_message_at = received_at
-        conversation.last_sender = sender_email
-        if subject:
-            conversation.title = subject[:200]
-        conversation.save(update_fields=["last_message_at", "last_sender", "title", "updated_at"])
+        processed_count += 1
+        print(f"DEBUG: Successfully processed message {msg_detail.get('id')}")
 
-    Message.objects.update_or_create(
-        account=account,
-        conversation=conversation,
-        external_id=message_id,
-        defaults={
-            "channel": "email",
-            "sender": sender_email,
-            "sender_name": sender_name,
-            "recipients": [recipient_email] if recipient_email else [],
-            "content": plain_body or snippet,
-            "metadata": {"subject": subject, "html_body": html_body},
-            "attachments": [],
-            "importance": "high" if is_important else "medium",
-            "importance_score": score,
-            "is_read": "UNREAD" not in msg_detail.get("labelIds", []),
-            "is_incoming": True,
-            "sent_at": received_at,
-        },
-    )
-
-    print(f"✅ Stored message {message_id} successfully.")
-
+    print(f"DEBUG: Task completed - processed {processed_count} messages successfully.")
 
 # def fetch_gmail_messages(account: ChannelAccount, limit=10):
 #     """
