@@ -188,7 +188,7 @@ Message:
     try:
         response = genai.generate_content(
             prompt,
-            model="gemini-1.5-flash-lite",
+            model="gemini-2.0-flash-lite",
             generation_config=genai.types.GenerationConfig(
                 temperature=0.1,
                 max_output_tokens=10,
