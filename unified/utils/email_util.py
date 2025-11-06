@@ -233,18 +233,45 @@ def store_gmail_messages(self, account_id: int, message_details_list: List[Dict[
             for i, msg_detail in enumerate(message_details_list, 1):
                 msg_start = time.time()
                 msg_id = msg_detail.get("id")
+                thread_id = msg_detail.get("threadId")
+                payload = msg_detail.get("payload", {})
+                headers = payload.get("headers", [])
+                header_map = {h["name"].lower(): h["value"] for h in headers}
+
+                subject = header_map.get("subject", "")
+                from_raw = header_map.get("from", "")
+                to_raw = header_map.get("to", "")
+                date_raw = header_map.get("date", "")
+
+                sender_name, sender_email = clean_sender_field(from_raw)
+                _, recipient_email = clean_sender_field(to_raw)
+                snippet = msg_detail.get("snippet", "")
+                plain_body, html_body = extract_bodies_recursive(payload)
+                received_at = parse_gmail_date(date_raw)
                 print(f"DEBUG: Processing msg {i}/{len(message_details_list)} ({msg_id}) at {time.time()}")
 
                 # ... (your existing parsing code for subject, sender, etc.) ...
+                is_important, score = True, 0.9
 
                 conv_start = time.time()
                 conversation = Conversation.objects.filter(account=account, thread_id=thread_id).first()
                 if not conversation:
-                    conversation = Conversation.objects.create(...)  # Your create code
+                    conversation = Conversation.objects.create(
+                        account=account,
+                        thread_id=thread_id,
+                        channel="email",
+                        title=subject[:200] or "No Subject",
+                        last_message_at=received_at,
+                        last_sender=sender_email,
+                    )
                     print(f"DEBUG: Created new conversation for {thread_id}")
                 else:
                     # Your update code
-                    conversation.save(update_fields=[...])
+                    if not conversation.last_message_at or received_at > conversation.last_message_at:
+                        conversation.last_message_at = received_at
+                        conversation.last_sender = sender_email
+                        conversation.title = subject[:200] or conversation.title
+                        conversation.save(update_fields=["last_message_at", "last_sender", "title", "updated_at"])
                     print(f"DEBUG: Updated conversation {thread_id}")
                 print(f"DEBUG: Conversation op took {time.time() - conv_start:.2f}s")
 
@@ -254,7 +281,20 @@ def store_gmail_messages(self, account_id: int, message_details_list: List[Dict[
                         account=account,
                         conversation=conversation,
                         external_id=msg_id,
-                        defaults={...}  # Your defaults
+                        defaults={
+                            "channel": "email",
+                            "sender": sender_email,
+                            "sender_name": sender_name,
+                            "recipients": [recipient_email] if recipient_email else [],
+                            "content": plain_body or snippet,
+                            "metadata": {"subject": subject, "html_body": html_body},
+                            "attachments": [],
+                            "importance": "high" if is_important else "medium",
+                            "importance_score": score,
+                            "is_read": "UNREAD" not in msg_detail.get("labelIds", []),
+                            "is_incoming": True,
+                            "sent_at": received_at,
+                        },
                     )
                     print(f"DEBUG: Message {msg_id} {'created' if created else 'updated'}")
                 except Exception as e:
@@ -273,7 +313,7 @@ def store_gmail_messages(self, account_id: int, message_details_list: List[Dict[
         logger.error(f"Store task failed for {account_id}: {e}", exc_info=True)
         self.retry(countdown=60 * 5, exc=e)  # Retry after 5min, adjust as needed
 
-        
+
 @shared_task(bind=True, autoretry_for=(Exception,), max_retries=3)
 def send_gmail_email(self, account, to_email, subject, body, body_html=None, attachments=None, thread_id=None):
     """Send email using Gmail API."""
