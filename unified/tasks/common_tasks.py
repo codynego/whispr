@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 # === Generic Unified Sync Task
 # ==============================================================
 
-@shared_task
-def sync_channel_account(self, account_id: int):
+
+def sync_channel_account(account_id: int):
     """
     Generic task to sync messages for any connected channel (email, WhatsApp, Slack, etc.).
     Uses provider to route to correct fetch function.
