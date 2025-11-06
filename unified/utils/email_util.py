@@ -101,6 +101,7 @@ def fetch_gmail_messages(account_id: int, limit=20):
 
     # ✅ Refresh token ONCE at beginning (avoid repeated slow refresh)
     if not creds.valid and creds.refresh_token:
+        print("Gmail credentials invalid, refreshing...")
         logger.info(f"🔁 Refreshing Gmail token for {account.address_or_id}")
         creds.refresh(Request())
         account.access_token = creds.token
