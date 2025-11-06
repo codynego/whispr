@@ -286,24 +286,22 @@ def store_gmail_messages(self, account_id: int, message_details_list: List[Dict[
                     # Split: Manual get_or_create to isolate SELECT vs INSERT
                     print(f"DEBUG: Fetched existing message for {msg_id}, now checking existence")
                     if not message:
-                        msg_obj, created = Message.objects.create(
+                        msg_obj = Message.objects.create(
                             account=account,
                             conversation=conversation,
                             external_id=msg_id,
-                            defaults={
-                                "channel": "email",
-                                "sender": sender_email,
-                                "sender_name": sender_name,
-                                "recipients": [recipient_email] if recipient_email else [],
-                                "content": plain_body or snippet,
-                                "metadata": {"subject": subject, "html_body": html_body},
-                                "attachments": [],
-                                "importance": "high" if is_important else "medium",
-                                "importance_score": score,
-                                "is_read": "UNREAD" not in msg_detail.get("labelIds", []),
-                                "is_incoming": True,
-                                "sent_at": received_at,
-                            },
+                            channel="email",
+                            sender=sender_email,
+                            sender_name=sender_name,
+                            recipients=[recipient_email] if recipient_email else [],
+                            content=plain_body or snippet,
+                            metadata={"subject": subject, "html_body": html_body},
+                            attachments=[],
+                            importance="high" if is_important else "medium",
+                            importance_score=score,
+                            is_read="UNREAD" not in msg_detail.get("labelIds", []),
+                            is_incoming=True,
+                            sent_at=received_at,
                         )
                         print(f"DEBUG: get_or_create completed for {msg_id} - {'created' if created else 'updated'} in {time.time() - msg_op_start:.2f}s")
                     else:
