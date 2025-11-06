@@ -198,7 +198,7 @@ def fetch_gmail_messages(account_id: int, limit=20) -> int:
     if full_messages:
         # Hand off to Celery for background storage
         print(f"DEBUG: Delaying store_gmail_messages task with {len(full_messages)} messages")
-        store_gmail_messages(account_id, full_messages)
+        store_gmail_messages.delay(account_id, full_messages)
         print(f"DEBUG: Task delayed successfully")
         return len(full_messages)
     print(f"DEBUG: No full messages to process, returning 0")
@@ -209,13 +209,13 @@ def fetch_gmail_messages(account_id: int, limit=20) -> int:
 # ✅ Celery task: Store full Gmail messages (no API calls)
 # ==============================================================
 
-
+@shared_task(name="store_gmail_messages")
 def store_gmail_messages(account_id: int, message_details_list: List[Dict[str, Any]]) -> None:
     """
-    Stores pre-fetched Gmail messages in the DB. No API calls here.
-    Optimized for PostgreSQL + Celery single concurrency.
+    Background Celery task to store Gmail messages in DB.
+    Runs independently so Gmail fetch doesn't block.
     """
-    print(f"DEBUG: Starting store_gmail_messages for account {account_id} ({len(message_details_list)} messages)")
+    print(f"DEBUG: Starting store_gmail_messages_task for account {account_id} ({len(message_details_list)} messages)")
 
     account = ChannelAccount.objects.select_related("user").get(id=account_id, is_active=True)
     user_rules = list(UserRule.objects.filter(user=account.user))
@@ -223,10 +223,9 @@ def store_gmail_messages(account_id: int, message_details_list: List[Dict[str, A
 
     processed = 0
 
-    for idx, msg_detail in enumerate(message_details_list):
+    for msg_detail in message_details_list:
         msg_id = msg_detail.get("id")
         thread_id = msg_detail.get("threadId")
-
         payload = msg_detail.get("payload", {})
         headers = payload.get("headers", [])
         header_map = {h["name"].lower(): h["value"] for h in headers}
@@ -242,21 +241,11 @@ def store_gmail_messages(account_id: int, message_details_list: List[Dict[str, A
         plain_body, html_body = extract_bodies_recursive(payload)
         received_at = parse_gmail_date(date_raw)
 
-        # Determine importance (placeholder)
-        print("getting importance")
-        is_important = True
-        score = 0.9
-        # is_important, score = is_message_important(f"{subject} {snippet}", user_rules)
-        print(f"DEBUG: Message {msg_id} importance: {is_important} (score: {score})")
+        # Importance (stub)
+        is_important, score = True, 0.9
 
-
-        # ----- Conversation handling -----
-        print("handling conversation")
-        conversation = Conversation.objects.filter(
-            account=account, thread_id=thread_id
-        ).first()
-        print(f"DEBUG: Conversation lookup for thread_id={thread_id}: {'found' if conversation else 'not found'}")
-
+        # Conversation
+        conversation = Conversation.objects.filter(account=account, thread_id=thread_id).first()
         if not conversation:
             conversation = Conversation.objects.create(
                 account=account,
@@ -266,18 +255,15 @@ def store_gmail_messages(account_id: int, message_details_list: List[Dict[str, A
                 last_message_at=received_at,
                 last_sender=sender_email,
             )
-            print(f"DEBUG: Created new conversation for thread_id={thread_id}")
         else:
-            # Update only if newer message
             if not conversation.last_message_at or received_at > conversation.last_message_at:
                 conversation.last_message_at = received_at
                 conversation.last_sender = sender_email
                 conversation.title = subject[:200] or conversation.title
                 conversation.save(update_fields=["last_message_at", "last_sender", "title", "updated_at"])
-                print(f"DEBUG: Updated conversation for thread_id={thread_id}")
-        # ----- Message handling -----
+
         try:
-            msg_obj, created_msg = Message.objects.update_or_create(
+            msg_obj, created = Message.objects.update_or_create(
                 account=account,
                 conversation=conversation,
                 external_id=msg_id,
@@ -296,7 +282,6 @@ def store_gmail_messages(account_id: int, message_details_list: List[Dict[str, A
                     "sent_at": received_at,
                 },
             )
-            print(f"DEBUG: Message {msg_id} {'created' if created_msg else 'updated'} successfully")
         except Exception as e:
             logger.error(f"Failed saving message {msg_id}: {e}")
             continue
@@ -305,9 +290,7 @@ def store_gmail_messages(account_id: int, message_details_list: List[Dict[str, A
         if processed % 10 == 0:
             print(f"DEBUG: {processed} messages processed so far")
 
-    # Commit once after all loop iterations
-    transaction.on_commit(lambda: print(f"DEBUG: ✅ Committed {processed} messages for account {account_id}"))
-
+    transaction.on_commit(lambda: print(f"✅ Stored {processed} messages for account {account_id}"))
 
 @shared_task(bind=True, autoretry_for=(Exception,), max_retries=3)
 def send_gmail_email(self, account, to_email, subject, body, body_html=None, attachments=None, thread_id=None):
