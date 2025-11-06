@@ -2,7 +2,7 @@ from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
 from unified.models import Message
-from unified.utils.common_utils import is_message_important
+from unified.utils.common_utils import is_message_important, get_embedding
 from whatsapp.models import WhatsAppMessage
 from whatsapp.tasks import send_whatsapp_message_task
 
@@ -46,7 +46,9 @@ def analyze_message_insights(message_id):
         else:
             insights = json.loads(raw_text) if raw_text.strip().startswith("{") else {}
 
-        print(f"✅ Gemini insights received for message {message_id}: {insights}")
+        # print(f"✅ Gemini insights received for message {message_id}: {insights}")
+        embedding = get_embedding(text)
+        print(f"✅ Gemini embedding generated for message {message_id}")
 
         # Parse structured insights
         ai_summary = insights.get("summary")
@@ -107,14 +109,14 @@ def handle_new_message(sender, instance, created, **kwargs):
     # === Compute importance ===
     # message_embedding, is_important, combined_score = is_message_important(text)
 
-    # if combined_score >= 0.9:
-    #     importance_level = "critical"
-    # elif combined_score >= 0.75:
-    #     importance_level = "high"
-    # elif combined_score >= 0.55:
-    #     importance_level = "medium"
-    # else:
-    #     importance_level = "low"
+    if instance.importance_score >= 0.9:
+        importance_level = "critical"
+    elif instance.importance_score >= 0.75:
+        importance_level = "high"
+    elif instance.importance_score >= 0.55:
+        importance_level = "medium"
+    else:
+        importance_level = "low"
 
     # analysis_text = (
     #     f"Importance score: {combined_score:.2f} — "

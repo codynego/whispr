@@ -38,11 +38,11 @@ def sync_channel_account(self, account_id: int):
         if channel == "email":
             if provider == "gmail":
                 print("Fetching Gmail messages...")
-                count = fetch_gmail_messages(account.id, limit=10)
+                count = fetch_gmail_messages(account.id, limit=5)
                 print(f"Fetched {count} Gmail messages.")
             elif provider == "outlook":
                 print("Fetching Outlook messages...")
-                count = fetch_gmail_messages(account.id, limit=10)
+                count = fetch_gmail_messages(account.id, limit=5)
             else:
                 logger.warning(f"⚠️ Unsupported email provider: {provider}")
                 return {"status": "error", "message": f"Unsupported provider {provider}"}
