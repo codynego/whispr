@@ -197,7 +197,7 @@ def fetch_gmail_messages(account_id: int, limit=20) -> int:
     if full_messages:
         # Hand off to Celery for background storage
         print(f"DEBUG: Delaying store_gmail_messages task with {len(full_messages)} messages")
-        store_gmail_messages.delay(account_id, full_messages)
+        store_gmail_messages(account_id, full_messages)
         print(f"DEBUG: Task delayed successfully")
         return len(full_messages)
     print(f"DEBUG: No full messages to process, returning 0")
@@ -208,14 +208,8 @@ def fetch_gmail_messages(account_id: int, limit=20) -> int:
 # ✅ Celery task: Store full Gmail messages (no API calls)
 # ==============================================================
 
-@shared_task(
-    bind=True,
-    soft_time_limit=300,  # 5 min soft
-    time_limit=360,  # 6 min hard
-    autoretry_for=(Exception,),
-    max_retries=3
-)
-def store_gmail_messages(self, account_id: int, message_details_list: List[Dict[str, Any]]) -> None:
+
+def store_gmail_messages(account_id: int, message_details_list: List[Dict[str, Any]]) -> None:
     """
     Parses and stores a list of full Gmail message details for the given account.
     No API calls — uses pre-fetched data.
