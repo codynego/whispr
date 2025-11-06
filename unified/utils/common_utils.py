@@ -9,7 +9,6 @@ import time  # For optional timing
 
 # Global refs (unchanged)
 
-model = None
 
 def get_model():
     global model
