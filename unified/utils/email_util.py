@@ -215,7 +215,7 @@ def store_gmail_messages(account_id: int, message_details_list: List[Dict[str, A
     No API calls — uses pre-fetched data.
     """
     print(f"DEBUG: Entering store_gmail_messages task for account {account_id} with {len(message_details_list)} messages")
-    print(f"DEBUG: Task ID: {request.id}")
+    # print(f"DEBUG: Task ID: {request.id}")
 
     account = ChannelAccount.objects.get(id=account_id, is_active=True)
     print(f"DEBUG: Retrieved account {account.id} - {account.address_or_id}")
