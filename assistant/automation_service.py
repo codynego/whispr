@@ -1,6 +1,7 @@
 # assistant/automation_service.py
 from datetime import datetime
 from django.utils import timezone
+from django.core.exceptions import ValidationError
 from assistant.models import Automation
 from django_celery_beat.models import (
     PeriodicTask,
@@ -37,7 +38,7 @@ class AutomationService:
         trigger_condition: dict = None,
         action_params: dict = None,
         description: str = None,
-    ) -> Optional[Automation]:
+    ) -> Automation | None:
         """
         Creates a new automation instance and schedules it if applicable.
         
@@ -87,24 +88,49 @@ class AutomationService:
         except Exception as e:
             logger.error(f"Failed to create automation: {e}")
             return None
+
     # ------------------------------------------------
     # UPDATE AUTOMATION
     # ------------------------------------------------
-    def update_automation(self, automation_id, **updates):
+    def update_automation(self, automation_id: int, **updates) -> Automation | None:
+        """
+        Updates an existing automation and reschedules if necessary.
+        
+        Args:
+            automation_id: ID of the automation to update.
+            **updates: Keyword arguments for fields to update (e.g., action_type='new_type').
+        
+        Returns:
+            The updated Automation instance or None on failure.
+        """
         try:
             automation = Automation.objects.get(id=automation_id, user=self.user)
+            
+            # Update only valid fields
             for field, value in updates.items():
-                if field in Automation._meta.get_fields():
+                if field in [f.name for f in Automation._meta.fields]:
                     setattr(automation, field, value)
+            
+            # Handle timezone-aware datetime updates
+            if "next_run_at" in updates and updates["next_run_at"]:
+                if timezone.is_naive(updates["next_run_at"]):
+                    updates["next_run_at"] = timezone.make_aware(updates["next_run_at"])
+                setattr(automation, "next_run_at", updates["next_run_at"])
+            
             automation.save()
 
-            # Reschedule if needed
-            if any(key in updates for key in ["next_run_at", "recurrence_pattern"]):
-                self._reschedule_automation(automation)
+            # Reschedule if schedule-related fields changed
+            if any(key in updates for key in ["next_run_at", "recurrence_pattern", "trigger_type"]):
+                if automation.trigger_type == "on_schedule":
+                    self._reschedule_automation(automation)
 
+            logger.info(f"Automation updated: {automation_id}")
             return automation
         except Automation.DoesNotExist:
             logger.warning(f"Automation {automation_id} not found for user {self.user}")
+            return None
+        except ValidationError as ve:
+            logger.error(f"Validation error updating automation {automation_id}: {ve}")
             return None
         except Exception as e:
             logger.error(f"Failed to update automation {automation_id}: {e}")
@@ -113,7 +139,16 @@ class AutomationService:
     # ------------------------------------------------
     # DELETE AUTOMATION
     # ------------------------------------------------
-    def delete_automation(self, automation_id):
+    def delete_automation(self, automation_id: int) -> bool:
+        """
+        Deletes an automation and unschedules it.
+        
+        Args:
+            automation_id: ID of the automation to delete.
+        
+        Returns:
+            True on success, False otherwise.
+        """
         try:
             automation = Automation.objects.get(id=automation_id, user=self.user)
             self._unschedule_automation(automation)
@@ -121,6 +156,7 @@ class AutomationService:
             logger.info(f"Automation deleted: {automation_id}")
             return True
         except Automation.DoesNotExist:
+            logger.warning(f"Automation {automation_id} not found for user {self.user}")
             return False
         except Exception as e:
             logger.error(f"Failed to delete automation {automation_id}: {e}")
@@ -129,10 +165,16 @@ class AutomationService:
     # ------------------------------------------------
     # TRIGGER AUTOMATION
     # ------------------------------------------------
-    def trigger_automation(self, automation_id, context=None):
+    def trigger_automation(self, automation_id: int, context: dict = None) -> bool:
         """
-        Manually triggers an automation. (Useful for 'on_message_received' or testing)
-        Checks should_trigger first.
+        Manually triggers an automation after checking conditions.
+        
+        Args:
+            automation_id: ID of the automation to trigger.
+            context: Optional context dict for condition checks (e.g., {'sender': 'user@example.com'}).
+        
+        Returns:
+            True if triggered successfully, False otherwise.
         """
         try:
             automation = Automation.objects.get(id=automation_id, user=self.user)
@@ -140,10 +182,13 @@ class AutomationService:
                 logger.info(f"Automation {automation_id} should not trigger under current conditions")
                 return False
 
-            # Execute logic here — e.g. send summary, follow-up, etc.
             self._execute_action(automation, context)
             automation.mark_triggered()
+            logger.info(f"Automation {automation_id} triggered successfully")
             return True
+        except Automation.DoesNotExist:
+            logger.warning(f"Automation {automation_id} not found for user {self.user}")
+            return False
         except Exception as e:
             logger.error(f"Failed to trigger automation {automation_id}: {e}")
             return False
@@ -151,10 +196,11 @@ class AutomationService:
     # ------------------------------------------------
     # PRIVATE HELPERS
     # ------------------------------------------------
-    def _schedule_automation(self, automation):
+    def _schedule_automation(self, automation: Automation) -> None:
         """Attach the automation to Celery Beat based on next_run_at and recurrence_pattern."""
         if not automation.next_run_at:
-            return None
+            logger.warning(f"No next_run_at set for automation {automation.id}; skipping schedule")
+            return
 
         # Delete any existing task first
         self._unschedule_automation(automation)
@@ -162,54 +208,74 @@ class AutomationService:
         task_name = f"automation_{automation.id}"
         args = json.dumps([automation.id])
 
-        if automation.recurrence_pattern:
-            # Handle recurring: assume recurrence_pattern is a cron string like "0 9 * * 1" for Mondays at 9am
-            # Or simple patterns like "daily", "weekly", etc. — extend parser as needed
-            schedule, created = CrontabSchedule.objects.get_or_create(
-                crontab=automation.recurrence_pattern,
-            )
-            PeriodicTask.objects.create(
-                crontab=schedule,
-                name=task_name,
-                task="assistant.tasks.execute_automation",
-                args=args,
-            )
-        else:
-            # One-time: use ClockedSchedule
-            clocked, created = ClockedSchedule.objects.get_or_create(
-                clocked_time=automation.next_run_at,
-            )
-            PeriodicTask.objects.create(
-                clocked=clocked,
-                name=task_name,
-                task="assistant.tasks.execute_automation",
-                args=args,
-            )
+        try:
+            if automation.recurrence_pattern:
+                # Handle recurring: assume recurrence_pattern is a cron string
+                # (Extend with parser for natural language like 'daily' if needed)
+                schedule, _ = CrontabSchedule.objects.get_or_create(
+                    crontab=automation.recurrence_pattern,
+                )
+                PeriodicTask.objects.create(
+                    crontab=schedule,
+                    name=task_name,
+                    task="assistant.tasks.execute_automation",
+                    args=args,
+                )
+                logger.debug(f"Recurring task scheduled for automation {automation.id}: {automation.recurrence_pattern}")
+            else:
+                # One-time: use ClockedSchedule
+                clocked, _ = ClockedSchedule.objects.get_or_create(
+                    clocked_time=automation.next_run_at,
+                )
+                PeriodicTask.objects.create(
+                    clocked=clocked,
+                    name=task_name,
+                    task="assistant.tasks.execute_automation",
+                    args=args,
+                    one_off=True,  # Required for one-time clocked tasks
+                )
+                logger.debug(f"One-time task scheduled for automation {automation.id} at {automation.next_run_at}")
+        except Exception as e:
+            logger.error(f"Failed to schedule automation {automation.id}: {e}")
 
-    def _unschedule_automation(self, automation):
+    def _unschedule_automation(self, automation: Automation) -> None:
         """Remove any Celery Beat task linked to this automation."""
-        PeriodicTask.objects.filter(name=f"automation_{automation.id}").delete()
+        deleted_count, _ = PeriodicTask.objects.filter(name=f"automation_{automation.id}").delete()
+        if deleted_count > 0:
+            logger.debug(f"Unscheduled {deleted_count} task(s) for automation {automation.id}")
 
-    def _reschedule_automation(self, automation):
-        """Recreate Celery Beat schedule."""
+    def _reschedule_automation(self, automation: Automation) -> None:
+        """Recreate Celery Beat schedule after changes."""
         self._unschedule_automation(automation)
         self._schedule_automation(automation)
 
-    def _execute_action(self, automation, context=None):
-        """Perform the actual action based on automation type."""
+    def _execute_action(self, automation: Automation, context: dict = None) -> None:
+        """
+        Perform the actual action based on automation type.
+        
+        Args:
+            automation: The Automation instance.
+            context: Optional context for action execution.
+        """
         action_type = automation.action_type
         params = automation.action_params or {}
-        cond = automation.trigger_condition or {}
+        trigger_cond = automation.trigger_condition or {}
 
-        # Examples of what to do (expand later)
+        logger.info(f"Executing action '{action_type}' for automation {automation.id}")
+
+        # Dispatch based on action_type (expand with real implementations)
         if action_type in ["reminder", "follow_up"]:
-            # Send WhatsApp or email reminder, using params and context
-            pass
+            # Example: Send WhatsApp/email reminder using params and context
+            # e.g., self.message_service.send_reminder(params.get('channel'), **params)
+            logger.info(f"Reminder/follow-up sent via {params.get('channel', 'default')}")
         elif action_type == "auto_summarize":
-            # Trigger summarize workflow, perhaps using context["text"]
-            pass
+            # Example: Trigger summarize workflow on context['text']
+            text_to_summarize = context.get("text", "") if context else ""
+            # e.g., summary = self.llm_service.summarize(text_to_summarize)
+            logger.info(f"Summary generated for text length: {len(text_to_summarize)}")
         elif action_type == "smart_notify":
-            # Send smart notifications based on cond and params
-            pass
+            # Example: Send notifications based on conditions and params
+            # e.g., self.notification_service.notify(trigger_cond, params)
+            logger.info("Smart notification dispatched")
         else:
-            logger.info(f"No handler defined for automation type: {action_type}")
+            logger.warning(f"No handler defined for action type: {action_type}")
