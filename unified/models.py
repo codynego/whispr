@@ -364,6 +364,15 @@ class Message(models.Model):
         ("critical", "Critical"),
     ]
 
+    LABEL_CHOICES = [
+        ("important", "Important"),
+        ("personal", "Personal"),
+        ("work", "Work"),
+        ("follow_up", "Follow Up"),
+        ("spam", "Spam"),
+        ("other", "Other"),
+    ]
+
     conversation = models.ForeignKey("Conversation", on_delete=models.CASCADE, related_name="messages")
     channel = models.CharField(max_length=50, default="email", db_index=True)
     account = models.ForeignKey("ChannelAccount", on_delete=models.CASCADE, related_name="messages")
@@ -387,6 +396,14 @@ class Message(models.Model):
     ai_people = EncryptedJSONField(default=list, blank=True, null=True)  # Encrypted
     ai_organizations = EncryptedJSONField(default=list, blank=True, null=True)  # Encrypted
     ai_related = EncryptedJSONField(default=list, blank=True, null=True)  # Encrypted
+
+    label = models.CharField(
+        max_length=50,
+        choices=LABEL_CHOICES,
+        blank=True,
+        null=True,
+        help_text="AI or user-assigned label for message"
+    )
 
     analyzed_at = models.DateTimeField(blank=True, null=True)
 
