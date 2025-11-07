@@ -180,15 +180,19 @@ class MessageHandler:
             "find_document",
             "set_reminder",
             "summarize_message",
-            "create_task"
+            "automation_create",
+            "automation_update",
+            "automation_delete",
         ]
 
         # Required @commands for safety-critical actions
         self.required_commands = {
             "send_message": "@send",
-            "create_task": "@task",
             "summarize_message": "@summarize",
             "read_message": "@read",
+            "automation_create": "@create_automation",
+            "automation_update": "@update_automation",
+            "automation_delete": "@delete_automation",
         }
 
     # --------------------------------------------------------
