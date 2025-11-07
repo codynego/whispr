@@ -37,31 +37,9 @@ class AutomationService:
         trigger_condition: dict = None,
         action_params: dict = None,
         description: str = None,
-    ) -> Optional[Automation]:
-        """
-        Creates a new automation instance and schedules it if applicable.
-        
-        Args:
-            action_type: The type of action to perform (must match TASK_TYPE_CHOICES).
-            name: Human-readable name for the automation.
-            trigger_type: Type of trigger (e.g., 'on_schedule', 'on_email_received').
-            next_run_at: Optional datetime for the next run (will be made timezone-aware if naive).
-            recurrence_pattern: Optional cron-like pattern for recurring runs.
-            trigger_condition: Optional dict of conditions for the trigger.
-            action_params: Optional dict of parameters for the action.
-            description: Optional detailed description.
-        
-        Returns:
-            The created Automation instance or None on failure.
-        """
+    ):
         try:
             print(f"Creating automation: {action_type}, trigger: {trigger_type}")
-            
-            # Ensure next_run_at is timezone-aware if provided
-            if next_run_at:
-                if timezone.is_naive(next_run_at):
-                    next_run_at = timezone.make_aware(next_run_at)
-            
             automation = Automation.objects.create(
                 user=self.user,
                 action_type=action_type,
@@ -75,18 +53,16 @@ class AutomationService:
                 is_active=True,
             )
 
-            # Schedule if it's a time-based trigger
+            # If it's scheduled — create a Celery Beat entry
             if trigger_type == "on_schedule":
                 self._schedule_automation(automation)
 
             logger.info(f"Automation created: {automation.id} ({automation.action_type})")
             return automation
-        except ValidationError as ve:
-            logger.error(f"Validation error creating automation: {ve}")
-            return None
         except Exception as e:
             logger.error(f"Failed to create automation: {e}")
             return None
+
     # ------------------------------------------------
     # UPDATE AUTOMATION
     # ------------------------------------------------
