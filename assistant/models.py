@@ -159,10 +159,10 @@ class Automation(models.Model):
     # --- Action types ---
 
     action_type = models.CharField(max_length=50, choices=TASK_TYPE_CHOICES)
-    metadata = models.JSONField(blank=True, null=True, help_text="Extra parameters for the action")
+    action_params = models.JSONField(blank=True, null=True, help_text="Extra parameters for the action")
 
     # --- Schedule support ---
-    status = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=True)
     last_triggered_at = models.DateTimeField(blank=True, null=True)
     next_run_at = models.DateTimeField(blank=True, null=True)
     recurrence_pattern = models.CharField(max_length=100, blank=True, null=True)
