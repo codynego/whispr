@@ -71,3 +71,34 @@ class AssistantTaskSerializer(serializers.ModelSerializer):
         user = self.context["request"].user
         validated_data["user"] = user
         return super().create(validated_data)
+
+
+# assistant/serializers.py
+from rest_framework import serializers
+from .models import Automation
+
+
+
+
+class AutomationSerializer(serializers.ModelSerializer):
+    user = serializers.HiddenField(default=serializers.CurrentUserDefault())
+
+    class Meta:
+        model = Automation
+        fields = [
+            "id",
+            "user",
+            "name",
+            "description",
+            "trigger_type",
+            "trigger_condition",
+            "action_type",
+            "action_params",
+            "is_active",
+            "last_triggered_at",
+            "next_run_at",
+            "recurrence_pattern",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at", "last_triggered_at", "next_run_at"]

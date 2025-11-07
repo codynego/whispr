@@ -104,23 +104,6 @@ class AssistantChatView(generics.GenericAPIView):
         handler = MessageHandler(user=user)
         response_text = handler.handle(prompt)
 
-        # # Build personalized context
-        # system_prompt = f"""
-        # You are an AI assistant for {user.email}.
-        # Tone: {config.tone}.
-        # Instructions: {config.custom_instructions or 'Be helpful and concise.'}
-        # Respond based on user's message below:
-        # """
-
-        # full_prompt = f"{system_prompt}\nUser: {prompt}"
-
-        # # Call Gemini
-        # response_text = get_gemini_response(
-        #     prompt,
-        #     user_id=request.user.id,
-        #     temperature=config.temperature,
-        #     max_output_tokens=config.max_response_length
-        # )
         response_text = response_text["reply"]
         print("Gemini response:", response_text)
         # Save assistant response
@@ -145,3 +128,223 @@ class AssistantConfigView(generics.RetrieveUpdateAPIView):
         return obj
 
 
+# assistant/views.py (Updated to use DRF Generics instead of ViewSet)
+from rest_framework import generics, status
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated
+from django.shortcuts import get_object_or_404
+from django_filters.rest_framework import DjangoFilterBackend
+from django.db.models import Count
+from django.utils import timezone
+from .models import Automation
+from .serializers import AutomationSerializer
+from .automation_service import AutomationService
+from .intent_router import IntentRouter
+
+
+# API Generic Views for Automations
+class AutomationListCreateView(generics.ListCreateAPIView):
+    """
+    API endpoint for listing and creating user automations.
+    """
+    serializer_class = AutomationSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend]
+    filterset_fields = ['trigger_type', 'action_type', 'is_active']
+
+    def get_queryset(self):
+        """
+        Filter automations to only those belonging to the current user.
+        """
+        return Automation.objects.filter(user=self.request.user).order_by('-created_at')
+
+    def perform_create(self, serializer):
+        """
+        Automatically assign the current user on creation.
+        """
+        serializer.save(user=self.request.user)
+
+
+class AutomationRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    API endpoint for retrieving, updating, or deleting a specific automation.
+    """
+    serializer_class = AutomationSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        """
+        Filter automations to only those belonging to the current user.
+        """
+        return Automation.objects.filter(user=self.request.user)
+
+    def get_object(self):
+        """
+        Retrieve the automation and ensure it belongs to the user.
+        """
+        queryset = self.get_queryset()
+        obj = get_object_or_404(queryset, pk=self.kwargs['pk'])
+        self.check_object_permissions(self.request, obj)
+        return obj
+
+
+@api_view(['POST'])
+def automation_trigger(request, pk):
+    """
+    Manually trigger an automation by ID.
+    Optional context can be passed in the request body.
+    """
+    permission_classes = [IsAuthenticated]
+    automation = get_object_or_404(
+        Automation.objects.filter(user=request.user), pk=pk
+    )
+    service = AutomationService(request.user)
+    context = request.data.get('context', {})
+
+    success = service.trigger_automation(automation.id, context)
+    if success:
+        return Response(
+            {'message': 'Automation triggered successfully.'},
+            status=status.HTTP_200_OK
+        )
+    else:
+        return Response(
+            {'error': 'Failed to trigger automation or conditions not met.'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+@api_view(['GET'])
+def automation_stats(request):
+    """
+    Get summary stats for user's automations (e.g., count by type).
+    """
+    permission_classes = [IsAuthenticated]
+    queryset = Automation.objects.filter(user=request.user)
+    stats = {
+        'total': queryset.count(),
+        'active': queryset.filter(is_active=True).count(),
+        'by_trigger_type': dict(queryset.values('trigger_type').annotate(count=Count('id'))),
+        'by_action_type': dict(queryset.values('action_type').annotate(count=Count('id'))),
+    }
+    return Response(stats)
+
+
+# Non-API view for natural language processing (e.g., POST /process-query/)
+from rest_framework.views import APIView
+from rest_framework.parsers import JSONParser
+
+class ProcessQueryView(APIView):
+    """
+    Endpoint for processing natural language queries via intent router.
+    Expects {'message': 'user query'} in body.
+    """
+    permission_classes = [IsAuthenticated]
+    parser_classes = [JSONParser]
+
+    def post(self, request):
+        message = request.data.get('message')
+        if not message:
+            return Response(
+                {'error': 'Message is required.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        router = IntentRouter(user=request.user)
+        context = request.data.get('context', {})  # Optional prior context
+        result = router.route(message, context)
+
+        return Response(
+            {'response': result, 'processed_at': timezone.now().isoformat()},
+            status=status.HTTP_200_OK
+        )
+
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status, permissions
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from .models import Automation
+from .serializers import AutomationSerializer
+
+
+class AutomationListCreateView(APIView):
+    """Handles listing all user automations and creating new ones."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        automations = Automation.objects.filter(user=request.user)
+        serializer = AutomationSerializer(automations, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        serializer = AutomationSerializer(data=request.data, context={"request": request})
+        if serializer.is_valid():
+            serializer.save(user=request.user)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class AutomationDetailView(APIView):
+    """Handles retrieving, updating, and deleting a single automation."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self, user, pk):
+        return get_object_or_404(Automation, pk=pk, user=user)
+
+    def get(self, request, pk):
+        automation = self.get_object(request.user, pk)
+        serializer = AutomationSerializer(automation)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def put(self, request, pk):
+        automation = self.get_object(request.user, pk)
+        serializer = AutomationSerializer(automation, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, pk):
+        automation = self.get_object(request.user, pk)
+        automation.delete()
+        return Response({"detail": "Automation deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
+
+
+class AutomationTriggerView(APIView):
+    """Manually trigger an automation."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        automation = get_object_or_404(Automation, pk=pk, user=request.user)
+        if not automation.is_active:
+            return Response({"detail": "Automation is inactive."}, status=status.HTTP_400_BAD_REQUEST)
+
+        automation.mark_triggered()
+        return Response(
+            {
+                "detail": f"Automation '{automation.name}' triggered successfully.",
+                "last_triggered_at": automation.last_triggered_at,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class AutomationToggleView(APIView):
+    """Enable or disable an automation."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        automation = get_object_or_404(Automation, pk=pk, user=request.user)
+        automation.is_active = not automation.is_active
+        automation.save(update_fields=["is_active"])
+        return Response(
+            {"detail": f"Automation is now {'active' if automation.is_active else 'inactive'}."},
+            status=status.HTTP_200_OK,
+        )
