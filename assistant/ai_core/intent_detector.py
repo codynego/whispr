@@ -204,7 +204,7 @@ class IntentDetector:
 
     Return JSON with this exact schema:
         {{
-    "intent": "<one of: find_message, read_message, summarize_message, send_message, reply_message, create_task, set_reminder, automation_create, automation_update, automation_delete, insights, unknown>",
+    "intent": "<one of: find_message, read_message, summarize_message, send_message, reply_message, automation_create, automation_update, automation_delete, insights, unknown>",
     "confidence": 0.0,
     "channel": "<email|whatsapp|slack|calendar|all>",
 
