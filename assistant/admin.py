@@ -2,6 +2,9 @@ from django.contrib import admin
 from .models import AssistantTask, AssistantConfig, AssistantMessage
 from django.contrib.auth import get_user_model
 from django.utils import timezone
+from django.contrib import admin
+from django.utils.translation import gettext_lazy as _
+from .models import Automation
 
 User = get_user_model()
 
@@ -124,3 +127,82 @@ class AssistantTaskAdmin(admin.ModelAdmin):
         qs = super().get_queryset(request)
         qs = qs.select_related('user')
         return qs
+
+
+
+
+@admin.register(Automation)
+class AutomationAdmin(admin.ModelAdmin):
+    """
+    Admin configuration for the Automation model.
+    """
+    list_display = (
+        'name',
+        'user',
+        'trigger_type',
+        'action_type',
+        'is_active',
+        'last_triggered_at',
+        'next_run_at',
+    )
+    list_filter = (
+        'trigger_type',
+        'action_type',
+        'is_active',
+        'created_at',
+        'updated_at',
+    )
+    search_fields = (
+        'name',
+        'description',
+        'user__username',  # Assuming AUTH_USER_MODEL has username field
+    )
+    readonly_fields = (
+        'created_at',
+        'updated_at',
+        'last_triggered_at',
+    )
+    fieldsets = (
+        (_('Core'), {
+            'fields': (
+                'user',
+                'name',
+                'description',
+            )
+        }),
+        (_('Trigger'), {
+            'fields': (
+                'trigger_type',
+                'trigger_condition',
+            )
+        }),
+        (_('Action'), {
+            'fields': (
+                'action_type',
+                'action_params',
+            )
+        }),
+        (_('Schedule'), {
+            'fields': (
+                'is_active',
+                'next_run_at',
+                'recurrence_pattern',
+            )
+        }),
+        (_('Metadata'), {
+            'fields': (
+                'created_at',
+                'updated_at',
+                'last_triggered_at',
+            ),
+            'classes': ('collapse',),
+        }),
+    )
+    filter_horizontal = ()  # No m2m fields here, but add if needed in future
+    ordering = ('-created_at',)
+
+    def get_readonly_fields(self, request, obj=None):
+        readonly_fields = list(self.readonly_fields)
+        if obj:  # For existing objects
+            readonly_fields.extend(['user', 'trigger_type', 'action_type'])
+        return tuple(readonly_fields)
