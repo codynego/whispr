@@ -2,7 +2,13 @@
 from datetime import datetime
 from django.utils import timezone
 from assistant.models import Automation
-from django_celery_beat.models import PeriodicTask, IntervalSchedule, CrontabSchedule
+from django_celery_beat.models import (
+    PeriodicTask,
+    ClockedSchedule,
+    IntervalSchedule,
+    CrontabSchedule,
+    SolarSchedule,
+)
 import json
 import logging
 
@@ -23,33 +29,35 @@ class AutomationService:
     # ------------------------------------------------
     def create_automation(
         self,
-        task_type: str,
-        title: str,
+        action_type: str,
+        name: str,
         trigger_type: str = "on_schedule",
-        due_datetime: datetime = None,
-        is_recurring: bool = False,
+        next_run_at: datetime = None,
         recurrence_pattern: str = None,
-        metadata: dict = None,
+        trigger_condition: dict = None,
+        action_params: dict = None,
+        description: str = None,
     ):
         try:
-            print(f"Creating automation: {task_type}, trigger: {trigger_type}")
+            print(f"Creating automation: {action_type}, trigger: {trigger_type}")
             automation = Automation.objects.create(
                 user=self.user,
-                task_type=task_type,
-                title=title,
+                action_type=action_type,
+                name=name,
                 trigger_type=trigger_type,
-                due_datetime=due_datetime,
-                is_recurring=is_recurring,
+                next_run_at=next_run_at,
                 recurrence_pattern=recurrence_pattern,
-                metadata=metadata or {},
-                status="active",
+                trigger_condition=trigger_condition or {},
+                action_params=action_params or {},
+                description=description,
+                is_active=True,
             )
 
             # If it's scheduled — create a Celery Beat entry
             if trigger_type == "on_schedule":
                 self._schedule_automation(automation)
 
-            logger.info(f"Automation created: {automation.id} ({automation.task_type})")
+            logger.info(f"Automation created: {automation.id} ({automation.action_type})")
             return automation
         except Exception as e:
             logger.error(f"Failed to create automation: {e}")
@@ -62,11 +70,12 @@ class AutomationService:
         try:
             automation = Automation.objects.get(id=automation_id, user=self.user)
             for field, value in updates.items():
-                setattr(automation, field, value)
+                if field in Automation._meta.get_fields():
+                    setattr(automation, field, value)
             automation.save()
 
             # Reschedule if needed
-            if "due_datetime" in updates or "recurrence_pattern" in updates:
+            if any(key in updates for key in ["next_run_at", "recurrence_pattern"]):
                 self._reschedule_automation(automation)
 
             return automation
@@ -96,16 +105,20 @@ class AutomationService:
     # ------------------------------------------------
     # TRIGGER AUTOMATION
     # ------------------------------------------------
-    def trigger_automation(self, automation_id):
+    def trigger_automation(self, automation_id, context=None):
         """
         Manually triggers an automation. (Useful for 'on_message_received' or testing)
+        Checks should_trigger first.
         """
         try:
             automation = Automation.objects.get(id=automation_id, user=self.user)
+            if not automation.should_trigger(context):
+                logger.info(f"Automation {automation_id} should not trigger under current conditions")
+                return False
+
             # Execute logic here — e.g. send summary, follow-up, etc.
-            self._execute_action(automation)
-            automation.last_triggered = timezone.now()
-            automation.save()
+            self._execute_action(automation, context)
+            automation.mark_triggered()
             return True
         except Exception as e:
             logger.error(f"Failed to trigger automation {automation_id}: {e}")
@@ -115,23 +128,39 @@ class AutomationService:
     # PRIVATE HELPERS
     # ------------------------------------------------
     def _schedule_automation(self, automation):
-        """Attach the automation to Celery Beat if due_datetime is set."""
-        if not automation.due_datetime:
+        """Attach the automation to Celery Beat based on next_run_at and recurrence_pattern."""
+        if not automation.next_run_at:
             return None
 
-        schedule, _ = CrontabSchedule.objects.get_or_create(
-            minute=automation.due_datetime.minute,
-            hour=automation.due_datetime.hour,
-            day_of_month=automation.due_datetime.day,
-            month_of_year=automation.due_datetime.month,
-        )
+        # Delete any existing task first
+        self._unschedule_automation(automation)
 
-        PeriodicTask.objects.create(
-            crontab=schedule,
-            name=f"automation_{automation.id}",
-            task="assistant.tasks.execute_automation",
-            args=json.dumps([automation.id]),
-        )
+        task_name = f"automation_{automation.id}"
+        args = json.dumps([automation.id])
+
+        if automation.recurrence_pattern:
+            # Handle recurring: assume recurrence_pattern is a cron string like "0 9 * * 1" for Mondays at 9am
+            # Or simple patterns like "daily", "weekly", etc. — extend parser as needed
+            schedule, created = CrontabSchedule.objects.get_or_create(
+                crontab=automation.recurrence_pattern,
+            )
+            PeriodicTask.objects.create(
+                crontab=schedule,
+                name=task_name,
+                task="assistant.tasks.execute_automation",
+                args=args,
+            )
+        else:
+            # One-time: use ClockedSchedule
+            clocked, created = ClockedSchedule.objects.get_or_create(
+                clocked_time=automation.next_run_at,
+            )
+            PeriodicTask.objects.create(
+                clocked=clocked,
+                name=task_name,
+                task="assistant.tasks.execute_automation",
+                args=args,
+            )
 
     def _unschedule_automation(self, automation):
         """Remove any Celery Beat task linked to this automation."""
@@ -142,20 +171,21 @@ class AutomationService:
         self._unschedule_automation(automation)
         self._schedule_automation(automation)
 
-    def _execute_action(self, automation):
+    def _execute_action(self, automation, context=None):
         """Perform the actual action based on automation type."""
-        task_type = automation.task_type
-        data = automation.metadata or {}
+        action_type = automation.action_type
+        params = automation.action_params or {}
+        cond = automation.trigger_condition or {}
 
         # Examples of what to do (expand later)
-        if task_type in ["reminder", "follow_up"]:
-            # Send WhatsApp or email reminder
+        if action_type in ["reminder", "follow_up"]:
+            # Send WhatsApp or email reminder, using params and context
             pass
-        elif task_type == "auto_summarize":
-            # Trigger summarize workflow
+        elif action_type == "auto_summarize":
+            # Trigger summarize workflow, perhaps using context["text"]
             pass
-        elif task_type == "smart_notify":
-            # Send smart notifications
+        elif action_type == "smart_notify":
+            # Send smart notifications based on cond and params
             pass
         else:
-            logger.info(f"No handler defined for automation type: {task_type}")
+            logger.info(f"No handler defined for automation type: {action_type}")

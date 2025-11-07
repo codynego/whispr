@@ -208,34 +208,40 @@ class IntentDetector:
     "confidence": 0.0,
     "channel": "<email|whatsapp|slack|calendar|all>",
 
-    "entities": {{
-        "message_id": [12, 125], // list or single ID depending on context
-        "sender": "<name or org>",
-        "receiver_name": "<name of recipient>",
-        "receiver": "<email/phone/channel>",
-        "subject": "<subject - generate if missing>",
-        "body": "<body - generate if missing>",
+    {{
+        "entities": {{
+            "message_id": [12, 125], // list or single ID depending on context
+            "sender": "<name or org>",
+            "receiver_name": "<name of recipient>",
+            "receiver": "<email/phone/channel>",
+            "subject": "<subject - generate if missing>",
+            "body": "<body - generate if missing>",
 
-        "task_type": "<type of task e.g. reminder, follow-up, summary, auto_followup>",
-        "task_title": "<natural language task summary — e.g. 'Remind Abednego to reply to John tomorrow at 9am'>",
-        "due_time": "<08:00 or natural language>",
-        "due_date": "<2025-11-07>",
-        "due_datetime": "<ISO 8601 datetime — inferred if missing>",
+            "action_type": "<type of action e.g. reminder, follow-up, summary, auto_followup>",
+            "name": "<natural language name — e.g. 'Remind Abednego to reply to John tomorrow at 9am'>",
+            "next_run_at": "<ISO 8601 datetime — inferred if missing>",
+            "description": "<optional description for the automation>",
 
-        "query_text": "<the user's raw query>",
-        "actions": ["find", "summarize", "reply", "create_task", "send_message", "insights"],
-        "context": "<context or purpose of request>",
+            "query_text": "<the user's raw query>",
+            "actions": ["find", "summarize", "reply", "create_task", "send_message", "insights"],
+            "context": "<context or purpose of request>",
 
-        "trigger_type": "<on_message_received | on_schedule | on_intent_detected | on_condition>",
-        "is_recurring": false,
-        "recurrence_pattern": "<daily | weekly | every Monday | every 2 days>",
-        "conditions": {{
-            "channel": "<email|whatsapp|all>",
-            "filter": "<from:boss@example.com OR subject contains 'urgent'>"
-        }},
-        
-        "execution_mode": "<manual|auto|background>", 
-        "__should_create_trigger__": false
+            "trigger_type": "<on_email_received | on_schedule | on_message_received | on_task_due | on_calendar_event | manual>",
+            "recurrence_pattern": "<daily | weekly | every Monday | every 2 days | cron string e.g. '0 9 * * 1'>",
+            "trigger_condition": {{
+                "channel": "<email|whatsapp|all>",
+                "filter": "<from:boss@example.com OR contains:urgent>"
+            }},
+            
+            "action_params": {{
+                "query_text": "<the user's raw query>",
+                "actions": ["find", "summarize", "reply", "create_task", "send_message", "insights"],
+                "context": "<context or purpose of request>"
+            }},
+
+            "execution_mode": "<manual|auto|background>", 
+            "__should_create_automation__": false
+        }}
     }}
     }}
 

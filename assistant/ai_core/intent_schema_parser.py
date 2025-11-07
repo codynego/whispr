@@ -133,17 +133,17 @@ class IntentSchemaParser:
 
             # ---------------- AUTOMATIONS ---------------- #
             "automation_create": {
-                "required_fields": ["trigger_type", "task_type"],
+                "required_fields": ["trigger_type", "action_type"],
                 "optional_fields": [
-                    "due_datetime", "recurrence_pattern", "conditions",
-                    "execution_mode", "context", "task_title",
+                    "name", "description", "next_run_at", "recurrence_pattern", "trigger_condition",
+                    "action_params", "execution_mode", "context",
                 ],
                 "data_source": "automations",
                 "handler": "create_automation",
             },
             "automation_update": {
                 "required_fields": ["automation_id"],
-                "optional_fields": ["trigger_type", "task_type", "recurrence_pattern", "conditions"],
+                "optional_fields": ["name", "description", "trigger_type", "action_type", "next_run_at", "recurrence_pattern", "trigger_condition", "action_params", "is_active"],
                 "data_source": "automations",
                 "handler": "update_automation",
             },
@@ -155,7 +155,7 @@ class IntentSchemaParser:
             },
             "automation_list": {
                 "required_fields": [],
-                "optional_fields": ["status", "task_type"],
+                "optional_fields": ["is_active", "action_type"],
                 "data_source": "automations",
                 "handler": "list_automations",
             },
@@ -254,6 +254,10 @@ class IntentSchemaParser:
             "type": "Do you mean a debit or credit transaction?",
             "subject": "What was the subject?",
             "participants": "Who was in the meeting?",
+            "trigger_type": "What should trigger this automation?",
+            "action_type": "What action should it perform?",
+            "name": "What should this automation be called?",
+            "next_run_at": "When should it run next?",
         }
 
         prompts = [templates.get(f, f"Can you provide {f}?") for f in missing_fields]

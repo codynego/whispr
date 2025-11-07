@@ -5,6 +5,7 @@ from .llm_service import LLMService
 from django.conf import settings
 from assistant.automation_service import AutomationService  # ✅ new service
 from .context_manager import ContextManager
+from assistant.models import Automation
 
 APIKEY = settings.GEMINI_API_KEY
 
@@ -49,7 +50,7 @@ class IntentRouter:
         channel = entities.get("channel") or self._detect_channel(message)
 
         # Auto-upgrade to automation_create if trigger flag is present
-        if entities.get("__should_create_trigger__"):
+        if entities.get("__should_create_automation__"):
             intent = "automation_create"
 
         handler = self.get_handler(intent)
@@ -153,20 +154,20 @@ class IntentRouter:
         """
         Creates a new automation or scheduled trigger.
         """
-        print("about to run some create automation")
-        automation = AutomationService(self.user).create_automation(
-            task_type=entities.get("task_type"),
-            title=entities.get("task_title"),
+        service = AutomationService(self.user)
+        automation = service.create_automation(
+            action_type=entities.get("action_type"),
+            name=entities.get("name"),
             trigger_type=entities.get("trigger_type"),
-            due_datetime=entities.get("due_datetime"),
-            is_recurring=entities.get("is_recurring", False),
+            next_run_at=entities.get("next_run_at"),
             recurrence_pattern=entities.get("recurrence_pattern"),
-            metadata=entities,
+            trigger_condition=entities.get("trigger_condition"),
+            action_params=entities.get("action_params"),
+            description=entities.get("description"),
         )
         if not automation:
             return "❌ Failed to create automation."
-        return f"⚡ Automation '{automation.task_type}' created successfully."
-
+        return f"⚡ Automation '{automation.name}' created successfully."
 
     def handle_update_automation(self, entities, channel="all"):
         """
@@ -178,17 +179,22 @@ class IntentRouter:
         if not automation_id:
             return "⚠️ I couldn’t identify which automation to update."
 
-        success = service.update_automation(
-            automation_id=automation_id,
-            updates={
-                "task_type": entities.get("task_type"),
-                "title": entities.get("task_title"),
-                "due_datetime": entities.get("due_datetime"),
-                "recurrence_pattern": entities.get("recurrence_pattern"),
-            },
-        )
-        return "✅ Automation updated successfully." if success else "❌ Failed to update automation."
+        updates = {
+            "name": entities.get("name"),
+            "description": entities.get("description"),
+            "trigger_type": entities.get("trigger_type"),
+            "trigger_condition": entities.get("trigger_condition"),
+            "action_type": entities.get("action_type"),
+            "action_params": entities.get("action_params"),
+            "is_active": entities.get("is_active"),
+            "next_run_at": entities.get("next_run_at"),
+            "recurrence_pattern": entities.get("recurrence_pattern"),
+        }
+        # Remove None values to avoid overwriting with null
+        updates = {k: v for k, v in updates.items() if v is not None}
 
+        automation = service.update_automation(automation_id, **updates)
+        return "✅ Automation updated successfully." if automation else "❌ Failed to update automation."
 
     def handle_delete_automation(self, entities, channel="all"):
         """
@@ -198,15 +204,11 @@ class IntentRouter:
         service = AutomationService(self.user)
         automation_id = entities.get("automation_id") or entities.get("task_id")
 
-        if not automation_id and not entities.get("task_type"):
+        if not automation_id:
             return "⚠️ I couldn’t find which automation to delete."
 
-        success = service.delete_automation(
-            automation_id=automation_id,
-            task_type=entities.get("task_type"),
-        )
+        success = service.delete_automation(automation_id)
         return "🗑️ Automation deleted successfully." if success else "❌ Could not delete automation."
-
 
     # ---------------- SERVICE RESOLVER ---------------- #
     def _get_service(self, channel):
