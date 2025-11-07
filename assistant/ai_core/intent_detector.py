@@ -244,7 +244,7 @@ class IntentDetector:
     Make sure all applicable fields are filled depending on the detected intent.
     For example:
     - For send_message: include receiver_name, receiver, subject, body
-    - For create_task or set_reminder: include task_title, due_date, due_time, due_datetime
+    - For automation: include task_title, due_date, due_time, due_datetime
     - For find_message or summarize_message: include sender, timeframe, query_text
     """
 
