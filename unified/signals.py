@@ -115,13 +115,13 @@ def handle_new_message(sender, instance, created, **kwargs):
     # message_embedding, is_important, combined_score = is_message_important(text)
 
     if instance.importance_score >= 0.9:
-        importance_level = "critical"
+        instance.importance = "critical"
     elif instance.importance_score >= 0.75:
-        importance_level = "high"
+        instance.importance = "high"
     elif instance.importance_score >= 0.55:
-        importance_level = "medium"
+        instance.importance = "medium"
     else:
-        importance_level = "low"
+        instance.importance = "low"
 
     # analysis_text = (
     #     f"Importance score: {combined_score:.2f} — "
@@ -137,7 +137,8 @@ def handle_new_message(sender, instance, created, **kwargs):
     instance.analyzed_at = timezone.now()
     instance.embedding_generated = True
     instance.save(update_fields=[
-
+        "importance",
+        "importance_score",
         "analyzed_at",
         "embedding_generated",
     ])
@@ -146,8 +147,8 @@ def handle_new_message(sender, instance, created, **kwargs):
     
 
     # === Optional: send WhatsApp alert ===
-    if instance.importance in ["medium", "high", "critical"] and sender_number:
-        alert_message = f"*Summary:* Pending analysis...\n💡 *Next Step:* Pending analysis..."
+    if instance.importance in ["high", "critical"] and sender_number:
+        alert_message = f"*Important Message:*\n{instance.subject}"
         try:
             response_message = WhatsAppMessage.objects.create(
                 user=user,
