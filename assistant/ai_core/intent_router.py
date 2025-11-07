@@ -151,29 +151,9 @@ class IntentRouter:
 
     def handle_create_automation(self, entities, channel="all"):
         """
-        Unified handler for:
-        - Reminders
-        - Follow-ups
-        - Alerts
-        - Smart automations
-        """
-        automation = AutomationService(self.user).create_automation(
-            task_type=entities.get("task_type"),
-            title=entities.get("task_title"),
-            trigger_type=entities.get("trigger_type"),
-            due_datetime=entities.get("due_datetime"),
-            is_recurring=entities.get("is_recurring", False),
-            recurrence_pattern=entities.get("recurrence_pattern"),
-            metadata=entities,
-        )
-
-        if not automation:
-            return "❌ Failed to create automation."
-        return f"⚡ Automation '{automation.task_type}' created successfully."
-    def handle_create_automation(self, entities, channel="all"):
-        """
         Creates a new automation or scheduled trigger.
         """
+        print("about to run some create automation")
         automation = AutomationService(self.user).create_automation(
             task_type=entities.get("task_type"),
             title=entities.get("task_title"),

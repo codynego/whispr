@@ -32,6 +32,7 @@ class AutomationService:
         metadata: dict = None,
     ):
         try:
+            print(f"Creating automation: {task_type}, trigger: {trigger_type}")
             automation = Automation.objects.create(
                 user=self.user,
                 task_type=task_type,
