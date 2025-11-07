@@ -13,6 +13,7 @@ from django_celery_beat.models import (
 import json
 import logging
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,12 +29,14 @@ class AutomationService:
     # ------------------------------------------------
     # CREATE AUTOMATION
     # ------------------------------------------------
+  # Ensure this is imported at the top (already there)
+
     def create_automation(
         self,
         action_type: str,
         name: str,
         trigger_type: str = "on_schedule",
-        next_run_at: datetime = None,
+        next_run_at: datetime | str = None,  # Accept str for LLM outputs
         recurrence_pattern: str = None,
         trigger_condition: dict = None,
         action_params: dict = None,
@@ -46,7 +49,7 @@ class AutomationService:
             action_type: The type of action to perform (must match TASK_TYPE_CHOICES).
             name: Human-readable name for the automation.
             trigger_type: Type of trigger (e.g., 'on_schedule', 'on_email_received').
-            next_run_at: Optional datetime for the next run (will be made timezone-aware if naive).
+            next_run_at: Optional datetime or ISO string for the next run (will be parsed and made timezone-aware if naive).
             recurrence_pattern: Optional cron-like pattern for recurring runs.
             trigger_condition: Optional dict of conditions for the trigger.
             action_params: Optional dict of parameters for the action.
@@ -58,8 +61,16 @@ class AutomationService:
         try:
             print(f"Creating automation: {action_type}, trigger: {trigger_type}")
             
-            # Ensure next_run_at is timezone-aware if provided
+            # Parse and ensure next_run_at is a timezone-aware datetime if provided
             if next_run_at:
+                if isinstance(next_run_at, str):
+                    # Parse ISO string (e.g., '2025-11-08T22:00:00') to datetime
+                    try:
+                        next_run_at = datetime.fromisoformat(next_run_at)
+                    except ValueError as parse_err:
+                        logger.error(f"Invalid next_run_at format '{next_run_at}': {parse_err}")
+                        return None
+                
                 if timezone.is_naive(next_run_at):
                     next_run_at = timezone.make_aware(next_run_at)
             
