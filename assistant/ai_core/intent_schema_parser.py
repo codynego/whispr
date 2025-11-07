@@ -1,47 +1,50 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import difflib
+
 
 class IntentSchemaParser:
     """
     Validates detected intents against predefined schemas and ensures
-    all required entities are available before routing.
-    Supports multi-channel awareness (email, whatsapp, slack, etc.)
-    and dynamic fallback for unknown intents.
+    required entities are available before routing.
+    
+    ✅ Supports:
+    - Multi-channel awareness (email, whatsapp, slack, etc.)
+    - Dynamic fallback for unknown or partially matched intents
+    - Context inheritance for missing entities
     """
 
     def __init__(self):
-        # 🎯 Base intent schema definitions
-        self.intent_schemas = {
+        self.intent_schemas: Dict[str, Dict[str, Any]] = {
             # ---------------- EMAIL INTENTS ---------------- #
             "read_message": {
                 "required_fields": [],
                 "optional_fields": ["sender", "category", "timeframe", "subject", "query_text"],
                 "data_source": "emails",
-                "handler": "read_message"
+                "handler": "read_message",
             },
             "find_message": {
                 "required_fields": [],
                 "optional_fields": ["sender", "category", "timeframe", "subject", "query_text"],
                 "data_source": "emails",
-                "handler": "query_messages"
+                "handler": "query_messages",
             },
             "send_email": {
                 "required_fields": ["receiver"],
                 "optional_fields": ["subject", "body", "attachments"],
                 "data_source": "emails",
-                "handler": "send_message"
+                "handler": "send_message",
             },
             "summarize_message": {
                 "required_fields": [],
                 "optional_fields": ["sender", "category", "timeframe", "subject", "query_text"],
                 "data_source": "emails",
-                "handler": "summarize_message"
+                "handler": "summarize_message",
             },
             "summarize_thread": {
                 "required_fields": [],
                 "optional_fields": ["thread_id", "sender", "timeframe"],
                 "data_source": "emails",
-                "handler": "summarize_thread"
+                "handler": "summarize_thread",
             },
 
             # ---------------- CHAT / WHATSAPP INTENTS ---------------- #
@@ -49,39 +52,39 @@ class IntentSchemaParser:
                 "required_fields": ["receiver"],
                 "optional_fields": ["content", "attachments"],
                 "data_source": "chats",
-                "handler": "send_message"
+                "handler": "send_message",
             },
             "read_chat": {
                 "required_fields": [],
                 "optional_fields": ["sender", "timeframe", "query_text"],
                 "data_source": "chats",
-                "handler": "read_chat"
+                "handler": "read_chat",
             },
             "find_chat": {
                 "required_fields": [],
                 "optional_fields": ["sender", "timeframe", "query_text"],
                 "data_source": "chats",
-                "handler": "query_chats"
+                "handler": "query_chats",
             },
 
             # ---------------- TASKS & REMINDERS ---------------- #
             "create_task": {
                 "required_fields": ["due_datetime"],
-                "optional_fields": ["due_datetime", "context", "priority"],
+                "optional_fields": ["context", "priority", "task_title"],
                 "data_source": "tasks",
-                "handler": "create_task"
+                "handler": "create_task",
             },
             "set_reminder": {
                 "required_fields": ["due_datetime"],
                 "optional_fields": ["context", "priority", "task_title", "due_date", "due_time"],
                 "data_source": "tasks",
-                "handler": "create_reminder"
+                "handler": "create_reminder",
             },
             "find_task": {
                 "required_fields": [],
                 "optional_fields": ["status", "priority", "timeframe"],
                 "data_source": "tasks",
-                "handler": "query_tasks"
+                "handler": "query_tasks",
             },
 
             # ---------------- CALENDAR / EVENTS ---------------- #
@@ -89,13 +92,13 @@ class IntentSchemaParser:
                 "required_fields": [],
                 "optional_fields": ["participants", "timeframe", "topic"],
                 "data_source": "calendar",
-                "handler": "query_meetings"
+                "handler": "query_meetings",
             },
             "create_event": {
                 "required_fields": ["event_title", "timeframe"],
                 "optional_fields": ["participants", "location", "notes"],
                 "data_source": "calendar",
-                "handler": "create_event"
+                "handler": "create_event",
             },
 
             # ---------------- FILES / DOCUMENTS ---------------- #
@@ -103,7 +106,7 @@ class IntentSchemaParser:
                 "required_fields": [],
                 "optional_fields": ["file_type", "sender", "timeframe"],
                 "data_source": "files",
-                "handler": "query_documents"
+                "handler": "query_documents",
             },
 
             # ---------------- TRANSACTIONS ---------------- #
@@ -111,91 +114,98 @@ class IntentSchemaParser:
                 "required_fields": ["type"],
                 "optional_fields": ["timeframe", "amount"],
                 "data_source": "transactions",
-                "handler": "query_transactions"
+                "handler": "query_transactions",
             },
 
-            # ---------------- GENERAL / META ---------------- #
+            # ---------------- GENERIC / META ---------------- #
             "summarize_any": {
                 "required_fields": [],
                 "optional_fields": ["context", "source_type"],
                 "data_source": "any",
-                "handler": "summarize_generic"
+                "handler": "summarize_generic",
             },
             "unknown": {
                 "required_fields": [],
                 "optional_fields": [],
                 "data_source": None,
-                "handler": "unknown_intent"
+                "handler": "unknown_intent",
+            },
+
+            # ---------------- AUTOMATIONS ---------------- #
+            "automation_create": {
+                "required_fields": ["trigger_type", "task_type"],
+                "optional_fields": [
+                    "due_datetime", "recurrence_pattern", "conditions",
+                    "execution_mode", "context", "task_title",
+                ],
+                "data_source": "automations",
+                "handler": "create_automation",
+            },
+            "automation_update": {
+                "required_fields": ["automation_id"],
+                "optional_fields": ["trigger_type", "task_type", "recurrence_pattern", "conditions"],
+                "data_source": "automations",
+                "handler": "update_automation",
+            },
+            "automation_delete": {
+                "required_fields": ["automation_id"],
+                "optional_fields": [],
+                "data_source": "automations",
+                "handler": "delete_automation",
+            },
+            "automation_list": {
+                "required_fields": [],
+                "optional_fields": ["status", "task_type"],
+                "data_source": "automations",
+                "handler": "list_automations",
             },
         }
 
+    # ---------------- VALIDATION ---------------- #
     def validate(
         self,
         detected_intent: Dict[str, Any],
         previous_context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Validates AI-detected intent and fills missing data from previous context.
-        Automatically infers channel and fills missing entities.
+        Validates AI-detected intent and enriches it with missing info
+        from prior context or inferred channel.
         """
+
         intent = detected_intent.get("intent", "unknown")
         entities = detected_intent.get("entities", {}) or {}
         confidence = detected_intent.get("confidence", 0.5)
         channel = detected_intent.get("channel")
 
+        # 1️⃣ Infer channel if not provided
+        channel = channel or self._infer_channel(intent, entities, previous_context)
 
-        # 1️⃣ Try to auto-infer channel based on intent name or context
-        if not channel:
-            channel = self._infer_channel(intent, entities, previous_context)
-
-        # 2️⃣ Map to known schema (fallback to closest match)
+        # 2️⃣ Find closest known intent
         if intent not in self.intent_schemas:
-            possible_match = difflib.get_close_matches(intent, self.intent_schemas.keys(), n=1, cutoff=0.6)
-            if possible_match:
-                intent = possible_match[0]
-            else:
-                return {
-                    "status": "unknown_intent",
-                    "intent": intent,
-                    "confidence": confidence,
-                    "message": f"Sorry, I’m not sure how to handle '{intent}'."
-                }
+            match = difflib.get_close_matches(intent, self.intent_schemas.keys(), n=1, cutoff=0.6)
+            intent = match[0] if match else "unknown"
 
         schema = self.intent_schemas[intent]
 
-        # 3️⃣ Fill missing entities from context (if available)
-        if previous_context:
-            last_entities = previous_context.get("entities", {})
-            for k, v in last_entities.items():
-                if k not in entities:
-                    entities[k] = v
+        # 3️⃣ Merge entities from previous context
+        if previous_context and "entities" in previous_context:
+            for k, v in previous_context["entities"].items():
+                entities.setdefault(k, v)
 
-        # 4️⃣ Skip asking unnecessary follow-ups for intents with no required fields
-        if not schema["required_fields"]:
-            return {
-                "status": "ready",
-                "intent": intent,
-                "channel": channel,
-                "confidence": confidence,
-                "entities": entities,
-                "handler": schema["handler"],
-                "data_source": schema["data_source"]
-            }
+        # 4️⃣ Identify missing fields
+        missing = [f for f in schema["required_fields"] if f not in entities]
 
-        # 5️⃣ Only check required fields if they exist
-        missing_fields = [f for f in schema["required_fields"] if f not in entities]
-
-        if missing_fields:
+        # 5️⃣ Return appropriate response
+        if missing:
             return {
                 "status": "incomplete",
                 "intent": intent,
                 "channel": channel,
-                "missing_fields": missing_fields,
+                "missing_fields": missing,
                 "entities": entities,
-                "message": self.generate_followup(intent, missing_fields)
+                "message": self._generate_followup(intent, missing),
             }
 
-        # 6️⃣ Return structured, validated command
         return {
             "status": "ready",
             "intent": intent,
@@ -203,11 +213,10 @@ class IntentSchemaParser:
             "confidence": confidence,
             "entities": entities,
             "handler": schema["handler"],
-            "data_source": schema["data_source"]
+            "data_source": schema["data_source"],
         }
 
-
-    # 🧠 Infer channel when user didn’t specify one
+    # ---------------- CHANNEL INFERENCE ---------------- #
     def _infer_channel(
         self,
         intent: str,
@@ -215,18 +224,16 @@ class IntentSchemaParser:
         previous_context: Optional[Dict[str, Any]]
     ) -> str:
         """
-        Heuristic-based channel inference:
-        - Check for channel-specific keywords in the intent or entities
-        - Fallback to last known channel in previous context
-        - Otherwise mark as 'all'
+        Heuristics for determining the communication channel
+        if the AI didn’t detect one.
         """
-        text_data = f"{intent} {' '.join(entities.keys())}".lower()
+        text_blob = f"{intent} {' '.join(entities.keys())}".lower()
 
-        if any(word in text_data for word in ["email", "inbox", "subject"]):
+        if any(k in text_blob for k in ["email", "inbox", "subject"]):
             return "email"
-        elif any(word in text_data for word in ["chat", "whatsapp", "message", "text"]):
+        if any(k in text_blob for k in ["chat", "whatsapp", "message", "text"]):
             return "whatsapp"
-        elif any(word in text_data for word in ["meeting", "calendar"]):
+        if any(k in text_blob for k in ["meeting", "calendar"]):
             return "calendar"
 
         if previous_context and "channel" in previous_context:
@@ -234,12 +241,13 @@ class IntentSchemaParser:
 
         return "all"
 
-    # 🗣 Generate follow-up questions when missing required entities
-    def generate_followup(self, intent: str, missing_fields: list[str]) -> str:
+    # ---------------- FOLLOW-UP PROMPTS ---------------- #
+    def _generate_followup(self, intent: str, missing_fields: List[str]) -> str:
+        """Generates context-aware follow-up questions for missing data."""
         if not missing_fields:
             return ""
 
-        questions = {
+        templates = {
             "receiver": "Who should I send it to?",
             "content": "What message should I send?",
             "timeframe": "For what period?",
@@ -248,5 +256,5 @@ class IntentSchemaParser:
             "participants": "Who was in the meeting?",
         }
 
-        prompts = [questions.get(f, f"Can you provide {f}?") for f in missing_fields]
+        prompts = [templates.get(f, f"Can you provide {f}?") for f in missing_fields]
         return " ".join(prompts)

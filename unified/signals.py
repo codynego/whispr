@@ -65,6 +65,7 @@ def analyze_message_insights(message_id):
         message.importance = insights.get("importance_level", message.importance)
         message.importance_score = insights.get("importance_score", message.importance_score)
         message.embedding = insights.get("embedding", message.embedding)
+        
         message.save(update_fields=[
             "ai_summary",
             "ai_next_step",
