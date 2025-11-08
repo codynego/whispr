@@ -164,7 +164,7 @@ class Automation(models.Model):
 
     # --- Workflow support ---
     # Supports multiple actions with configs
-    workflow = models.JSONField(
+    action_params = models.JSONField(
         blank=True,
         null=True,
         help_text="""
