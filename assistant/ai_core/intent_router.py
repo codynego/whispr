@@ -1,9 +1,8 @@
 # assistant/intent_router.py
-
 from unified.services import MessageService
 from .llm_service import LLMService
 from django.conf import settings
-from assistant.automation_service import AutomationService  # ✅ new service
+from assistant.automation_service import AutomationService
 from .context_manager import ContextManager
 from assistant.models import Automation
 
@@ -55,7 +54,7 @@ class IntentRouter:
 
         handler = self.get_handler(intent)
         if not handler:
-            return f"🤔 Sorry, I couldn’t understand that request."
+            return "🤔 Sorry, I couldn’t understand that request."
 
         try:
             return handler(entities, channel)
@@ -64,14 +63,12 @@ class IntentRouter:
 
     # ---------------- INTENT DETECTION ---------------- #
     def _detect_intent(self, message, context=None):
-        """Uses LLM to infer intent & entities."""
         parsed = self.llm_service.parse_intent_and_entities(message, context)
         intent = parsed.get("intent", "unknown")
         entities = parsed.get("entities", {})
         return intent, entities
 
     def _detect_channel(self, message: str):
-        """Heuristic for guessing communication channel."""
         msg_lower = message.lower()
         if "email" in msg_lower or "inbox" in msg_lower:
             return "email"
@@ -93,11 +90,9 @@ class IntentRouter:
             "message": entities.get("query_text"),
         }
         self.context_manager.update_context(self.user.id, intent_data)
-
         service = self._get_service(channel)
         if not service:
             return "⚠️ No matching channel found."
-
         results = service.find_messages(
             sender=entities.get("sender"),
             subject=entities.get("subject"),
@@ -140,7 +135,6 @@ class IntentRouter:
         return "💬 Reply sent successfully." if success else "❌ Failed to send reply."
 
     def handle_summarize_message(self, entities, channel="all"):
-        """Summarizes one or more messages."""
         service = self._get_service(channel)
         if not service:
             return "⚠️ No matching channel found."
@@ -150,30 +144,30 @@ class IntentRouter:
         )
         return f"🧠 Summary:\n{summary}" if summary else "Couldn't summarize this message."
 
+    # ---------------- AUTOMATION HANDLERS ---------------- #
     def handle_create_automation(self, entities, channel="all"):
         """
-        Creates a new automation or scheduled trigger.
+        Create automation using workflow JSON instead of single action_type/action_params.
         """
+        workflow = entities.get("workflow")
+        if not workflow:
+            return "⚠️ No workflow provided for automation."
+
         service = AutomationService(self.user)
         automation = service.create_automation(
-            action_type=entities.get("action_type"),
             name=entities.get("name"),
+            workflow=workflow,
             trigger_type=entities.get("trigger_type"),
             next_run_at=entities.get("next_run_at"),
             recurrence_pattern=entities.get("recurrence_pattern"),
-            trigger_condition=entities.get("trigger_condition"),
-            action_params=entities.get("action_params"),
             description=entities.get("description"),
+            is_active=entities.get("is_active", True),
         )
         if not automation:
             return "❌ Failed to create automation."
         return f"⚡ Automation '{automation.name}' created successfully."
 
     def handle_update_automation(self, entities, channel="all"):
-        """
-        Updates an existing automation’s details.
-        Example: “Change my daily summary to 8AM.”
-        """
         service = AutomationService(self.user)
         automation_id = entities.get("automation_id") or entities.get("task_id")
         if not automation_id:
@@ -183,27 +177,19 @@ class IntentRouter:
             "name": entities.get("name"),
             "description": entities.get("description"),
             "trigger_type": entities.get("trigger_type"),
-            "trigger_condition": entities.get("trigger_condition"),
-            "action_type": entities.get("action_type"),
-            "action_params": entities.get("action_params"),
+            "workflow": entities.get("workflow"),
             "is_active": entities.get("is_active"),
             "next_run_at": entities.get("next_run_at"),
             "recurrence_pattern": entities.get("recurrence_pattern"),
         }
-        # Remove None values to avoid overwriting with null
         updates = {k: v for k, v in updates.items() if v is not None}
 
         automation = service.update_automation(automation_id, **updates)
         return "✅ Automation updated successfully." if automation else "❌ Failed to update automation."
 
     def handle_delete_automation(self, entities, channel="all"):
-        """
-        Cancels or deletes a scheduled automation.
-        Example: “Cancel my follow-up reminder.”
-        """
         service = AutomationService(self.user)
         automation_id = entities.get("automation_id") or entities.get("task_id")
-
         if not automation_id:
             return "⚠️ I couldn’t find which automation to delete."
 

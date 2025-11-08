@@ -165,114 +165,150 @@ class IntentDetector:
 
 
 
-    def _call_gemini_for_intent(self, message: str, channel: str, relevant_items: str, previous_context: Optional[Dict[str, Any]] = None) -> str:
+    def _call_gemini_for_intent(
+        self,
+        message: str,
+        channel: str,
+        relevant_items: str,
+        previous_context: Optional[Dict[str, Any]] = None
+    ) -> str:
         """
-        Build a strict JSON output prompt for Gemini and return the raw text.
-        The model is instructed to reply ONLY in JSON.
+        Convert a user message into a strict JSON structure for routing,
+        supporting reminders, tasks, messages, and full automation workflows.
+        Returns JSON as string.
         """
         system_instructions = """
-    You are Whispr, an assistant that converts user requests into a strict JSON structure for routing.
-    Before outputting JSON, internally reason step-by-step: 1) Parse the intent. 2) For dates/times, anchor to today's date and calculate relative dates precisely (e.g., "next week Wednesday" means the Wednesday in the following calendar week). 3) Infer trigger dates for reminders separately from event dates.
-    Return ONLY valid JSON (no explanation, no backticks). Use keys: intent, confidence, channel, entities.
-    Entities is an object and may contain sender, timeframe, query_text, subject, receiver, action, and any other fields you detect.
-    If multiple actions are present, list them in entities['actions'] as an array.
-    If you cannot determine something, set null or leave key absent.
+    You are Whispr, an assistant that converts user requests into strict JSON for tasks and automations.
+    Before outputting JSON, reason step-by-step: 1) Parse the intent. 2) Resolve relative dates/times. 3) Identify multi-step automation triggers.
+    Return ONLY valid JSON (no explanation, no backticks) with keys: intent, confidence, channel, entities.
+
+    Entities may contain:
+    - message_id, sender, receiver_name, receiver, subject, body
+    - action_type, name, next_run_at, description, query_text, actions, context
+    - trigger_type, recurrence_pattern, trigger_condition, action_params, execution_mode
+    - __should_create_automation__, workflow
+
+    For automations, the workflow JSON must include:
+    - trigger.type: one of "on_schedule", "on_email_received", "on_message_received", "manual"
+    - trigger.config: schedule time, email label, or other necessary info
+    - actions.type: one of ["extract_fields", "append_google_sheet", "send_whatsapp_message", "fetch_calendar_events", "append_notion_page"]
+    - actions.config: required fields per action:
+        - extract_fields → "fields": ["field1","field2"]
+        - append_google_sheet → "spreadsheet_name", "columns"
+        - send_whatsapp_message → "message_template"
+        - fetch_calendar_events → "calendar_id", "date"
+        - append_notion_page → "database_name", "fields_mapping"
+
+    If a field cannot be determined, set null or leave key absent.
+    Use examples to illustrate:
+    - "Remind me about dinner next Tuesday at 7pm." → intent: "set_reminder", next_run_at: "2025-10-28T19:00:00", action_type: "reminder"
+    - "Every morning at 8 AM, send my calendar events to WhatsApp." → intent: "automation_create",
+    workflow: {
+        "trigger": {"type":"on_schedule", "config":{"time":"08:00","timezone":"Africa/Lagos"}},
+        "actions":[
+            {"type":"fetch_calendar_events","config":{"calendar_id":"primary"}},
+            {"type":"send_whatsapp_message","config":{"message_template":"Good morning! {event_list}"}}
+        ]
+    }
     """
 
         prev_ctx = ""
         today_str = datetime.now().strftime("%Y-%m-%d")
-
         if previous_context:
             prev_ctx = str(previous_context)[:1000]
 
-        # Enhanced prompt with date rules and examples
         prompt = f"""{system_instructions}
 
     User Message: "{message}"
     Channel (hint): "{channel}"
     Previous Context: "{prev_ctx}"
-    For better accuracy of date and time, today is {today_str}. Always calculate relative dates step-by-step using YYYY-MM-DD format:
-    - Current week starts on the Monday of {today_str}.
-    - "Next week [day]" = the [day] in the week starting next Monday (e.g., if today is Thursday Oct 23 2025, next week starts Mon Oct 27; next Wednesday = Oct 29 2025).
-    - "By [time] [date]" sets the reminder trigger (due_datetime) to that exact time/date.
-    - Combine due_date + due_time into due_datetime as ISO 8601 (e.g., 2025-10-29T08:00:00; assume 24h format or convert AM/PM).
-    - If ambiguous, prioritize the reminder trigger date over the event date.
-
-    Examples (do not include in output; use for reasoning):
-    - User: "Remind me about dinner next week Tuesday at 7pm." Today: 2025-10-23. → intent: "set_reminder", due_date: "2025-10-28", due_time: "19:00", due_datetime: "2025-10-28T19:00:00", task_title: "Hey, reminder for your dinner next week Tuesday at 7pm. Enjoy!"
-    - User: "Meeting next Friday, remind by 8am next week Wednesday." Today: 2025-10-23. → intent: "set_reminder", due_date: "2025-10-29" (Wednesday trigger), due_time: "08:00", due_datetime: "2025-10-29T08:00:00", task_title: "Hey, I would like to remind you about your meeting next week Friday. Don't forget!"
-
-    Return JSON with this exact schema:
-        {{
+    Today is {today_str}. Convert relative dates (e.g., 'next Monday') to ISO 8601.
+    Return JSON strictly following this schema:
+    {{
     "intent": "<one of: find_message, read_message, summarize_message, send_message, reply_message, automation_create, automation_update, automation_delete, insights, unknown>",
     "confidence": 0.0,
     "channel": "<email|whatsapp|slack|calendar|all>",
-
-    {{
-        "entities": {{
-            "message_id": [12, 125], // list or single ID depending on context
-            "sender": "<name or org>",
-            "receiver_name": "<name of recipient>",
-            "receiver": "<email/phone/channel>",
-            "subject": "<subject - generate if missing>",
-            "body": "<body - generate if missing>",
-
-            "action_type": "<type of action e.g. reminder, follow-up, summary, auto_followup>",
-            "name": "<natural language name — e.g. 'Remind Abednego to reply to John tomorrow at 9am'>",
-            "next_run_at": "<ISO 8601 datetime — inferred if missing>",
-            "description": "<optional description for the automation>",
-
-            "query_text": "<the user's raw query>",
-            "actions": ["find", "summarize", "reply", "create_task", "send_message", "insights"],
-            "context": "<context or purpose of request>",
-
-            "trigger_type": "<on_email_received | on_schedule | on_message_received | on_task_due | on_calendar_event | manual>",
-            "recurrence_pattern": "<daily | weekly | every Monday | every 2 days | cron string e.g. '0 9 * * 1'>",
-            "trigger_condition": {{
-                "channel": "<email|whatsapp|all>",
-                "filter": "<from:boss@example.com OR contains:urgent>"
-            }},
-            
-            "action_params": {{
-                "query_text": "<the user's raw query>",
-                "actions": ["find", "summarize", "reply", "create_task", "send_message", "insights"],
-                "context": "<context or purpose of request>"
-            }},
-
-            "execution_mode": "<manual|auto|background>", 
-            "__should_create_automation__": false
+    "entities": {{
+        "message_id": [12,125],
+        "sender": "<name or org>",
+        "receiver_name": "<name of recipient>",
+        "receiver": "<email/phone/channel>",
+        "subject": "<subject - generate if missing>",
+        "body": "<body - generate if missing>",
+        "action_type": "<type of action e.g. reminder, follow-up, summary, auto_followup>",
+        "name": "<natural language name — e.g. 'Remind Abednego to reply to John tomorrow at 9am'>",
+        "next_run_at": "<ISO 8601 datetime — inferred if missing>",
+        "description": "<optional description for the automation>",
+        "query_text": "<the user's raw query>",
+        "actions": ["find","summarize","reply","create_task","send_message","insights"],
+        "context": "<context or purpose of request>",
+        "trigger_type": "<on_email_received|on_schedule|on_message_received|on_task_due|on_calendar_event|manual>",
+        "recurrence_pattern": "<daily|weekly|every Monday|cron string>",
+        "trigger_condition": {{"channel":"<email|whatsapp|all>", "filter":"<optional filter>"}},
+        "action_params": {{"actions":["find","summarize","reply","create_task","send_message","insights"], "config":{{}}}},
+        "execution_mode": "<manual|auto|background>",
+        "__should_create_automation__": false,
+        "workflow": {{
+            "trigger": {{"type":"TRIGGER_TYPE","config":{{}}}},
+            "actions":[{{"type":"ACTION_TYPE","config":{{}}}}]
         }}
     }}
     }}
-
-
-
-    Make sure all applicable fields are filled depending on the detected intent.
-    For example:
-    - For send_message: include receiver_name, receiver, subject, body
-    - For automation: include task_title, due_date, due_time, due_datetime
-    - For find_message or summarize_message: include sender, timeframe, query_text
     """
 
         try:
             response = self.model.generate_content(prompt)
-            text = (response.text or "").strip()
-            logger.debug("Gemini raw output: %s", text[:2000])
+            raw_text = (response.text or "").strip()
 
-            # Post-process: Parse JSON and correct dates if needed
+            # Parse JSON
             try:
-                parsed = json.loads(text)
-                if parsed.get('intent') in ['set_reminder', 'create_task']:
-                    parsed['entities'] = self._correct_dates(parsed['entities'], today_str, message)
-                text = json.dumps(parsed)
-            except json.JSONDecodeError:
-                logger.warning("Failed to parse Gemini JSON output; returning raw.")
-                pass  # Fallback to raw text
+                parsed = json.loads(raw_text)
 
-            return text
+                # Correct dates / next_run_at for reminders or automation schedules
+                if parsed.get("intent") in ["set_reminder", "create_task", "automation_create", "automation_update"]:
+                    parsed["entities"] = self._correct_dates(
+                        parsed.get("entities", {}), today_str, message
+                    )
+
+                # Ensure actions array exists
+                if "actions" not in parsed.get("entities", {}):
+                    parsed["entities"]["actions"] = []
+
+                # Ensure action_params exists
+                if "action_params" not in parsed.get("entities", {}):
+                    parsed["entities"]["action_params"] = {
+                        "actions": parsed["entities"]["actions"],
+                        "config": {}
+                    }
+
+                # Ensure workflow exists
+                if "workflow" not in parsed.get("entities", {}):
+                    parsed["entities"]["workflow"] = {
+                        "trigger": {"type": None, "config": {}},
+                        "actions": []
+                    }
+
+                # Set automation flag
+                if parsed.get("intent", "").startswith("automation"):
+                    parsed["entities"]["__should_create_automation__"] = True
+
+                # Fill missing keys with null
+                defaults = ["message_id","sender","receiver_name","receiver","subject","body",
+                            "action_type","name","next_run_at","description","query_text",
+                            "context","trigger_type","recurrence_pattern","trigger_condition","execution_mode"]
+                for key in defaults:
+                    parsed["entities"].setdefault(key, None)
+
+                return json.dumps(parsed)
+
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse Gemini JSON; returning raw.")
+                return raw_text
+
         except Exception as e:
             logger.exception("Gemini generate_content failed: %s", e)
             return ""
+
 
     def _correct_dates(self, entities: Dict[str, Any], today_str: str, query_text: str) -> Dict[str, Any]:
         """Post-process entities for accurate date/time calculation."""

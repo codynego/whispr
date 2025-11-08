@@ -132,6 +132,10 @@ from django.db import models
 from django.conf import settings
 from django.utils import timezone
 
+from django.db import models
+from django.conf import settings
+from django.utils import timezone
+
 class Automation(models.Model):
     """User-defined automation for Whisone personal assistant."""
 
@@ -154,12 +158,23 @@ class Automation(models.Model):
     trigger_type = models.CharField(max_length=50, choices=TRIGGER_TYPES)
 
     # Optional: Specific trigger data (e.g., sender email, time, day, keywords)
-    trigger_condition = models.JSONField(blank=True, null=True, help_text="Extra data for the trigger logic")
+    trigger_condition = models.JSONField(
+        blank=True, null=True, help_text="Extra data for the trigger logic"
+    )
 
-    # --- Action types ---
-
-    action_type = models.CharField(max_length=50, choices=TASK_TYPE_CHOICES)
-    action_params = models.JSONField(blank=True, null=True, help_text="Extra parameters for the action")
+    # --- Workflow support ---
+    # Supports multiple actions with configs
+    workflow = models.JSONField(
+        blank=True,
+        null=True,
+        help_text="""
+        JSON structure for automation workflow:
+        {
+            "trigger": {"type": "TRIGGER_TYPE", "config": {}},
+            "actions": [{"type": "ACTION_TYPE", "config": {}}]
+        }
+        """
+    )
 
     # --- Schedule support ---
     is_active = models.BooleanField(default=True)
@@ -192,7 +207,7 @@ class Automation(models.Model):
             sender = context.get("sender")
             keywords = context.get("keywords", [])
             cond = self.trigger_condition or {}
-            if cond.get("from") and cond["from"].lower() != sender.lower():
+            if cond.get("from") and sender and cond["from"].lower() != sender.lower():
                 return False
             if cond.get("contains") and not any(k in context.get("text", "") for k in cond["contains"]):
                 return False
