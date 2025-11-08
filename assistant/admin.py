@@ -131,11 +131,18 @@ class AssistantTaskAdmin(admin.ModelAdmin):
 
 
 
+from django.contrib import admin
+from django.utils.translation import gettext_lazy as _
+from assistant.models import Automation
+import json
+
 @admin.register(Automation)
 class AutomationAdmin(admin.ModelAdmin):
     """
     Admin configuration for the Automation model.
     """
+
+    # ---------------- DISPLAY ---------------- #
     list_display = (
         'name',
         'user',
@@ -162,47 +169,57 @@ class AutomationAdmin(admin.ModelAdmin):
         'updated_at',
         'last_triggered_at',
     )
+    ordering = ('-created_at',)
+
+    # ---------------- FIELDSETS ---------------- #
     fieldsets = (
         (_('Core'), {
-            'fields': (
-                'user',
-                'name',
-                'description',
-            )
+            'fields': ('user', 'name', 'description'),
         }),
         (_('Trigger'), {
-            'fields': (
-                'trigger_type',
-                'trigger_condition',
-            )
+            'fields': ('trigger_type', 'trigger_condition'),
         }),
         (_('Action'), {
-            'fields': (
-                'action_type',
-                'action_params',
-            )
+            'fields': ('action_type', 'action_params'),
         }),
         (_('Schedule'), {
-            'fields': (
-                'is_active',
-                'next_run_at',
-                'recurrence_pattern',
-            )
+            'fields': ('is_active', 'next_run_at', 'recurrence_pattern'),
         }),
         (_('Metadata'), {
-            'fields': (
-                'created_at',
-                'updated_at',
-                'last_triggered_at',
-            ),
+            'fields': ('created_at', 'updated_at', 'last_triggered_at'),
             'classes': ('collapse',),
         }),
     )
-    filter_horizontal = ()  # No m2m fields here, but add if needed in future
-    ordering = ('-created_at',)
 
+    # ---------------- METHODS ---------------- #
     def get_readonly_fields(self, request, obj=None):
-        readonly_fields = list(self.readonly_fields)
-        if obj:  # For existing objects
-            readonly_fields.extend(['user', 'trigger_type', 'action_type'])
-        return tuple(readonly_fields)
+        """
+        Make 'user', 'trigger_type', 'action_type' readonly for existing objects.
+        """
+        readonly = list(self.readonly_fields)
+        if obj:
+            readonly.extend(['user', 'trigger_type', 'action_type'])
+        return tuple(readonly)
+
+    def display_json_field(self, obj, field_name):
+        """
+        Nicely format JSON fields like trigger_condition or action_params.
+        """
+        raw = getattr(obj, field_name, {})
+        try:
+            return json.dumps(raw, indent=2)
+        except Exception:
+            return str(raw)
+    display_json_field.short_description = "JSON Content"
+
+    # Optional: Add display for JSON fields in list_display
+    # list_display += ('display_trigger_condition', 'display_action_params',)
+
+    def display_trigger_condition(self, obj):
+        return self.display_json_field(obj, 'trigger_condition')
+    display_trigger_condition.short_description = "Trigger Condition"
+
+    def display_action_params(self, obj):
+        return self.display_json_field(obj, 'action_params')
+    display_action_params.short_description = "Action Parameters"
+
