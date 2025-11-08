@@ -13,6 +13,8 @@ from whisprai.ai.gemini_client import get_gemini_response
 from django.utils import timezone
 import json
 import re
+from assistant.models import Automation
+from assistant.tasks import execute_automation
 
 @shared_task
 def analyze_message_insights(message_id):
@@ -159,3 +161,22 @@ def handle_new_message(sender, instance, created, **kwargs):
             send_whatsapp_message_task.delay(message_id=response_message.id)
         except Exception as e:
             print(f"⚠️ WhatsApp alert failed: {e}")
+
+
+
+
+
+@receiver(post_save, sender=Message)
+def trigger_automations_on_new_message(sender, instance, created, **kwargs):
+    if not created:
+        return  # Only run for new messages
+
+    # Filter automations for this user that listen to "on_new_message"
+    automations = Automation.objects.filter(
+        user=instance.account.user,
+        trigger_type="on_email_received",
+        is_active=True,
+    )
+
+    for automation in automations:
+        execute_automation.delay(automation.id)

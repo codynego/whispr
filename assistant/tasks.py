@@ -156,3 +156,16 @@ def execute_ai_action(user, ai_response, sender_number="2349033814065"):
         logger.warning(f"Unknown intent from {user.email}: {intent}")
         return "unknown_intent"
 
+
+# assistant/tasks.py
+from celery import shared_task
+from assistant.automation_service import AutomationService
+
+@shared_task(name="assistant.tasks.execute_automation")
+def execute_automation(automation_id):
+    from assistant.models import Automation
+    automation = Automation.objects.filter(id=automation_id).first()
+    if not automation:
+        return
+    service = AutomationService(automation.user)
+    service.trigger_automation(automation_id)
