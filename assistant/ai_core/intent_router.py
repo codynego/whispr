@@ -5,8 +5,49 @@ from django.conf import settings
 from assistant.automation_service import AutomationService
 from .context_manager import ContextManager
 from assistant.models import Automation
+from .intent_schema_parser import IntentSchemaParser  # From earlier updates
+from datetime import datetime
+import pytz  # For timezone handling
+import logging
 
+logger = logging.getLogger(__name__)
 APIKEY = settings.GEMINI_API_KEY
+
+
+# Stub services (extend with real implementations)
+class TaskService:
+    @staticmethod
+    def create_task(title, due_datetime, description=""):
+        # Placeholder: Integrate with your task backend (e.g., Todoist)
+        logger.info(f"Created task: {title} due {due_datetime}")
+        return f"Task '{title}' created for {due_datetime}."
+
+    @staticmethod
+    def set_reminder(title, next_run_at, description=""):
+        # Placeholder: Similar to tasks
+        logger.info(f"Set reminder: {title} at {next_run_at}")
+        return f"Reminder '{title}' set for {next_run_at}."
+
+
+class CalendarService:
+    @staticmethod
+    def create_event(event_title, timeframe, participants=None, location=None):
+        # Placeholder: Integrate with Google Calendar API
+        logger.info(f"Created event: {event_title} at {timeframe}")
+        return f"Event '{event_title}' scheduled."
+
+    @staticmethod
+    def find_meetings(participants=None, timeframe=None):
+        # Placeholder
+        return "No meetings found."  # Or fetch real data
+
+
+class InsightService:
+    @staticmethod
+    def generate_insights(query_text, timeframe=None):
+        # Placeholder: Use LLM for analysis
+        logger.info(f"Generating insights for: {query_text}")
+        return f"Insights for '{query_text}': [Generated summary]."
 
 
 class IntentRouter:
@@ -20,7 +61,11 @@ class IntentRouter:
         self.user = user
         self.llm_service = LLMService(user, APIKEY)
         self.message_service = MessageService(user)
+        self.task_service = TaskService()  # New: For tasks/reminders
+        self.calendar_service = CalendarService()  # New: For events
+        self.insight_service = InsightService()  # New: For insights
         self.context_manager = ContextManager()
+        self.intent_parser = IntentSchemaParser()  # New: For validation
         self.handlers = self._register_handlers()
 
     # ---------------- REGISTER HANDLERS ---------------- #
@@ -31,6 +76,10 @@ class IntentRouter:
             "send_message": self.handle_send_message,
             "reply_message": self.handle_reply_message,
             "summarize_message": self.handle_summarize_message,
+            "create_task": self.handle_create_task,  # New
+            "set_reminder": self.handle_set_reminder,  # New
+            "insights": self.handle_insights,  # New
+            "create_event": self.handle_create_event,  # New
 
             # automation system
             "automation_create": self.handle_create_automation,
@@ -42,11 +91,22 @@ class IntentRouter:
     def route(self, message, context=None):
         """
         1️⃣ Use LLM to detect intent & entities
-        2️⃣ Adjust if automation trigger is requested
-        3️⃣ Route to correct handler
+        2️⃣ Validate with schema parser
+        3️⃣ Auto-upgrade to automation_create if trigger flag is present
+        4️⃣ Route to correct handler
         """
-        intent, entities = self._detect_intent(message, context)
+        intent_data = self._detect_intent(message, context)
+        intent = intent_data.get("intent", "unknown")
+        entities = intent_data.get("entities", {})
+
+        # Validate with schema
+        validation = self.intent_parser.validate(intent_data, context)
+        if validation["status"] == "incomplete":
+            self.context_manager.update_context(self.user.id, validation)
+            return f"🤔 To complete this, please provide: {validation['message']}"
+
         channel = entities.get("channel") or self._detect_channel(message)
+        data_source = validation.get("data_source", "all")
 
         # Auto-upgrade to automation_create if trigger flag is present
         if entities.get("__should_create_automation__"):
@@ -57,16 +117,19 @@ class IntentRouter:
             return "🤔 Sorry, I couldn’t understand that request."
 
         try:
-            return handler(entities, channel)
+            result = handler(entities, channel, data_source)
+            # Update context with result
+            intent_data.update({"result": result})
+            self.context_manager.update_context(self.user.id, intent_data)
+            return result
         except Exception as e:
+            logger.error(f"Handler error for {intent}: {e}")
             return f"❌ Something went wrong while processing '{intent}': {e}"
 
     # ---------------- INTENT DETECTION ---------------- #
     def _detect_intent(self, message, context=None):
         parsed = self.llm_service.parse_intent_and_entities(message, context)
-        intent = parsed.get("intent", "unknown")
-        entities = parsed.get("entities", {})
-        return intent, entities
+        return parsed  # Returns dict with 'intent', 'entities', etc.
 
     def _detect_channel(self, message: str):
         msg_lower = message.lower()
@@ -76,21 +139,18 @@ class IntentRouter:
             return "whatsapp"
         elif "sms" in msg_lower:
             return "sms"
+        elif "calendar" in msg_lower or "meeting" in msg_lower:
+            return "calendar"
+        elif "task" in msg_lower or "reminder" in msg_lower:
+            return "tasks"
         return "all"
 
     def get_handler(self, intent):
         return self.handlers.get(intent)
 
     # ---------------- HANDLER METHODS ---------------- #
-    def handle_find_messages(self, entities, channel="all"):
-        intent_data = {
-            "intent": "find_message",
-            "entities": entities,
-            "channel": channel,
-            "message": entities.get("query_text"),
-        }
-        self.context_manager.update_context(self.user.id, intent_data)
-        service = self._get_service(channel)
+    def handle_find_messages(self, entities, channel="all", data_source="all"):
+        service = self._get_service(channel, data_source)
         if not service:
             return "⚠️ No matching channel found."
         results = service.find_messages(
@@ -101,8 +161,8 @@ class IntentRouter:
         )
         return results or f"No {channel} messages found."
 
-    def handle_read_message(self, entities, channel="all"):
-        service = self._get_service(channel)
+    def handle_read_message(self, entities, channel="all", data_source="all"):
+        service = self._get_service(channel, data_source)
         if not service:
             return "⚠️ No matching channel found."
         result = service.read_message(
@@ -111,8 +171,8 @@ class IntentRouter:
         )
         return result or f"No {channel} message found."
 
-    def handle_send_message(self, entities, channel="all"):
-        service = self._get_service(channel)
+    def handle_send_message(self, entities, channel="all", data_source="all"):
+        service = self._get_service(channel, data_source)
         if not service:
             return "⚠️ No matching channel found."
         success = service.send_message(
@@ -124,8 +184,8 @@ class IntentRouter:
         )
         return "✅ Message sent successfully." if success else "❌ Failed to send message."
 
-    def handle_reply_message(self, entities, channel="all"):
-        service = self._get_service(channel)
+    def handle_reply_message(self, entities, channel="all", data_source="all"):
+        service = self._get_service(channel, data_source)
         if not service:
             return "⚠️ No matching channel found."
         success = service.reply_to_message(
@@ -134,8 +194,8 @@ class IntentRouter:
         )
         return "💬 Reply sent successfully." if success else "❌ Failed to send reply."
 
-    def handle_summarize_message(self, entities, channel="all"):
-        service = self._get_service(channel)
+    def handle_summarize_message(self, entities, channel="all", data_source="all"):
+        service = self._get_service(channel, data_source)
         if not service:
             return "⚠️ No matching channel found."
         summary = service.summarize_message(
@@ -144,33 +204,90 @@ class IntentRouter:
         )
         return f"🧠 Summary:\n{summary}" if summary else "Couldn't summarize this message."
 
+    # ---------------- NEW HANDLERS ---------------- #
+    def handle_create_task(self, entities, channel="all", data_source="tasks"):
+        service = self._get_service(channel, data_source)
+        result = service.create_task(
+            title=entities.get("task_title"),
+            due_datetime=entities.get("next_run_at") or entities.get("due_datetime"),
+            description=entities.get("description"),
+        )
+        return result
+
+    def handle_set_reminder(self, entities, channel="all", data_source="tasks"):
+        service = self._get_service(channel, data_source)
+        result = service.set_reminder(
+            title=entities.get("name") or entities.get("task_title"),
+            next_run_at=entities.get("next_run_at"),
+            description=entities.get("description"),
+        )
+        return result
+
+    def handle_insights(self, entities, channel="all", data_source="insights"):
+        service = self._get_service(channel, data_source)
+        insights = service.generate_insights(
+            query_text=entities.get("query_text"),
+            timeframe=entities.get("timeframe"),
+        )
+        return f"🔍 Insights:\n{insights}"
+
+    def handle_create_event(self, entities, channel="all", data_source="calendar"):
+        service = self._get_service(channel, data_source)
+        result = service.create_event(
+            event_title=entities.get("event_title"),
+            timeframe=entities.get("timeframe"),
+            participants=entities.get("participants"),
+            location=entities.get("location"),
+        )
+        return result
+
     # ---------------- AUTOMATION HANDLERS ---------------- #
-    def handle_create_automation(self, entities, channel="all"):
+    def handle_create_automation(self, entities, channel="all", data_source="automations"):
         """
-        Create automation using workflow JSON instead of single action_type/action_params.
+        Create automation using full workflow JSON.
+        Computes next_run_at based on trigger/recurrence (e.g., next Monday).
         """
-        print("Creating automation with entities:", entities)
         workflow = entities.get("workflow")
         if not workflow:
             return "⚠️ No workflow provided for automation."
 
+        # Compute next_run_at (example for on_schedule; extend for others)
+        next_run_at = self._compute_next_run(entities)
+        trigger_condition = workflow.get("trigger", {}).get("config", {})
+
         service = AutomationService(self.user)
-        print("Workflow for automation:", workflow)
         automation = service.create_automation(
             name=entities.get("name"),
-            workflow=workflow,
+            workflow=workflow,  # Full workflow to action_params
             trigger_type=entities.get("trigger_type"),
-            next_run_at=entities.get("next_run_at"),
+            trigger_condition=trigger_condition,
+            next_run_at=next_run_at,
             recurrence_pattern=entities.get("recurrence_pattern"),
             description=entities.get("description"),
             is_active=entities.get("is_active", True),
         )
-        print("Created automation:", automation)
         if not automation:
             return "❌ Failed to create automation."
-        return f"⚡ Automation '{automation.name}' created successfully."
+        logger.info(f"Created automation '{automation.name}' (ID: {automation.id})")
+        return f"⚡ Automation '{automation.name}' created successfully. Next run: {next_run_at}."
 
-    def handle_update_automation(self, entities, channel="all"):
+    def _compute_next_run(self, entities):
+        """Compute next_run_at from recurrence (e.g., 'weekly on Monday')."""
+        today = datetime.now(pytz.timezone('Africa/Lagos'))
+        recurrence = entities.get("recurrence_pattern", "")
+        trigger_config = entities.get("workflow", {}).get("trigger", {}).get("config", {})
+
+        if "Monday" in recurrence and "weekly" in recurrence:
+            # Next Monday after today (Nov 08, 2025 is Saturday)
+            days_ahead = 2 if today.weekday() == 5 else (7 - today.weekday()) % 7 + (1 if today.weekday() == 0 else 0)
+            next_monday = today + timedelta(days=days_ahead)
+            time_str = trigger_config.get("time", "11:00")
+            hour, minute = map(int, time_str.split(":"))
+            return next_monday.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        # Add logic for daily, etc.
+        return today  # Fallback
+
+    def handle_update_automation(self, entities, channel="all", data_source="automations"):
         service = AutomationService(self.user)
         automation_id = entities.get("automation_id") or entities.get("task_id")
         if not automation_id:
@@ -190,7 +307,7 @@ class IntentRouter:
         automation = service.update_automation(automation_id, **updates)
         return "✅ Automation updated successfully." if automation else "❌ Failed to update automation."
 
-    def handle_delete_automation(self, entities, channel="all"):
+    def handle_delete_automation(self, entities, channel="all", data_source="automations"):
         service = AutomationService(self.user)
         automation_id = entities.get("automation_id") or entities.get("task_id")
         if not automation_id:
@@ -200,5 +317,13 @@ class IntentRouter:
         return "🗑️ Automation deleted successfully." if success else "❌ Could not delete automation."
 
     # ---------------- SERVICE RESOLVER ---------------- #
-    def _get_service(self, channel):
-        return self.message_service
+    def _get_service(self, channel, data_source):
+        """Dynamic service based on channel/data_source."""
+        mappings = {
+            "email": self.message_service,
+            "whatsapp": self.message_service,
+            "calendar": self.calendar_service,
+            "tasks": self.task_service,
+            "insights": self.insight_service,
+        }
+        return mappings.get(channel) or mappings.get(data_source) or self.message_service
