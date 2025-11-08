@@ -149,11 +149,13 @@ class IntentRouter:
         """
         Create automation using workflow JSON instead of single action_type/action_params.
         """
+        print("Creating automation with entities:", entities)
         workflow = entities.get("workflow")
         if not workflow:
             return "⚠️ No workflow provided for automation."
 
         service = AutomationService(self.user)
+        print("Workflow for automation:", workflow)
         automation = service.create_automation(
             name=entities.get("name"),
             workflow=workflow,
@@ -163,6 +165,7 @@ class IntentRouter:
             description=entities.get("description"),
             is_active=entities.get("is_active", True),
         )
+        print("Created automation:", automation)
         if not automation:
             return "❌ Failed to create automation."
         return f"⚡ Automation '{automation.name}' created successfully."

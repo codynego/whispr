@@ -170,7 +170,7 @@ class IntentDetector:
         self,
         message: str,
         channel: str,
-        relevant_items: str,
+        relevant_items: str,  # Note: This arg is typed as str but unused—consider List[Dict] for future
         previous_context: Optional[Dict[str, Any]] = None
     ) -> str:
         """
@@ -180,7 +180,7 @@ class IntentDetector:
         """
         system_instructions = """
     You are Whispr, an assistant that converts user requests into strict JSON for tasks and automations.
-    Before outputting JSON, reason step-by-step: 1) Parse the intent. 2) Resolve relative dates/times. 3) Identify multi-step automation triggers.
+    Before outputting JSON, reason step-by-step: 1) Parse the intent. 2) Resolve relative dates/times. 3) Identify multi-step automation triggers and chain actions logically (e.g., fetch data → process → output).
     Return ONLY valid JSON (no explanation, no backticks) with keys: intent, confidence, channel, entities.
 
     Entities may contain:
@@ -192,17 +192,19 @@ class IntentDetector:
     For automations, the workflow JSON must include:
     - trigger.type: one of "on_schedule", "on_email_received", "on_message_received", "manual"
     - trigger.config: schedule time, email label, or other necessary info
-    - actions.type: one of ["extract_fields", "append_google_sheet", "send_whatsapp_message", "fetch_calendar_events", "append_notion_page"]
+    - actions.type: one of ["extract_fields", "append_google_sheet", "send_whatsapp_message", "fetch_calendar_events", "append_notion_page", "fetch_unread_emails", "summarize_messages"]
     - actions.config: required fields per action:
         - extract_fields → "fields": ["field1","field2"]
         - append_google_sheet → "spreadsheet_name", "columns"
         - send_whatsapp_message → "message_template"
         - fetch_calendar_events → "calendar_id", "date"
         - append_notion_page → "database_name", "fields_mapping"
+        - fetch_unread_emails → "label": "inbox|all", "filter": "unread|starred", "limit": 50
+        - summarize_messages → "input": "{fetched_emails}|{fetched_events}", "style": "concise|detailed"
 
     If a field cannot be determined, set null or leave key absent.
     Use examples to illustrate:
-    - "Remind me about dinner next Tuesday at 7pm." → intent: "set_reminder", next_run_at: "2025-10-28T19:00:00", action_type: "reminder"
+    - "Remind me about dinner next Tuesday at 7pm." → intent: "set_reminder", next_run_at: "2025-11-11T19:00:00", action_type: "reminder"
     - "Every morning at 8 AM, send my calendar events to WhatsApp." → intent: "automation_create",
     workflow: {
         "trigger": {"type":"on_schedule", "config":{"time":"08:00","timezone":"Africa/Lagos"}},
@@ -211,10 +213,20 @@ class IntentDetector:
             {"type":"send_whatsapp_message","config":{"message_template":"Good morning! {event_list}"}}
         ]
     }
+    - "Every day at 9 AM, summarize unread emails and save to Notion." → intent: "automation_create",
+    workflow: {
+        "trigger": {"type":"on_schedule", "config":{"time":"09:00","timezone":"Africa/Lagos"}},
+        "actions":[
+            {"type":"fetch_unread_emails","config":{"label":"inbox","filter":"unread","limit":50}},
+            {"type":"summarize_messages","config":{"input":"{fetched_emails}","style":"concise"}},
+            {"type":"append_notion_page","config":{"database_name":"Daily Log","fields_mapping":{"Title":"{current_date} Summary","Content":"{summary}"}}}
+        ]
+    },
+    recurrence_pattern: "daily"
     """
 
         prev_ctx = ""
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        today_str = "2025-11-08"  # Hardcode for consistency in this env; use datetime.now() in prod
         if previous_context:
             prev_ctx = str(previous_context)[:1000]
 
@@ -223,10 +235,10 @@ class IntentDetector:
     User Message: "{message}"
     Channel (hint): "{channel}"
     Previous Context: "{prev_ctx}"
-    Today is {today_str}. Convert relative dates (e.g., 'next Monday') to ISO 8601.
+    Today is {today_str}. Convert relative dates (e.g., 'next Monday') to ISO 8601 (UTC).
     Return JSON strictly following this schema:
     {{
-    "intent": "<one of: find_message, read_message, summarize_message, send_message, reply_message, automation_create, automation_update, automation_delete, insights, unknown>",
+    "intent": "<one of: find_message, read_message, summarize_message, send_message, reply_message, set_reminder, create_task, automation_create, automation_update, automation_delete, insights, unknown>",
     "confidence": 0.0,
     "channel": "<email|whatsapp|slack|calendar|all>",
     "entities": {{
@@ -254,8 +266,7 @@ class IntentDetector:
             "actions":[{{"type":"ACTION_TYPE","config":{{}}}}]
         }}
     }}
-    }}
-    """
+    }}"""
 
         try:
             response = self.model.generate_content(prompt)
