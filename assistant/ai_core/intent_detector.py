@@ -100,8 +100,6 @@ class IntentDetector:
             "send_message": ["send", "compose", "email to", "message to"],
             "reply_message": ["reply", "respond"],
             "summarize_message": ["summarize", "summary", "sum up"],
-            "create_task": ["task", "todo", "remind me to", "add task"],
-            "set_reminder": ["remind me", "reminder", "notify me"],
             "insights": ["insight", "analyze", "insights"],
             "unknown": []
         }
@@ -207,7 +205,7 @@ class IntentDetector:
 
     If a field cannot be determined, infer reasonably or set null. Use placeholders like {fetched_data} for chaining outputs.
     Use examples to illustrate multi-action chaining:
-    - "Remind me about dinner next Tuesday at 7pm." → intent: "set_reminder", next_run_at: "2025-11-11T19:00:00", action_type: "reminder"
+    - "Remind me about dinner next Tuesday at 7pm." → intent: "automation_create", next_run_at: "2025-11-11T19:00:00", action_type: "reminder"
     - "Every morning at 8 AM, send my calendar events to WhatsApp." → intent: "automation_create",
     workflow: {
         "trigger": {"type":"on_schedule", "config":{"time":"08:00","timezone":"Africa/Lagos"}},
@@ -292,7 +290,7 @@ class IntentDetector:
                 parsed = json.loads(raw_text)
 
                 # Correct dates / next_run_at for reminders or automation schedules
-                if parsed.get("intent") in ["set_reminder", "create_task", "automation_create", "automation_update"]:
+                if parsed.get("intent") in ["automation_create", "automation_update"]:
                     parsed["entities"] = self._correct_dates(
                         parsed.get("entities", {}), today_str, message
                     )
