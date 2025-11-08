@@ -170,7 +170,7 @@ class IntentDetector:
         self,
         message: str,
         channel: str,
-        relevant_items: str,  # Note: This arg is typed as str but unused—consider List[Dict] for future
+        relevant_items: List[Dict[str, Any]] = None,  # Fixed: Typed as List[Dict]; unused but future-proof
         previous_context: Optional[Dict[str, Any]] = None
     ) -> str:
         """
@@ -180,7 +180,7 @@ class IntentDetector:
         """
         system_instructions = """
     You are Whispr, an assistant that converts user requests into strict JSON for tasks and automations.
-    Before outputting JSON, reason step-by-step: 1) Parse the intent. 2) Resolve relative dates/times. 3) Identify multi-step automation triggers and chain actions logically (e.g., fetch data → process → output).
+    Before outputting JSON, reason step-by-step: 1) Parse the intent. 2) Resolve relative dates/times. 3) Identify ALL multi-step automation actions mentioned and chain them logically in order (e.g., fetch data → process/summarize → send/output). ALWAYS include every action described in the user message—do not omit any, even if 3+ steps.
     Return ONLY valid JSON (no explanation, no backticks) with keys: intent, confidence, channel, entities.
 
     Entities may contain:
@@ -191,19 +191,22 @@ class IntentDetector:
 
     For automations, the workflow JSON must include:
     - trigger.type: one of "on_schedule", "on_email_received", "on_message_received", "manual"
-    - trigger.config: schedule time, email label, or other necessary info
-    - actions.type: one of ["extract_fields", "append_google_sheet", "send_whatsapp_message", "fetch_calendar_events", "append_notion_page", "fetch_unread_emails", "summarize_messages"]
+    - trigger.config: schedule time, email label, day_of_week, or other necessary info
+    - actions: ALWAYS a list of ALL actions from the query, even if 3+ steps. types: one of ["extract_fields", "append_google_sheet", "send_whatsapp_message", "create_calendar_event", "send_email", "fetch_calendar_events", "append_notion_page", "fetch_unread_emails", "fetch_last_week_reports", "summarize_messages"]
     - actions.config: required fields per action:
         - extract_fields → "fields": ["field1","field2"]
         - append_google_sheet → "spreadsheet_name", "columns"
-        - send_whatsapp_message → "message_template"
+        - send_whatsapp_message → "receiver_name", "message_template"
+        - create_calendar_event → "event_title", "time", "duration", "calendar_id"
+        - send_email → "receiver", "subject", "body"
         - fetch_calendar_events → "calendar_id", "date"
         - append_notion_page → "database_name", "fields_mapping"
         - fetch_unread_emails → "label": "inbox|all", "filter": "unread|starred", "limit": 50
-        - summarize_messages → "input": "{fetched_emails}|{fetched_events}", "style": "concise|detailed"
+        - fetch_last_week_reports → "timeframe": "last_week", "source": "emails|docs"
+        - summarize_messages → "input": "{fetched_data}", "style": "concise|detailed"
 
-    If a field cannot be determined, set null or leave key absent.
-    Use examples to illustrate:
+    If a field cannot be determined, infer reasonably or set null. Use placeholders like {fetched_data} for chaining outputs.
+    Use examples to illustrate multi-action chaining:
     - "Remind me about dinner next Tuesday at 7pm." → intent: "set_reminder", next_run_at: "2025-11-11T19:00:00", action_type: "reminder"
     - "Every morning at 8 AM, send my calendar events to WhatsApp." → intent: "automation_create",
     workflow: {
@@ -222,12 +225,23 @@ class IntentDetector:
             {"type":"append_notion_page","config":{"database_name":"Daily Log","fields_mapping":{"Title":"{current_date} Summary","Content":"{summary}"}}}
         ]
     },
-    include multiple list of types in action if provided
     recurrence_pattern: "daily"
+    - "Every Monday, send WhatsApp to Sarah, create calendar event, email report summary." → intent: "automation_create",
+    workflow: {
+        "trigger": {"type":"on_schedule", "config":{"day_of_week":"Monday","time":"11:00","timezone":"Africa/Lagos"}},
+        "actions":[
+            {"type":"send_whatsapp_message","config":{"receiver_name":"Sarah","message_template":"Reminder: Weekly meeting!"}},
+            {"type":"create_calendar_event","config":{"event_title":"Team Sync","time":"11:00","duration":60,"calendar_id":"primary"}},
+            {"type":"fetch_last_week_reports","config":{"timeframe":"last_week","source":"reports"}},
+            {"type":"summarize_messages","config":{"input":"{fetched_reports}","style":"concise"}},
+            {"type":"send_email","config":{"receiver":"manager@company.com","subject":"Weekly Report Summary","body":"{report_summary}"}}
+        ]
+    },
+    recurrence_pattern: "weekly on Monday"
     """
 
         prev_ctx = ""
-        today_str = "2025-11-08"  # Hardcode for consistency in this env; use datetime.now() in prod
+        today_str = datetime.now().strftime("%Y-%m-%d")  # Dynamic; was hardcoded for testing
         if previous_context:
             prev_ctx = str(previous_context)[:1000]
 
@@ -264,7 +278,7 @@ class IntentDetector:
         "__should_create_automation__": false,
         "workflow": {{
             "trigger": {{"type":"TRIGGER_TYPE","config":{{}}}},
-            "actions":[{{"type":"ACTION_TYPE","config":{{}}}}]
+            "actions": [{{"type":"ACTION_TYPE","config":{{}}}}]  // ALWAYS full list of actions
         }}
     }}
     }}"""
@@ -283,6 +297,10 @@ class IntentDetector:
                         parsed.get("entities", {}), today_str, message
                     )
 
+                # Boost confidence for complete multi-actions
+                if "workflow" in parsed.get("entities", {}) and len(parsed["entities"]["workflow"].get("actions", [])) > 1:
+                    parsed["confidence"] = max(parsed.get("confidence", 0.0), 0.8)
+
                 # Ensure actions array exists
                 if "actions" not in parsed.get("entities", {}):
                     parsed["entities"]["actions"] = []
@@ -294,12 +312,14 @@ class IntentDetector:
                         "config": {}
                     }
 
-                # Ensure workflow exists
+                # Ensure workflow exists and has actions list
                 if "workflow" not in parsed.get("entities", {}):
                     parsed["entities"]["workflow"] = {
                         "trigger": {"type": None, "config": {}},
                         "actions": []
                     }
+                else:
+                    parsed["entities"]["workflow"].setdefault("actions", [])
 
                 # Set automation flag
                 if parsed.get("intent", "").startswith("automation"):
@@ -321,7 +341,6 @@ class IntentDetector:
         except Exception as e:
             logger.exception("Gemini generate_content failed: %s", e)
             return ""
-
 
     def _correct_dates(self, entities: Dict[str, Any], today_str: str, query_text: str) -> Dict[str, Any]:
         """Post-process entities for accurate date/time calculation."""
