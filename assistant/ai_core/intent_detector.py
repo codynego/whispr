@@ -253,7 +253,7 @@ class IntentDetector:
     Today is {today_str}. Convert relative dates (e.g., 'next Monday') to ISO 8601 (UTC).
     Return JSON strictly following this schema:
     {{
-    "intent": "<one of: find_message, read_message, summarize_message, send_message, reply_message, set_reminder, create_task, automation_create, automation_update, automation_delete, insights, unknown>",
+    "intent": "<one of: find_message, read_message, summarize_message, send_message, reply_message, automation_create, automation_update, automation_delete, insights, unknown>",
     "confidence": 0.0,
     "channel": "<email|whatsapp|slack|calendar|all>",
     "entities": {{

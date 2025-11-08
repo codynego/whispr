@@ -61,7 +61,7 @@ class IntentRouter:
         self.user = user
         self.llm_service = LLMService(user, APIKEY)
         self.message_service = MessageService(user)
-        self.task_service = TaskService()  # New: For tasks/reminders
+        self.task_service = TaskService() 
         self.calendar_service = CalendarService()  # New: For events
         self.insight_service = InsightService()  # New: For insights
         self.context_manager = ContextManager()
@@ -76,8 +76,6 @@ class IntentRouter:
             "send_message": self.handle_send_message,
             "reply_message": self.handle_reply_message,
             "summarize_message": self.handle_summarize_message,
-            "create_task": self.handle_create_task,  # New
-            "set_reminder": self.handle_set_reminder,  # New
             "insights": self.handle_insights,  # New
             "create_event": self.handle_create_event,  # New
 
