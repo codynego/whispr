@@ -27,19 +27,19 @@ logger = logging.getLogger(__name__)
 logger = logging.getLogger(__name__)
 
 # ----------------- Embedding Helper (kept for retrieval purposes) ----------------- #
-_embedding_model = None
-def get_embedding_model():
-    global _embedding_model
-    if _embedding_model is None:
-        _embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-    return _embedding_model
+# _embedding_model = None
+# def get_embedding_model():
+#     global _embedding_model
+#     if _embedding_model is None:
+#         _embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+#     return _embedding_model
 
-def generate_embedding(text: str):
-    if not text or not text.strip():
-        return []
-    model = get_embedding_model()
-    emb = model.encode([text], normalize_embeddings=True)
-    return emb[0].tolist()
+# def generate_embedding(text: str):
+#     if not text or not text.strip():
+#         return []
+#     model = get_embedding_model()
+#     emb = model.encode([text], normalize_embeddings=True)
+#     return emb[0].tolist()
 
 # ----------------- JSON safe parser fallback ----------------- #
 def _safe_parse_json(text: str) -> Optional[Dict[str, Any]]:
@@ -134,12 +134,13 @@ class IntentDetector:
         inferred_channel = self._infer_channel_from_text(channel, message, previous_context)
 
         # fetch relevant context (top_k_context)
-        try:
-            data = Message.objects.filter(account__user=user)
-            relevant_items = retrieve_relevant_messages(user=user, query_text=message, data=data, channel=inferred_channel, top_k=top_k_context) or []
-        except Exception as e:
-            logger.exception("Retriever failed: %s", e)
-            relevant_items = []
+        # try:
+        #     data = Message.objects.filter(account__user=user)
+        #     relevant_items = retrieve_relevant_messages(user=user, query_text=message, data=data, channel=inferred_channel, top_k=top_k_context) or []
+        # except Exception as e:
+        #     logger.exception("Retriever failed: %s", e)
+        #     relevant_items = []
+        relevant_items = []
 
 
 
