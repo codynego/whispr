@@ -88,8 +88,8 @@ class MessageService:
 
         print("message before retriever", messages.count())
 
-        if query_text:
-            messages = retrieve_relevant_messages(self.user, messages, query_text, top_k=1)
+        # if query_text:
+        #     messages = retrieve_relevant_messages(self.user, messages, query_text, top_k=1)
         
         print(f"🔎 Found {len(messages)} relevant messages for query.", type(messages))
 

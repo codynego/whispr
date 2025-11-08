@@ -14,7 +14,7 @@ from sentence_transformers import SentenceTransformer
 from unified.models import Message
 from django.conf import settings
 
-from whisprai.ai.retriever import retrieve_relevant_messages  # your existing retriever
+# from whisprai.ai.retriever import retrieve_relevant_messages  # your existing retriever
     # ----------------- Gemini calling ----------------- #
 import json
 from datetime import datetime, timedelta
