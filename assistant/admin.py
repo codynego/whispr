@@ -236,7 +236,7 @@ class AutomationAdmin(admin.ModelAdmin):
         if obj.trigger_type:
             return obj.trigger_type
         # Extract from action_params (workflow) if available
-        action_params = getattr(obj, 'action_params', {})
+        action_params = getattr(obj, 'action_params', {}) or {}  # Fixed: Handle None as {}
         trigger = action_params.get('trigger', {})
         return trigger.get('type', 'N/A')
     get_trigger_type.short_description = "Trigger Type"
@@ -247,7 +247,7 @@ class AutomationAdmin(admin.ModelAdmin):
         Returns action type for list_display and form (readonly).
         Extracts first action type from action_params['actions']; shows 'Multi-action' if >1.
         """
-        action_params = getattr(obj, 'action_params', {})
+        action_params = getattr(obj, 'action_params', {}) or {}  # Fixed: Handle None as {}
         actions = action_params.get('actions', [])
         if not actions:
             return 'N/A'
