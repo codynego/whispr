@@ -222,6 +222,7 @@ class IntentDetector:
             {"type":"append_notion_page","config":{"database_name":"Daily Log","fields_mapping":{"Title":"{current_date} Summary","Content":"{summary}"}}}
         ]
     },
+    include multiple list of types in action if provided
     recurrence_pattern: "daily"
     """
 
