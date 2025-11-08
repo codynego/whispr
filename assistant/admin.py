@@ -136,54 +136,63 @@ from django.utils.translation import gettext_lazy as _
 from assistant.models import Automation
 import json
 
+from django.contrib import admin
+from django.utils.translation import gettext_lazy as _
+from .models import Automation
+
+
 @admin.register(Automation)
 class AutomationAdmin(admin.ModelAdmin):
     """
     Admin configuration for the Automation model.
+    Uses callable methods for non-field attributes to avoid SystemCheckError.
     """
 
-    # ---------------- DISPLAY ---------------- #
+    # ---------------- LIST DISPLAY ---------------- #
     list_display = (
         'name',
         'user',
-        'trigger_type',
-        'action_type',
+        'get_trigger_type',
+        'get_action_type',
         'is_active',
         'last_triggered_at',
         'next_run_at',
     )
+
+    # ---------------- LIST FILTER ---------------- #
     list_filter = (
-        'trigger_type',
-        'action_type',
         'is_active',
         'created_at',
         'updated_at',
     )
+
+    # ---------------- SEARCH ---------------- #
     search_fields = (
         'name',
         'description',
         'user__username',  # Assuming AUTH_USER_MODEL has username field
     )
+
+    # ---------------- READONLY ---------------- #
     readonly_fields = (
         'created_at',
         'updated_at',
         'last_triggered_at',
     )
-    ordering = ('-created_at',)
 
     # ---------------- FIELDSETS ---------------- #
     fieldsets = (
         (_('Core'), {
-            'fields': ('user', 'name', 'description'),
+            'fields': ('user', 'name', 'description')
         }),
         (_('Trigger'), {
-            'fields': ('trigger_type', 'trigger_condition'),
+            'fields': ('trigger_type', 'trigger_condition')
         }),
         (_('Action'), {
-            'fields': ('action_type', 'action_params'),
+            'fields': ('action_type', 'action_params')
         }),
         (_('Schedule'), {
-            'fields': ('is_active', 'next_run_at', 'recurrence_pattern'),
+            'fields': ('is_active', 'next_run_at', 'recurrence_pattern')
         }),
         (_('Metadata'), {
             'fields': ('created_at', 'updated_at', 'last_triggered_at'),
@@ -191,35 +200,36 @@ class AutomationAdmin(admin.ModelAdmin):
         }),
     )
 
-    # ---------------- METHODS ---------------- #
+    filter_horizontal = ()  # No m2m fields here, keep for future
+
+    ordering = ('-created_at',)
+
+    # ---------------- OVERRIDE READONLY ---------------- #
     def get_readonly_fields(self, request, obj=None):
+        readonly_fields = list(self.readonly_fields)
+        if obj:  # For existing objects, lock these fields
+            readonly_fields.extend(['user', 'trigger_type', 'action_type'])
+        return tuple(readonly_fields)
+
+    # ---------------- CUSTOM DISPLAY METHODS ---------------- #
+    def get_trigger_type(self, obj):
         """
-        Make 'user', 'trigger_type', 'action_type' readonly for existing objects.
+        Returns trigger type for list_display.
+        Uses 'trigger_type' attribute if exists, otherwise tries to extract from action_params JSON.
         """
-        readonly = list(self.readonly_fields)
-        if obj:
-            readonly.extend(['user', 'trigger_type', 'action_type'])
-        return tuple(readonly)
+        if hasattr(obj, 'trigger_type') and obj.trigger_type:
+            return obj.trigger_type
+        return obj.action_params.get('trigger_type') if obj.action_params else 'N/A'
+    get_trigger_type.short_description = "Trigger Type"
+    get_trigger_type.admin_order_field = 'trigger_type'
 
-    def display_json_field(self, obj, field_name):
+    def get_action_type(self, obj):
         """
-        Nicely format JSON fields like trigger_condition or action_params.
+        Returns action type for list_display.
+        Uses 'action_type' attribute if exists, otherwise tries to extract from action_params JSON.
         """
-        raw = getattr(obj, field_name, {})
-        try:
-            return json.dumps(raw, indent=2)
-        except Exception:
-            return str(raw)
-    display_json_field.short_description = "JSON Content"
-
-    # Optional: Add display for JSON fields in list_display
-    # list_display += ('display_trigger_condition', 'display_action_params',)
-
-    def display_trigger_condition(self, obj):
-        return self.display_json_field(obj, 'trigger_condition')
-    display_trigger_condition.short_description = "Trigger Condition"
-
-    def display_action_params(self, obj):
-        return self.display_json_field(obj, 'action_params')
-    display_action_params.short_description = "Action Parameters"
-
+        if hasattr(obj, 'action_type') and obj.action_type:
+            return obj.action_type
+        return obj.action_params.get('action_type') if obj.action_params else 'N/A'
+    get_action_type.short_description = "Action Type"
+    get_action_type.admin_order_field = 'action_type'
