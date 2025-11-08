@@ -141,11 +141,18 @@ from django.utils.translation import gettext_lazy as _
 from .models import Automation
 
 
+from django.contrib import admin
+from django import forms  # For custom widgets if needed
+from .models import Automation
+# Optional: from django_json_widget.widgets import JSONEditorWidget  # pip install django-json-widget for better JSON editing
+
+
 @admin.register(Automation)
 class AutomationAdmin(admin.ModelAdmin):
     """
     Admin configuration for the Automation model.
     Uses callable methods for non-field attributes to avoid SystemCheckError.
+    Derives action_type from action_params JSON for display/editing.
     """
 
     # ---------------- LIST DISPLAY ---------------- #
@@ -153,7 +160,7 @@ class AutomationAdmin(admin.ModelAdmin):
         'name',
         'user',
         'get_trigger_type',
-        'get_action_type',
+        'get_action_type',  # Custom: Derives from action_params
         'is_active',
         'last_triggered_at',
         'next_run_at',
@@ -164,13 +171,16 @@ class AutomationAdmin(admin.ModelAdmin):
         'is_active',
         'created_at',
         'updated_at',
+        'trigger_type',  # Added: Filter by trigger types
+        'recurrence_pattern',  # Added: Filter schedules (e.g., 'daily')
     )
 
     # ---------------- SEARCH ---------------- #
     search_fields = (
         'name',
         'description',
-        'user__username',  # Assuming AUTH_USER_MODEL has username field
+        'user__username',
+        'action_params',  # Added: Searches JSON contents (e.g., action types in workflow)
     )
 
     # ---------------- READONLY ---------------- #
@@ -178,6 +188,7 @@ class AutomationAdmin(admin.ModelAdmin):
         'created_at',
         'updated_at',
         'last_triggered_at',
+        'get_action_type',  # Added: Make derived action_type readonly in form
     )
 
     # ---------------- FIELDSETS ---------------- #
@@ -189,7 +200,7 @@ class AutomationAdmin(admin.ModelAdmin):
             'fields': ('trigger_type', 'trigger_condition')
         }),
         (_('Action'), {
-            'fields': ('action_type', 'action_params')
+            'fields': ('get_action_type', 'action_params')  # Fixed: Use derived + full JSON; removed invalid 'action_type'
         }),
         (_('Schedule'), {
             'fields': ('is_active', 'next_run_at', 'recurrence_pattern')
@@ -204,32 +215,44 @@ class AutomationAdmin(admin.ModelAdmin):
 
     ordering = ('-created_at',)
 
+    # ---------------- FORM WIDGETS (Optional Enhancement) ---------------- #
+    # formfield_overrides = {
+    #     models.JSONField: {'widget': JSONEditorWidget},  # Pretty JSON editor if django-json-widget installed
+    # }
+
     # ---------------- OVERRIDE READONLY ---------------- #
     def get_readonly_fields(self, request, obj=None):
         readonly_fields = list(self.readonly_fields)
         if obj:  # For existing objects, lock these fields
-            readonly_fields.extend(['user', 'trigger_type', 'action_type'])
+            readonly_fields.extend(['user', 'trigger_type'])  # Removed 'action_type'—not a real field
         return tuple(readonly_fields)
 
     # ---------------- CUSTOM DISPLAY METHODS ---------------- #
     def get_trigger_type(self, obj):
         """
-        Returns trigger type for list_display.
-        Uses 'trigger_type' attribute if exists, otherwise tries to extract from action_params JSON.
+        Returns trigger type for list_display and form.
+        Prioritizes model field; falls back to action_params['trigger']['type'] if present.
         """
-        if hasattr(obj, 'trigger_type') and obj.trigger_type:
+        if obj.trigger_type:
             return obj.trigger_type
-        return obj.action_params.get('trigger_type') if obj.action_params else 'N/A'
+        # Extract from action_params (workflow) if available
+        action_params = getattr(obj, 'action_params', {})
+        trigger = action_params.get('trigger', {})
+        return trigger.get('type', 'N/A')
     get_trigger_type.short_description = "Trigger Type"
-    get_trigger_type.admin_order_field = 'trigger_type'
+    # Removed admin_order_field—can't order on derived JSON easily
 
     def get_action_type(self, obj):
         """
-        Returns action type for list_display.
-        Uses 'action_type' attribute if exists, otherwise tries to extract from action_params JSON.
+        Returns action type for list_display and form (readonly).
+        Extracts first action type from action_params['actions']; shows 'Multi-action' if >1.
         """
-        if hasattr(obj, 'action_type') and obj.action_type:
-            return obj.action_type
-        return obj.action_params.get('action_type') if obj.action_params else 'N/A'
+        action_params = getattr(obj, 'action_params', {})
+        actions = action_params.get('actions', [])
+        if not actions:
+            return 'N/A'
+        if len(actions) > 1:
+            return f"Multi-action ({len(actions)} steps)"
+        return actions[0].get('type', 'N/A')
     get_action_type.short_description = "Action Type"
-    get_action_type.admin_order_field = 'action_type'
+    # Removed admin_order_field—derived, not sortable
