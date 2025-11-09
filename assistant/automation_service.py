@@ -808,7 +808,7 @@ Create a concise, urgent reminder message for: "{title}"
 Context: {title}  # Fallback to title if no description
 Triggered at: {trigger_time_str}
 
-Make it 1-2 sentences, friendly but direct (e.g., "Heads up! Your meeting starts in 1 hour.").
+Make it 2-3 sentences, friendly but direct (e.g., "Heads up! Your meeting starts in 1 hour. you dont want to miss it").
 Output ONLY JSON: {{"message": "Your reminder text"}}
 """
 
