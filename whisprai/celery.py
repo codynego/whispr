@@ -8,39 +8,50 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'whisprai.settings')
 
 app = Celery('whisprai')
 
-# Load task-specific configurations (including time limits) from Django settings.
-# Ensure your settings.py has:
-# CELERY_TASK_TIME_LIMIT = 600  # Hard limit: 10 minutes
-# CELERY_TASK_SOFT_TIME_LIMIT = 540  # Soft limit: 9 minutes
-# CELERY_WORKER_CONCURRENCY = 1  # Reduce for low-spec instances to avoid overload
-# CELERY_ACKS_LATE = True  # Acknowledge tasks after completion for reliability
-app.config_from_object('django.conf:settings', namespace='CELERY')
-
-# Override or set defaults here if not in settings.py (fallback for quick testing)
-app.conf.update(
-    task_time_limit=600,  # Hard timeout: Kill after 10min
-    task_soft_time_limit=540,  # Soft timeout: Warn after 9min, allow graceful exit
-    worker_concurrency=1,  # Limit to 1 worker process on 1vCPU instance
-    worker_prefetch_multiplier=1,  # Avoid prefetching too many tasks
-    task_acks_late=True,  # Requeue if worker crashes mid-task
-    task_reject_on_worker_lost=True,  # Reject and requeue lost tasks
-)
-
+# Load task modules from all registered Django app configs.
 app.autodiscover_tasks()
 
-# Beat schedule for periodic syncs – every 2 minutes as before.
-# Consider staggering if multiple users to avoid API rate limits.
+# Load task-specific configurations from Django settings.
+app.config_from_object('django.conf:settings', namespace='CELERY')
+
+# Use django-celery-beat for dynamic scheduling (e.g., automations)
+app.conf.update(
+    # Time limits for long-running tasks (e.g., AI summaries)
+    task_time_limit=600,  # Hard: Kill after 10min
+    task_soft_time_limit=540,  # Soft: Warn after 9min
+    
+    # Worker tuning for low-spec (1vCPU)
+    worker_concurrency=1,
+    worker_prefetch_multiplier=1,
+    task_acks_late=True,
+    task_reject_on_worker_lost=True,
+    
+    # Results backend (for inspecting task outcomes)
+    result_backend='django-db',  # Requires django-celery-results
+    result_expires=3600,  # Expire results after 1hr
+    
+    # Beat: Use DB for dynamic schedules
+    beat_scheduler='django_celery_beat.schedulers:DatabaseScheduler',
+    beat_timezone='UTC',  # Align with your AutomationService
+)
+
+# Static Beat schedule: Periodic syncs (stagger if multi-instance)
 app.conf.beat_schedule = {
     'sync-messages-every-2-minutes': {
         'task': 'unified.tasks.common_tasks.periodic_channel_sync',
         'schedule': crontab(minute='*/2'),
     },
+    # Add if needed: e.g., daily cleanup
+    # 'cleanup-old-results': {
+    #     'task': 'assistant.tasks.cleanup_old_automations',
+    #     'schedule': crontab(hour=2, minute=0),  # 2AM UTC
+    # },
 }
 
-
+# Suppress tokenizer warnings (for HF models in tasks)
 os.environ.setdefault('TOKENIZERS_PARALLELISM', 'false')
 
-
+# Debug task for testing
 @app.task(bind=True)
 def debug_task(self):
     print(f'Request: {self.request!r}')
