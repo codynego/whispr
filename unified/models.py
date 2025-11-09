@@ -478,3 +478,40 @@ class UserRule(models.Model):
 
     def __str__(self):
         return f"{self.user.email} - {self.name} ({self.rule_type})"
+
+
+
+from django.db import models
+from django.utils import timezone
+
+class CalendarEvent(models.Model):
+    STATUS_CHOICES = [
+        ('confirmed', 'Confirmed'),
+        ('tentative', 'Tentative'),
+        ('cancelled', 'Cancelled'),
+    ]
+
+    account = models.ForeignKey(ChannelAccount, on_delete=models.CASCADE, related_name='calendar_events')
+    conversation = models.ForeignKey(Conversation, on_delete=models.SET_NULL, null=True, blank=True, related_name='events')  # Link to email thread
+    external_id = models.CharField(max_length=255, unique=True, db_index=True)  # Google event ID
+    summary = models.CharField(max_length=500)
+    description = models.TextField(blank=True)
+    start_time = models.DateTimeField(db_index=True)
+    end_time = models.DateTimeField()
+    location = models.CharField(max_length=500, blank=True)
+    attendees = models.JSONField(default=list)  # List of emails
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='confirmed')
+    organizer = models.CharField(max_length=255, blank=True)
+    all_day = models.BooleanField(default=False)
+    html_link = models.URLField(blank=True)
+    i_cal_uid = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'calendar_events'
+        ordering = ['start_time']
+        indexes = [models.Index(fields=['start_time', 'end_time'])]  # For time queries
+
+    def __str__(self):
+        return f"{self.summary} ({self.start_time.date()})"

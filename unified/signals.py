@@ -166,17 +166,84 @@ def handle_new_message(sender, instance, created, **kwargs):
 
 
 
+# @receiver(post_save, sender=Message)
+# def trigger_automations_on_new_message(sender, instance, created, **kwargs):
+#     if not created:
+#         return  # Only run for new messages
+
+#     # Filter automations for this user that listen to "on_new_message"
+#     automations = Automation.objects.filter(
+#         user=instance.account.user,
+#         trigger_type="on_email_received",
+#         is_active=True,
+#     )
+
+#     for automation in automations:
+#         execute_automation.delay(automation.id)
+
+
+import json
+import re
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from unified.models import Message
+from assistant.models import Automation  # Adjust to your app
+from assistant.tasks import execute_automation  # Your Celery task
+
 @receiver(post_save, sender=Message)
 def trigger_automations_on_new_message(sender, instance, created, **kwargs):
     if not created:
-        return  # Only run for new messages
+        return  # Only for new messages
 
-    # Filter automations for this user that listen to "on_new_message"
+    # Helper to extract subject (from metadata or content fallback)
+    def get_subject(msg):
+        metadata = msg.metadata or {}
+        subject = metadata.get("subject") or msg.content[:100].split('\n')[0].strip() if msg.content else "No Subject"
+        return subject
+
+    # Helper for basic keywords (simple extraction; enhance with NLP if needed)
+    def extract_keywords(text, max_keywords=5):
+        if not text:
+            return []
+        words = re.findall(r'\b[a-zA-Z]{4,}\b', text.lower())
+        common = {"the", "and", "for", "are", "but", "not", "you", "all", "can", "had", "her", "was", "one", "our", "out", "day", "get", "has", "him", "his", "how", "man", "new", "now", "old", "see", "two", "way", "who", "boy", "did", "its", "let", "put", "say", "she", "too", "use"}
+        keywords = [w for w in words if w not in common and len(w) > 3]
+        return list(set(keywords))[:max_keywords]  # Dedupe and limit
+
+    # Build rich context from the model
+    context = {
+        "channel": instance.channel,
+        "sender": instance.sender,
+        "sender_name": instance.sender_name,
+        "recipients": instance.recipients,  # List from JSON
+        "subject": get_subject(instance),
+        "text": instance.content,  # Decrypted content
+        "keywords": extract_keywords(instance.content),
+        "attachments": instance.attachments,  # List of dicts
+        "importance": instance.importance,
+        "importance_score": instance.importance_score,
+        "ai_summary": instance.ai_summary if instance.analyzed_at else None,  # Only if analyzed
+        "ai_next_step": instance.ai_next_step if instance.analyzed_at else None,
+        "ai_people": instance.ai_people,
+        "ai_organizations": instance.ai_organizations,
+        "conversation_id": instance.conversation.id,
+        "external_id": instance.external_id,
+        "sent_at": instance.sent_at.isoformat() if instance.sent_at else None,
+        "message_id": instance.id,
+    }
+
+    # Filter automations: Use "on_message_received" for generality, with channel in conditions
     automations = Automation.objects.filter(
-        user=instance.account.user,
-        trigger_type="on_email_received",
+        user=instance.account.user,  # Links to user via ChannelAccount
+        trigger_type="on_message_received",  # Or keep "on_email_received" if channel-specific
         is_active=True,
-    )
+    ).select_related("user")
 
     for automation in automations:
-        execute_automation.delay(automation.id)
+        # Optional: Pre-filter by channel in trigger_condition
+        cond = automation.trigger_condition or {}
+        if cond.get("channel") and cond["channel"] != instance.channel:
+            continue
+
+        # Queue with context
+        execute_automation.delay(automation.id, json.dumps(context))

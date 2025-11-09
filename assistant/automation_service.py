@@ -1,32 +1,75 @@
-from datetime import datetime, timedelta
-from django.utils import timezone
-from django.core.exceptions import ValidationError
-from assistant.models import Automation
-from django_celery_beat.models import (
-    PeriodicTask,
-    ClockedSchedule,
-    CrontabSchedule,
-)
-from dateutil.rrule import rrule, WEEKLY, MO  # For advanced scheduling
+# assistant/services/automation_service.py
 import json
 import logging
-from typing import Dict, Any, Optional
+from datetime import datetime, timedelta
+from typing import Any, Dict, Optional, List, Callable
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+import jsonschema
+from django.utils import timezone as dj_timezone
+from django.core.exceptions import ValidationError
+from django.conf import settings
+from django_celery_beat.models import PeriodicTask, ClockedSchedule, CrontabSchedule
+from unified.utils.calendar_util import create_calendar_event
+
+from assistant.models import Automation
 
 logger = logging.getLogger(__name__)
 
+
 class AutomationService:
     """
-    Central service to create, update, delete and trigger automations.
-    Supports multi-step workflows defined in automation.action_params JSON.
+    Enterprise-grade automation engine with:
+    • Multi-step workflows
+    • Timezone-aware scheduling
+    • JSONSchema validation
+    • Global templating with {{{mustache}}} syntax
+    • Real email + WhatsApp integration
+    • Daily, weekly, monthly, and weekday recurrence support
+    • Audit-ready logging
     """
+
+    # -------------------------------------------------------------------------
+    # JSONSchema for workflow validation
+    # -------------------------------------------------------------------------
+    WORKFLOW_SCHEMA = {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+            "trigger": {
+                "type": "object",
+                "properties": {
+                    "type": {"type": "string", "enum": ["on_schedule"]},
+                    "config": {"type": "object"}
+                }
+            },
+            "actions": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "required": ["type", "config"],
+                    "properties": {
+                        "type": {"type": "string"},
+                        "config": {"type": "object"}
+                    },
+                    "additionalProperties": False
+                }
+            }
+        },
+        "required": ["actions"],
+        "additionalProperties": False
+    }
 
     def __init__(self, user):
         self.user = user
-        self.action_registry = self._register_actions()  # Dynamic action handlers
+        self.action_registry = self._register_actions()
 
-    # ---------------- ACTION REGISTRY ---------------- #
-    def _register_actions(self) -> Dict[str, callable]:
-        """Registry for executable actions; extend with real integrations."""
+    # -------------------------------------------------------------------------
+    # ACTION REGISTRY
+    # -------------------------------------------------------------------------
+    def _register_actions(self) -> Dict[str, Callable]:
+        """Register all available action handlers."""
         return {
             "reminder": self._execute_reminder,
             "extract_fields": self._execute_extract_fields,
@@ -36,155 +79,182 @@ class AutomationService:
             "append_notion_page": self._execute_append_notion_page,
             "fetch_unread_emails": self._execute_fetch_unread_emails,
             "summarize_messages": self._execute_summarize_messages,
-            "create_calendar_event": self._execute_create_calendar_event,  # New
-            "send_email": self._execute_send_email,  # New
-            "fetch_last_week_reports": self._execute_fetch_last_week_reports,  # New
+            "create_calendar_event": self._execute_create_calendar_event,
+            "send_email": self._execute_send_email,
+            "fetch_last_week_reports": self._execute_fetch_last_week_reports,
         }
 
-    # ------------------------------------------------
-    # CREATE AUTOMATION
-    # ------------------------------------------------
+    # -------------------------------------------------------------------------
+    # WORKFLOW VALIDATION
+    # -------------------------------------------------------------------------
+    def _validate_workflow(self, workflow: dict) -> None:
+        """Validate workflow against schema."""
+        jsonschema.validate(workflow, self.WORKFLOW_SCHEMA)
+
+    # -------------------------------------------------------------------------
+    # PUBLIC API
+    # -------------------------------------------------------------------------
     def create_automation(
         self,
         name: str,
         workflow: dict,
         trigger_type: str = "on_schedule",
-        next_run_at: datetime | str = None,
-        recurrence_pattern: str = None,
-        description: str = None,
+        next_run_at: Optional[datetime] = None,
+        recurrence_pattern: Optional[str] = None,
+        description: Optional[str] = None,
         is_active: bool = True,
-        trigger_condition: dict = None,
-    ) -> Automation | None:
-        """
-        Create a new automation with a multi-step workflow.
-        Saves workflow to action_params JSONField.
-        """
+        trigger_condition: Optional[dict] = None,
+    ) -> Optional[Automation]:
+        """Create a new automation with validation and scheduling."""
         try:
-            logger.info(f"Creating automation: {name}, trigger: {trigger_type}")
+            logger.info(f"[{self.user.username}] Creating automation: {name}")
 
-            # Parse and ensure next_run_at is timezone-aware
-            if next_run_at:
-                if isinstance(next_run_at, str):
-                    try:
-                        next_run_at = datetime.fromisoformat(next_run_at.replace('Z', '+00:00'))
-                    except ValueError as e:
-                        logger.error(f"Invalid next_run_at format '{next_run_at}': {e}")
-                        return None
-                if timezone.is_naive(next_run_at):
-                    next_run_at = timezone.make_aware(next_run_at)
+            # 1. Validate workflow structure
+            self._validate_workflow(workflow)
 
-            # Prepare action_params (full workflow)
-            action_params = workflow or {}
+            # 2. Parse and validate next_run_at with timezone awareness
+            next_run_at = self._parse_next_run_at(next_run_at, workflow)
+
+            # 3. Merge trigger configuration
+            action_params = workflow.copy()
             if trigger_condition:
-                action_params.setdefault("trigger", {}).setdefault("config", trigger_condition)
+                if "trigger" not in action_params:
+                    action_params["trigger"] = {}
+                if "config" not in action_params["trigger"]:
+                    action_params["trigger"]["config"] = {}
+                action_params["trigger"]["config"].update(trigger_condition)
 
+            # 4. Create automation instance
             automation = Automation.objects.create(
                 user=self.user,
                 name=name,
-                action_params=action_params,  # Save workflow here
+                description=description or "",
+                action_params=action_params,
                 trigger_type=trigger_type,
                 next_run_at=next_run_at,
-                recurrence_pattern=recurrence_pattern,
-                description=description,
+                recurrence_pattern=recurrence_pattern or "",
                 is_active=is_active,
             )
 
-            # Schedule if time-based
+            # 5. Schedule if active and scheduled trigger
             if trigger_type == "on_schedule" and is_active:
                 self._schedule_automation(automation)
 
-            logger.info(f"Automation created: {automation.id}")
+            logger.info(f"Automation {automation.id} created successfully")
             return automation
-        except ValidationError as ve:
-            logger.error(f"Validation error creating automation: {ve}")
+
+        except jsonschema.ValidationError as e:
+            logger.error(f"Workflow validation failed: {e.message}")
+            return None
+        except ValueError as e:
+            logger.error(f"Value error in automation creation: {e}")
             return None
         except Exception as e:
-            logger.error(f"Failed to create automation: {e}")
+            logger.exception(f"Unexpected error creating automation: {e}")
             return None
 
-    # ------------------------------------------------
-    # UPDATE AUTOMATION
-    # ------------------------------------------------
-    def update_automation(self, automation_id: int, **updates) -> Automation | None:
-        """
-        Update existing automation and reschedule if needed.
-        """
+    def update_automation(
+        self, 
+        automation_id: int, 
+        **updates
+    ) -> Optional[Automation]:
+        """Update an existing automation with rescheduling if needed."""
         try:
             automation = Automation.objects.get(id=automation_id, user=self.user)
 
-            # Handle workflow/action_params update
+            # Handle workflow update with validation
             if "workflow" in updates:
-                updates["action_params"] = {**automation.action_params, **updates["workflow"]} if automation.action_params else updates["workflow"]
-                del updates["workflow"]
+                new_workflow = updates.pop("workflow")
+                self._validate_workflow(new_workflow)
+                # Merge with existing params to preserve trigger config
+                merged_params = automation.action_params.copy()
+                merged_params.update(new_workflow)
+                updates["action_params"] = merged_params
 
+            # Handle next_run_at parsing
+            if "next_run_at" in updates:
+                action_params = updates.get("action_params", automation.action_params)
+                updates["next_run_at"] = self._parse_next_run_at(
+                    updates["next_run_at"], 
+                    action_params
+                )
+
+            # Update allowed fields only
+            allowed_fields = {f.name for f in Automation._meta.fields}
             for field, value in updates.items():
-                if field in [f.name for f in Automation._meta.fields]:
+                if field in allowed_fields:
                     setattr(automation, field, value)
-
-            # Handle timezone for next_run_at
-            if "next_run_at" in updates and updates["next_run_at"]:
-                if isinstance(updates["next_run_at"], str):
-                    try:
-                        updates["next_run_at"] = datetime.fromisoformat(updates["next_run_at"].replace('Z', '+00:00'))
-                    except ValueError:
-                        pass
-                if timezone.is_naive(updates["next_run_at"]):
-                    updates["next_run_at"] = timezone.make_aware(updates["next_run_at"])
-                setattr(automation, "next_run_at", updates["next_run_at"])
 
             automation.save()
 
             # Reschedule if schedule-related fields changed
-            if any(key in updates for key in ["next_run_at", "recurrence_pattern", "trigger_type", "is_active"]):
+            schedule_fields = {
+                "next_run_at", "recurrence_pattern", 
+                "trigger_type", "is_active", "action_params"
+            }
+            if any(k in updates for k in schedule_fields):
                 if automation.trigger_type == "on_schedule" and automation.is_active:
                     self._reschedule_automation(automation)
-                elif not automation.is_active:
+                else:
                     self._unschedule_automation(automation)
 
-            logger.info(f"Automation updated: {automation_id}")
+            logger.info(f"Automation {automation_id} updated successfully")
             return automation
+
         except Automation.DoesNotExist:
-            logger.warning(f"Automation {automation_id} not found for user {self.user}")
-            return None
-        except ValidationError as ve:
-            logger.error(f"Validation error updating automation {automation_id}: {ve}")
+            logger.error(f"Automation {automation_id} not found for user {self.user.username}")
             return None
         except Exception as e:
-            logger.error(f"Failed to update automation {automation_id}: {e}")
+            logger.exception(f"Error updating automation {automation_id}: {e}")
             return None
 
-    # ------------------------------------------------
-    # DELETE AUTOMATION
-    # ------------------------------------------------
     def delete_automation(self, automation_id: int) -> bool:
+        """Delete an automation and unschedule it."""
         try:
             automation = Automation.objects.get(id=automation_id, user=self.user)
             self._unschedule_automation(automation)
             automation.delete()
-            logger.info(f"Automation deleted: {automation_id}")
+            logger.info(f"Automation {automation_id} deleted successfully")
             return True
         except Automation.DoesNotExist:
-            logger.warning(f"Automation {automation_id} not found for user {self.user}")
+            logger.error(f"Automation {automation_id} not found")
             return False
         except Exception as e:
-            logger.error(f"Failed to delete automation {automation_id}: {e}")
+            logger.exception(f"Error deleting automation {automation_id}: {e}")
             return False
 
-    # ------------------------------------------------
-    # TRIGGER AUTOMATION
-    # ------------------------------------------------
-    def trigger_automation(self, automation_id: int, context: dict = None) -> bool:
+    def trigger_automation(
+        self, 
+        automation_id: int, 
+        context: Optional[dict] = None
+    ) -> bool:
+        """Manually trigger an automation with optional context."""
         try:
             automation = Automation.objects.get(id=automation_id, user=self.user)
+
+            # Check if automation should trigger based on conditions
             if not automation.should_trigger(context):
-                logger.info(f"Automation {automation_id} should not trigger under current conditions")
+                logger.debug(f"Automation {automation_id} skipped – conditions not met")
                 return False
 
-            self._execute_workflow(automation, context or {})
-            automation.last_triggered_at = timezone.now()
+            # Build execution context
+            trigger_context = {
+                **(context or {}),
+                "trigger_time": dj_timezone.now(),
+                "trigger_type": "manual",
+                "automation_name": automation.name,
+                "automation_id": automation.id,
+                "user_id": self.user.id,
+            }
+
+            # Execute workflow
+            self._execute_workflow(automation, trigger_context)
+
+            # Update last triggered timestamp
+            automation.last_triggered_at = dj_timezone.now()
             automation.save(update_fields=["last_triggered_at"])
 
-            # Reschedule next run for recurring
+            # Compute and schedule next run for recurring automations
             if automation.recurrence_pattern and automation.trigger_type == "on_schedule":
                 automation.next_run_at = self._compute_next_run(automation)
                 automation.save(update_fields=["next_run_at"])
@@ -192,213 +262,604 @@ class AutomationService:
 
             logger.info(f"Automation {automation_id} triggered successfully")
             return True
+
         except Automation.DoesNotExist:
-            logger.warning(f"Automation {automation_id} not found for user {self.user}")
+            logger.error(f"Automation {automation_id} not found")
             return False
         except Exception as e:
-            logger.error(f"Failed to trigger automation {automation_id}: {e}")
+            logger.exception(f"Trigger failed for automation {automation_id}: {e}")
             return False
 
-    # ------------------------------------------------
-    # PRIVATE HELPERS
-    # ------------------------------------------------
+    # -------------------------------------------------------------------------
+    # SCHEDULING WITH TIMEZONE SUPPORT
+    # -------------------------------------------------------------------------
     def _schedule_automation(self, automation: Automation) -> None:
+        """Schedule an automation using django-celery-beat."""
         if not automation.next_run_at:
-            logger.warning(f"No next_run_at set for automation {automation.id}; skipping schedule")
+            logger.warning(f"No next_run_at for automation {automation.id}, skipping schedule")
             return
 
+        # Remove any existing schedule
         self._unschedule_automation(automation)
 
         task_name = f"automation_{automation.id}"
         args = json.dumps([automation.id])
+        config = automation.action_params.get("trigger", {}).get("config", {})
 
         try:
             if automation.recurrence_pattern:
-                # Parse pattern to Crontab (e.g., "weekly on Monday" → "0 11 * * 1")
-                cron_str = self._pattern_to_cron(automation.recurrence_pattern, automation.action_params.get("trigger", {}).get("config", {}))
-                if cron_str:
-                    schedule, _ = CrontabSchedule.objects.get_or_create(crontab=cron_str)
+                # Create cron schedule for recurring automations
+                cron_expr = self._pattern_to_cron(automation.recurrence_pattern, config)
+                if cron_expr:
+                    minute, hour, day, month, day_of_week = cron_expr.split()
+                    schedule, _ = CrontabSchedule.objects.get_or_create(
+                        minute=minute,
+                        hour=hour,
+                        day_of_month=day,
+                        month_of_year=month,
+                        day_of_week=day_of_week,
+                    )
                     PeriodicTask.objects.create(
                         crontab=schedule,
                         name=task_name,
                         task="assistant.tasks.execute_automation",
                         args=args,
+                        enabled=True,
                     )
-                    logger.debug(f"Recurring task scheduled for automation {automation.id} with cron: {cron_str}")
+                    logger.info(f"Scheduled recurring automation {automation.id} with cron: {cron_expr}")
                 else:
-                    logger.warning(f"Could not parse recurrence '{automation.recurrence_pattern}' for {automation.id}")
+                    logger.warning(f"Unsupported recurrence pattern: {automation.recurrence_pattern}")
             else:
-                # One-off clocked task
-                clocked, _ = ClockedSchedule.objects.get_or_create(clocked_time=automation.next_run_at)
+                # Create one-off clocked schedule
+                clocked, _ = ClockedSchedule.objects.get_or_create(
+                    clocked_time=automation.next_run_at
+                )
                 PeriodicTask.objects.create(
                     clocked=clocked,
                     name=task_name,
                     task="assistant.tasks.execute_automation",
                     args=args,
                     one_off=True,
+                    enabled=True,
                 )
-                logger.debug(f"One-time task scheduled for automation {automation.id} at {automation.next_run_at}")
+                logger.info(f"Scheduled one-off automation {automation.id} at {automation.next_run_at}")
+
         except Exception as e:
-            logger.error(f"Failed to schedule automation {automation.id}: {e}")
+            logger.exception(f"Error scheduling automation {automation.id}: {e}")
 
-    def _pattern_to_cron(self, pattern: str, trigger_config: dict) -> str:
-        """Convert recurrence_pattern to Crontab string (e.g., 'weekly on Monday' → '0 11 * * 1')."""
-        time_parts = trigger_config.get("time", "00:00").split(":")
-        minute = int(time_parts[0])
-        hour = int(time_parts[1]) if len(time_parts) > 1 else 0
+    def _pattern_to_cron(self, pattern: str, config: dict) -> Optional[str]:
+        """Convert recurrence pattern to cron expression."""
+        time_str = config.get("time", "09:00")
+        try:
+            hour, minute = map(int, time_str.split(":"))
+        except (ValueError, AttributeError):
+            hour, minute = 9, 0
 
-        if "daily" in pattern:
-            return f"{minute} {hour} * * *"
-        elif "weekly on Monday" in pattern:
-            return f"{minute} {hour} * * 1"  # Monday=1
-        elif "weekly" in pattern and "Monday" in pattern:
-            return f"{minute} {hour} * * 1"
-        # Extend for more patterns (e.g., rrule to cron conversion)
-        return None
+        pattern_lower = pattern.lower().strip()
+        
+        # Cron format: minute hour day month day_of_week
+        patterns = {
+            "daily": f"{minute} {hour} * * *",
+            "daily on weekdays": f"{minute} {hour} * * 1-5",
+            "weekly on monday": f"{minute} {hour} * * 1",
+            "weekly on tuesday": f"{minute} {hour} * * 2",
+            "weekly on wednesday": f"{minute} {hour} * * 3",
+            "weekly on thursday": f"{minute} {hour} * * 4",
+            "weekly on friday": f"{minute} {hour} * * 5",
+            "weekly on saturday": f"{minute} {hour} * * 6",
+            "weekly on sunday": f"{minute} {hour} * * 0",
+            "monthly": f"{minute} {hour} 1 * *",  # First day of the month
+        }
+        
+        return patterns.get(pattern_lower)
 
     def _compute_next_run(self, automation: Automation) -> datetime:
-        """Compute next run based on recurrence (e.g., next Monday)."""
-        now = timezone.now()
-        pattern = automation.recurrence_pattern
+        """Compute next run time for recurring automations."""
+        now = dj_timezone.now()
+        pattern = (automation.recurrence_pattern or "").lower().strip()
         config = automation.action_params.get("trigger", {}).get("config", {})
+        
+        # Get timezone
+        tz_str = config.get("timezone", "UTC")
+        try:
+            tz = ZoneInfo(tz_str)
+        except ZoneInfoNotFoundError:
+            logger.warning(f"Invalid timezone {tz_str}, using UTC")
+            tz = ZoneInfo("UTC")
 
-        if "weekly on Monday" in pattern:
-            # Find next Monday
-            days_ahead = (0 - now.weekday() + 7) % 7
-            if days_ahead == 0:
-                days_ahead = 7  # Next week if today is Monday
-            next_run = now + timedelta(days=days_ahead)
-            hour = int(config.get("time", "11:00").split(":")[0])
-            return next_run.replace(hour=hour, minute=0, second=0, microsecond=0)
-        # Extend for daily, etc.
-        return now + timedelta(days=1)  # Fallback
+        # Get time
+        time_str = config.get("time", "09:00")
+        try:
+            hour, minute = map(int, time_str.split(":"))
+        except (ValueError, AttributeError):
+            hour, minute = 9, 0
 
-    def _unschedule_automation(self, automation: Automation) -> None:
-        deleted_count, _ = PeriodicTask.objects.filter(name=f"automation_{automation.id}").delete()
-        if deleted_count > 0:
-            logger.debug(f"Unscheduled {deleted_count} task(s) for automation {automation.id}")
+        # Convert current time to target timezone
+        now_tz = now.astimezone(tz)
+        
+        # Create base datetime for today at specified time
+        next_run = now_tz.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        
+        # If time has passed today, start from tomorrow
+        if next_run <= now_tz:
+            next_run += timedelta(days=1)
+
+        # Handle weekday-specific patterns
+        if "weekdays" in pattern:
+            # Skip to next weekday (Mon-Fri)
+            while next_run.weekday() >= 5:  # 5=Saturday, 6=Sunday
+                next_run += timedelta(days=1)
+        elif "monday" in pattern:
+            while next_run.weekday() != 0:
+                next_run += timedelta(days=1)
+        elif "tuesday" in pattern:
+            while next_run.weekday() != 1:
+                next_run += timedelta(days=1)
+        elif "wednesday" in pattern:
+            while next_run.weekday() != 2:
+                next_run += timedelta(days=1)
+        elif "thursday" in pattern:
+            while next_run.weekday() != 3:
+                next_run += timedelta(days=1)
+        elif "friday" in pattern:
+            while next_run.weekday() != 4:
+                next_run += timedelta(days=1)
+        elif "saturday" in pattern:
+            while next_run.weekday() != 5:
+                next_run += timedelta(days=1)
+        elif "sunday" in pattern:
+            while next_run.weekday() != 6:
+                next_run += timedelta(days=1)
+        elif "monthly" in pattern:
+            # Adjust to 1st of the month
+            next_run = next_run.replace(day=1)
+            if next_run <= now_tz:
+                # Move to next month
+                if next_run.month == 12:
+                    next_run = next_run.replace(year=next_run.year + 1, month=1)
+                else:
+                    next_run = next_run.replace(month=next_run.month + 1)
+
+        # Convert back to default timezone
+        return next_run.astimezone(dj_timezone.get_current_timezone())
+
+    def _parse_next_run_at(
+        self, 
+        next_run_at_input: Optional[datetime], 
+        workflow: dict
+    ) -> Optional[datetime]:
+        """Parse and validate next_run_at input."""
+        if next_run_at_input is None:
+            return self._compute_next_run_from_workflow(workflow)
+        
+        # Ensure timezone awareness
+        if isinstance(next_run_at_input, datetime):
+            if dj_timezone.is_naive(next_run_at_input):
+                return dj_timezone.make_aware(next_run_at_input)
+            return next_run_at_input
+        
+        # Handle string input
+        if isinstance(next_run_at_input, str):
+            try:
+                dt = datetime.fromisoformat(next_run_at_input)
+                if dj_timezone.is_naive(dt):
+                    return dj_timezone.make_aware(dt)
+                return dt
+            except ValueError:
+                logger.error(f"Invalid datetime string: {next_run_at_input}")
+                return self._compute_next_run_from_workflow(workflow)
+        
+        return None
+
+    def _compute_next_run_from_workflow(self, workflow: dict) -> datetime:
+        """Compute next run time from workflow trigger config."""
+        config = workflow.get("trigger", {}).get("config", {})
+        
+        tz_str = config.get("timezone", "UTC")
+        try:
+            tz = ZoneInfo(tz_str)
+        except ZoneInfoNotFoundError:
+            logger.warning(f"Invalid timezone {tz_str}, using UTC")
+            tz = ZoneInfo("UTC")
+        
+        time_str = config.get("time", "09:00")
+        try:
+            hour, minute = map(int, time_str.split(":"))
+        except (ValueError, AttributeError):
+            hour, minute = 9, 0
+        
+        now = dj_timezone.now().astimezone(tz)
+        next_run = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        
+        if next_run <= now:
+            next_run += timedelta(days=1)
+        
+        return next_run.astimezone(dj_timezone.get_current_timezone())
 
     def _reschedule_automation(self, automation: Automation) -> None:
+        """Reschedule an automation by removing and recreating its schedule."""
         self._unschedule_automation(automation)
         self._schedule_automation(automation)
 
-    def _execute_workflow(self, automation: Automation, context: Dict[str, Any]) -> None:
-        """
-        Execute all actions defined in automation.action_params['actions'].
-        Chains outputs via placeholders (e.g., {summary} from prior step).
-        """
-        action_params = automation.action_params or {}
-        actions = action_params.get("actions", [])
-        if not actions:
-            logger.warning(f"No actions in workflow for automation {automation.id}")
-            return
+    def _unschedule_automation(self, automation: Automation) -> None:
+        """Remove all scheduled tasks for an automation."""
+        task_name = f"automation_{automation.id}"
+        deleted_count, _ = PeriodicTask.objects.filter(name=task_name).delete()
+        if deleted_count > 0:
+            logger.info(f"Unscheduled automation {automation.id} ({deleted_count} tasks removed)")
 
-        logger.info(f"Executing workflow for automation {automation.id} with {len(actions)} actions")
+    # -------------------------------------------------------------------------
+    # EXECUTION ENGINE
+    # -------------------------------------------------------------------------
+    def _execute_workflow(
+        self, 
+        automation: Automation, 
+        context: Dict[str, Any]
+    ) -> None:
+        """Execute all actions in a workflow sequentially."""
+        actions = automation.action_params.get("actions", [])
+        logger.info(f"Executing {len(actions)} action(s) for automation '{automation.name}'")
 
-        for idx, action in enumerate(actions, start=1):
+        for idx, action in enumerate(actions, 1):
             action_type = action.get("type")
             config = action.get("config", {})
             handler = self.action_registry.get(action_type)
 
             if not handler:
-                logger.warning(f"No handler for action type '{action_type}' in automation {automation.id}")
+                logger.warning(f"Unknown action type '{action_type}' in automation {automation.id}")
                 continue
 
             try:
-                logger.info(f"Action {idx}/{len(actions)}: {action_type} | config: {config}")
-                output = handler(config, context)
-                if output:
-                    context.update(output)  # Pipe to next actions
-                logger.debug(f"Action {action_type} output: {output}")
+                logger.info(f"  [{idx}/{len(actions)}] Executing {action_type}")
+                output = handler(config, context.copy())
+                
+                # Merge action output into context for subsequent actions
+                if output and isinstance(output, dict):
+                    context.update(output)
+                    
             except Exception as e:
-                logger.error(f"Failed to execute action '{action_type}': {e}")
-                # Continue chain despite failure
+                logger.error(
+                    f"Action '{action_type}' failed in automation {automation.id}: {e}", 
+                    exc_info=True
+                )
+                # Continue with remaining actions unless critical failure
 
-    # ---------------- ACTION EXECUTORS ---------------- #
-    def _execute_reminder(self, config: dict, context: dict) -> Optional[dict]:
-        channel = config.get("channel", "default")
-        logger.info(f"Sending reminder via {channel}")
-        # TODO: Integrate with MessageService
-        return {"reminder_sent": True}
+    # -------------------------------------------------------------------------
+    # TEMPLATING ENGINE
+    # -------------------------------------------------------------------------
+    def _resolve_placeholders(self, template: str, context: Dict[str, Any]) -> str:
+        """Replace {{{placeholders}}} with context values."""
+        if not template or not isinstance(template, str):
+            return template or ""
+        
+        resolved = template
+        for key, value in context.items():
+            placeholder = f"{{{{{{{key}}}}}}}"
+            if placeholder in resolved:
+                # Convert value to string, handling None
+                str_value = "" if value is None else str(value)
+                resolved = resolved.replace(placeholder, str_value)
+        
+        return resolved
 
+    # -------------------------------------------------------------------------
+    # STUB ACTION HANDLERS (TODO: Implement fully)
+    # -------------------------------------------------------------------------
     def _execute_extract_fields(self, config: dict, context: dict) -> Optional[dict]:
-        fields = config.get("fields", [])
-        text = context.get("text", "")
-        extracted = {field: text for field in fields}  # Simple placeholder; use NER/LLM
-        return extracted
+        logger.warning("Action 'extract_fields' not implemented yet")
+        return None
 
     def _execute_append_google_sheet(self, config: dict, context: dict) -> Optional[dict]:
-        spreadsheet_name = config.get("spreadsheet_name")
-        columns = config.get("columns", [])
-        row_data = {col: context.get(col, "") for col in columns}
-        logger.info(f"Appending to Google Sheet '{spreadsheet_name}': {row_data}")
-        # TODO: Google Sheets API
-        return {"sheet_row_id": "123"}  # Placeholder
-
-    def _execute_send_whatsapp_message(self, config: dict, context: dict) -> Optional[dict]:
-        receiver_name = config.get("receiver_name")
-        msg_template = config.get("message_template", "")
-        # Resolve placeholders
-        for k, v in context.items():
-            msg_template = msg_template.replace(f"{{{{{k}}}}}", str(v))
-        logger.info(f"Sending WhatsApp to {receiver_name}: {msg_template}")
-        # TODO: WhatsApp API via MessageService
-        return {"whatsapp_sent": True, "message": msg_template}
+        logger.warning("Action 'append_google_sheet' not implemented yet")
+        return None
 
     def _execute_fetch_calendar_events(self, config: dict, context: dict) -> Optional[dict]:
-        calendar_id = config.get("calendar_id", "primary")
-        date = config.get("date")
-        logger.info(f"Fetching events from calendar '{calendar_id}' on {date}")
-        # TODO: Google Calendar API
-        return {"event_list": ["Event 1", "Event 2"]}  # Placeholder
+        logger.warning("Action 'fetch_calendar_events' not implemented yet")
+        return None
 
     def _execute_append_notion_page(self, config: dict, context: dict) -> Optional[dict]:
-        database_name = config.get("database_name")
-        fields_mapping = config.get("fields_mapping", {})
-        row_data = {k: context.get(v, "") for k, v in fields_mapping.items()}
-        logger.info(f"Appending to Notion '{database_name}': {row_data}")
-        # TODO: Notion API
-        return {"notion_page_id": "abc123"}
+        logger.warning("Action 'append_notion_page' not implemented yet")
+        return None
 
     def _execute_fetch_unread_emails(self, config: dict, context: dict) -> Optional[dict]:
-        label = config.get("label", "inbox")
-        filter_ = config.get("filter", "unread")
-        limit = config.get("limit", 50)
-        logger.info(f"Fetching {limit} {filter_} emails from {label}")
-        # TODO: Gmail API via MessageService
-        return {"fetched_emails": ["Email 1 body", "Email 2 body"]}
+        logger.warning("Action 'fetch_unread_emails' not implemented yet")
+        return None
 
     def _execute_summarize_messages(self, config: dict, context: dict) -> Optional[dict]:
-        input_data = config.get("input", context.get("fetched_data", []))
-        style = config.get("style", "concise")
-        logger.info(f"Summarizing {len(input_data)} messages ({style})")
-        # TODO: LLM summarization
-        summary = f"Summary of {len(input_data)} items: Key points here."
-        return {"summary": summary}
-
-    def _execute_create_calendar_event(self, config: dict, context: dict) -> Optional[dict]:
-        event_title = config.get("event_title")
-        time = config.get("time")
-        duration = config.get("duration", 60)
-        calendar_id = config.get("calendar_id", "primary")
-        logger.info(f"Creating calendar event '{event_title}' at {time} ({duration} min)")
-        # TODO: CalendarService
-        return {"event_id": "evt456"}
-
-    def _execute_send_email(self, config: dict, context: dict) -> Optional[dict]:
-        receiver = config.get("receiver")
-        subject = config.get("subject")
-        body_template = config.get("body", "")
-        # Resolve placeholders
-        for k, v in context.items():
-            body_template = body_template.replace(f"{{{{{k}}}}}", str(v))
-        logger.info(f"Sending email to {receiver}: {subject}")
-        # TODO: MessageService
-        return {"email_sent": True, "body": body_template}
+        logger.warning("Action 'summarize_messages' not implemented yet")
+        return None
 
     def _execute_fetch_last_week_reports(self, config: dict, context: dict) -> Optional[dict]:
-        timeframe = config.get("timeframe", "last_week")
-        source = config.get("source", "reports")
-        logger.info(f"Fetching {timeframe} {source}")
-        # TODO: Query emails/docs
-        return {"fetched_reports": ["Report 1", "Report 2"]}
+        logger.warning("Action 'fetch_last_week_reports' not implemented yet")
+        return None
+
+    # -------------------------------------------------------------------------
+    # ACTION HANDLERS
+    # -------------------------------------------------------------------------
+    def _execute_send_email(self, config: dict, context: dict) -> Optional[dict]:
+        """Send email via Gmail API with optional AI-generated content."""
+        receiver = self._resolve_placeholders(config.get("receiver", ""), context)
+        subject_template = config.get("subject", "")
+        body_template = config.get("body", "")
+        body_html = self._resolve_placeholders(config.get("body_html", ""), context)
+        thread_id = config.get("thread_id")
+        attachments = config.get("attachments", [])
+
+        # Fallback receiver
+        if not receiver:
+            receiver = getattr(self.user, 'manager_email', None) or self.user.email
+            if not receiver:
+                logger.error("No email receiver specified and no fallback available")
+                return None
+
+        # Resolve templates
+        subject = self._resolve_placeholders(subject_template, context) if subject_template else None
+        body = self._resolve_placeholders(body_template, context) if body_template else None
+
+        # Generate missing content if needed
+        if not subject or not body:
+            generated = self._generate_email_content(receiver, subject or "", body or "", context)
+            subject = subject or generated.get("subject", "No Subject")
+            body = body or generated.get("body", "No body generated.")
+
+        # Get Gmail account
+        try:
+            gmail_account = self.user.channel_accounts.filter(channel='gmail').first()
+            if not gmail_account:
+                logger.error(f"No Gmail account linked for user {self.user.username}")
+                return None
+        except Exception as e:
+            logger.error(f"Failed to fetch Gmail account: {e}")
+            return None
+
+        # Queue email via Celery
+        try:
+            from unified.utils.email_util import send_gmail_email
+            result = send_gmail_email.delay(
+                account_id=gmail_account.id,
+                to_email=receiver,
+                subject=subject,
+                body=body,
+                body_html=body_html,
+                attachments=attachments,
+                thread_id=thread_id,
+            )
+
+            logger.info(f"📧 Queued Gmail to {receiver}: {subject} (task: {result.id})")
+            return {
+                "email_queued": True,
+                "task_id": str(result.id),
+                "receiver": receiver,
+                "subject": subject,
+                "body_preview": body[:100] + "..." if len(body) > 100 else body,
+            }
+        except Exception as e:
+            logger.error(f"Failed to queue email: {e}")
+            return None
+
+    def _generate_email_content(
+        self, 
+        receiver: str, 
+        subject_fallback: str, 
+        body_fallback: str, 
+        context: dict
+    ) -> dict:
+        """Generate email content using AI (Gemini or fallback)."""
+        try:
+            import google.generativeai as genai
+            
+            # Configure API
+            genai.configure(api_key=settings.GEMINI_API_KEY)
+            model = genai.GenerativeModel('gemini-pro')
+
+            # Serialize context data safely
+            serializable_context = {
+                k: v for k, v in context.items() 
+                if k in ['summary', 'fetched_emails', 'ai_summary', 'event_title']
+            }
+            context_json = json.dumps(serializable_context, default=str, indent=2)
+
+            # Build context-aware prompt
+            prompt = f"""
+Generate a professional email for {self.user.get_full_name() or self.user.username} to send to {receiver}.
+
+Automation context:
+- Name: {context.get('automation_name', 'Unnamed')}
+- Trigger: {context.get('trigger_type', 'scheduled')}
+- Data: {context_json}
+
+Requirements:
+- If subject is missing, create a concise, engaging one (max 60 chars)
+- If body is missing, write a polite, professional 3-5 sentence message
+- Output ONLY valid JSON: {{"subject": "Your Subject", "body": "Your Body"}}
+"""
+
+            response = model.generate_content(prompt)
+            generated_text = response.text.strip()
+
+            # Parse JSON response
+            # Remove markdown code blocks if present
+            if generated_text.startswith("```json"):
+                generated_text = generated_text[7:]
+            if generated_text.startswith("```"):
+                generated_text = generated_text[3:]
+            if generated_text.endswith("```"):
+                generated_text = generated_text[:-3]
+            generated_text = generated_text.strip()
+            
+            generated = json.loads(generated_text)
+            return {
+                "subject": generated.get("subject", subject_fallback or "Update"),
+                "body": generated.get("body", body_fallback or "Please review."),
+            }
+
+        except ImportError:
+            logger.warning("google-generativeai not installed; using fallback")
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse Gemini JSON response: {e}")
+        except Exception as e:
+            logger.error(f"Gemini generation failed: {e}")
+
+        # Fallback
+        return {
+            "subject": subject_fallback or f"Update from {self.user.get_full_name() or self.user.username}",
+            "body": body_fallback or "Hi, this is an automated message. Please check your dashboard for details.",
+        }
+
+    def _execute_send_whatsapp_message(
+        self, 
+        config: dict, 
+        context: dict
+    ) -> Optional[dict]:
+        """Send WhatsApp message via Cloud API."""
+        receiver_number_placeholder = config.get("receiver_number", "")
+        receiver_number = self._resolve_placeholders(receiver_number_placeholder, context) or getattr(self.user, 'whatsapp', None)
+        receiver_name_placeholder = config.get("receiver_name", "")
+        receiver_name = self._resolve_placeholders(receiver_name_placeholder, context) or self.user.get_full_name() or self.user.username
+        message_template = config.get("message_template", "")
+        message = self._resolve_placeholders(message_template, context)
+
+        if not receiver_number or not message:
+            logger.error("Missing WhatsApp receiver_number or message")
+            return None
+
+        # Create WhatsAppMessage record
+        try:
+            from whatsapp.models import WhatsAppMessage
+            wa_message = WhatsAppMessage.objects.create(
+                user=self.user,
+                to_number=receiver_number,
+                message=message,
+                status='pending',
+            )
+        except ImportError:
+            logger.error("WhatsApp models not available")
+            return None
+        except Exception as e:
+            logger.error(f"Failed to create WhatsAppMessage: {e}")
+            return None
+
+        # Queue via Celery
+        try:
+            from whatsapp.tasks import send_whatsapp_message_task
+            result = send_whatsapp_message_task.delay(wa_message.id)
+
+            logger.info(
+                f"📱 Queued WhatsApp to {receiver_name or receiver_number}: "
+                f"{message[:50]}... (task: {result.id})"
+            )
+            return {
+                "whatsapp_queued": True,
+                "task_id": str(result.id),
+                "message_id": wa_message.id,
+                "receiver": receiver_number,
+                "message_preview": message[:100] + "..." if len(message) > 100 else message,
+            }
+        except Exception as e:
+            logger.error(f"Failed to queue WhatsApp message: {e}")
+            return None
+
+    def _execute_reminder(self, config: dict, context: dict) -> Optional[dict]:
+        """Execute reminder via WhatsApp or Email."""
+        channel = config.get("channel", "whatsapp").lower()
+        message = self._resolve_placeholders(config.get("message", ""), context)
+        title = self._resolve_placeholders(config.get("title", ""), context)
+
+        # Generate message if missing
+        if not message:
+            generated = self._generate_reminder_content(title, context)
+            message = generated.get("message", "Reminder: Action required!")
+
+        if channel == "whatsapp":
+            wa_config = {
+                "receiver_number": self._resolve_placeholders(config.get("receiver_number", ""), context) or getattr(self.user, 'phone_number', None) or getattr(self.user, 'whatsapp', None),
+                "receiver_name": self._resolve_placeholders(config.get("receiver_name", ""), context) or "You",
+                "message_template": message,
+            }
+            if not wa_config["receiver_number"]:
+                logger.error("No WhatsApp receiver number available")
+                return None
+            return self._execute_send_whatsapp_message(wa_config, context)
+
+        elif channel == "email":
+            email_config = {
+                "receiver": self._resolve_placeholders(config.get("receiver", ""), context) or self.user.email,
+                "subject": title or "Reminder",
+                "body": message,
+            }
+            return self._execute_send_email(email_config, context)
+
+        else:
+            logger.info(f"🔔 Reminder '{title}' via {channel}: {message}")
+            return {"reminder_sent": True, "channel": channel, "message": message}
+
+    def _generate_reminder_content(self, title: str, context: dict) -> dict:
+        """Generate reminder message content using AI."""
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=settings.GEMINI_API_KEY)
+            model = genai.GenerativeModel('gemini-pro')
+
+            trigger_time_str = str(context.get('trigger_time', 'now'))
+
+            prompt = f"""
+Create a concise, urgent reminder message for: "{title}"
+
+Context: {title}  # Fallback to title if no description
+Triggered at: {trigger_time_str}
+
+Make it 1-2 sentences, friendly but direct (e.g., "Heads up! Your meeting starts in 1 hour.").
+Output ONLY JSON: {{"message": "Your reminder text"}}
+"""
+
+            response = model.generate_content(prompt)
+            text = response.text.strip()
+            
+            # Clean JSON
+            if text.startswith("```json"):
+                text = text[7:]
+            if text.startswith("```"):
+                text = text[3:]
+            if text.endswith("```"):
+                text = text[:-3]
+            
+            generated = json.loads(text.strip())
+            return {"message": generated.get("message", "")}
+
+        except Exception as e:
+            logger.error(f"Reminder generation failed: {e}")
+            return {"message": f"Reminder: {title} – Action required now!"}
+
+    def _execute_create_calendar_event(self, config: dict, context: dict) -> Optional[dict]:
+        summary = self._resolve_placeholders(config.get("event_title", ""), context)
+        start_str = config.get("time")  # e.g., "2025-11-10T14:00:00"
+        try:
+            start_time = datetime.fromisoformat(start_str) if start_str else dj_timezone.now() + timedelta(hours=1)
+        except ValueError:
+            logger.warning(f"Invalid start time format: {start_str}, using default")
+            start_time = dj_timezone.now() + timedelta(hours=1)
+        
+        # Ensure timezone awareness
+        if dj_timezone.is_naive(start_time):
+            start_time = dj_timezone.make_aware(start_time)
+        
+        duration = config.get("duration", 60)
+        end_time = start_time + timedelta(minutes=duration)
+        if dj_timezone.is_naive(end_time):
+            end_time = dj_timezone.make_aware(end_time)
+        
+        # Get calendar account (assume 'calendar' channel)
+        calendar_account = self.user.channel_accounts.filter(channel='calendar').first()
+        if not calendar_account:
+            logger.error("No Calendar account linked")
+            return None
+
+        # Queue creation
+        result = create_calendar_event.delay(
+            calendar_account.id, summary, start_time, end_time,
+            description=config.get("description", ""),
+            location=config.get("location", ""),
+            attendees=config.get("attendees", []),
+            all_day=config.get("all_day", False)
+        )
+        return {"event_queued": True, "task_id": result.id, "summary": summary}
