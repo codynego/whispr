@@ -803,14 +803,15 @@ Requirements:
             trigger_time_str = str(context.get('trigger_time', 'now'))
 
             prompt = f"""
-Create a concise, urgent reminder message for: "{title}"
+    You're a friendly personal assistant reminding your user about something important. Craft a warm, concise reminder message (2-3 sentences) for: "{title}"
 
-Context: {title}  # Fallback to title if no description
-Triggered at: {trigger_time_str}
+    Context: {title}  # Fallback to title if no description
+    Triggered at: {trigger_time_str}
 
-Make it 2-3 sentences, friendly but direct (e.g., "Heads up! Your meeting starts in 1 hour. you dont want to miss it").
-Output ONLY JSON: {{"message": "Your reminder text"}}
-"""
+    Keep it casual and encouraging, like chatting with a colleague (e.g., "Hey, just a quick nudge—your meeting with the team kicks off in an hour. Grab that coffee and let's crush it!"). Make sure it's urgent but positive.
+
+    Output ONLY JSON: {{"message": "Your reminder text"}}
+    """
 
             response = model.generate_content(prompt)
             text = response.text.strip()
