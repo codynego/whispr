@@ -107,7 +107,7 @@ class AutomationService:
     ) -> Optional[Automation]:
         """Create a new automation with validation and scheduling."""
         try:
-            logger.info(f"[{self.user.username}] Creating automation: {name}")
+            logger.info(f"[{self.user.first_name}] Creating automation: {name}")
 
             # 1. Validate workflow structure
             self._validate_workflow(workflow)
@@ -202,7 +202,7 @@ class AutomationService:
             return automation
 
         except Automation.DoesNotExist:
-            logger.error(f"Automation {automation_id} not found for user {self.user.username}")
+            logger.error(f"Automation {automation_id} not found for user {self.user.first_name}")
             return None
         except Exception as e:
             logger.exception(f"Error updating automation {automation_id}: {e}")
@@ -606,7 +606,7 @@ class AutomationService:
         try:
             gmail_account = self.user.channel_accounts.filter(channel='gmail').first()
             if not gmail_account:
-                logger.error(f"No Gmail account linked for user {self.user.username}")
+                logger.error(f"No Gmail account linked for user {self.user.first_name}")
                 return None
         except Exception as e:
             logger.error(f"Failed to fetch Gmail account: {e}")
@@ -661,7 +661,7 @@ class AutomationService:
 
             # Build context-aware prompt
             prompt = f"""
-Generate a professional email for {self.user.get_full_name() or self.user.username} to send to {receiver}.
+Generate a professional email for {self.user.get_full_name() or self.user.first_name} to send to {receiver}.
 
 Automation context:
 - Name: {context.get('automation_name', 'Unnamed')}
@@ -702,7 +702,7 @@ Requirements:
 
         # Fallback
         return {
-            "subject": subject_fallback or f"Update from {self.user.get_full_name() or self.user.username}",
+            "subject": subject_fallback or f"Update from {self.user.get_full_name() or self.user.first_name}",
             "body": body_fallback or "Hi, this is an automated message. Please check your dashboard for details.",
         }
 
@@ -715,7 +715,7 @@ Requirements:
         receiver_number_placeholder = config.get("receiver_number", "")
         receiver_number = self._resolve_placeholders(receiver_number_placeholder, context) or getattr(self.user, 'whatsapp', None)
         receiver_name_placeholder = config.get("receiver_name", "")
-        receiver_name = self._resolve_placeholders(receiver_name_placeholder, context) or self.user.get_full_name() or self.user.username
+        receiver_name = self._resolve_placeholders(receiver_name_placeholder, context) or self.user.get_full_name() or self.user.first_name
         message_template = config.get("message_template", "")
         message = self._resolve_placeholders(message_template, context)
 
