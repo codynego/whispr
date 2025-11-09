@@ -10,7 +10,7 @@ from django.utils import timezone as dj_timezone
 from django.core.exceptions import ValidationError
 from django.conf import settings
 from django_celery_beat.models import PeriodicTask, ClockedSchedule, CrontabSchedule
-from unified.utils.calendar_util import create_calendar_event
+from unified.utils.calendar_utils import create_calendar_event
 
 from assistant.models import Automation
 
@@ -614,7 +614,7 @@ class AutomationService:
 
         # Queue email via Celery
         try:
-            from unified.utils.email_util import send_gmail_email
+            from unified.utils.email_utils import send_gmail_email
             result = send_gmail_email.delay(
                 account_id=gmail_account.id,
                 to_email=receiver,
