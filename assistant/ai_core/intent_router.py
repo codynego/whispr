@@ -6,7 +6,7 @@ from assistant.automation_service import AutomationService
 from .context_manager import ContextManager
 from assistant.models import Automation
 from .intent_schema_parser import IntentSchemaParser  # From earlier updates
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz  # For timezone handling
 import logging
 
@@ -250,7 +250,7 @@ class IntentRouter:
             return "⚠️ No workflow provided for automation."
 
         # Compute next_run_at (example for on_schedule; extend for others)
-        next_run_at = self._compute_next_run(entities)
+        next_run_at = self._get_next_run_at(entities)
         trigger_condition = workflow.get("trigger", {}).get("config", {})
 
         service = AutomationService(self.user)
@@ -269,21 +269,49 @@ class IntentRouter:
         logger.info(f"Created automation '{automation.name}' (ID: {automation.id})")
         return f"⚡ Automation '{automation.name}' created successfully. Next run: {next_run_at}."
 
-    def _compute_next_run(self, entities):
-        """Compute next_run_at from recurrence (e.g., 'weekly on Monday')."""
-        today = datetime.now(pytz.timezone('Africa/Lagos'))
-        recurrence = entities.get("recurrence_pattern", "")
-        trigger_config = entities.get("workflow", {}).get("trigger", {}).get("config", {})
+    def _get_next_run_at(self, entities):
+        """Get or compute next_run_at from entities (prefers explicit, then recurrence, then default)."""
+        next_run_str = entities.get("next_run_at")
+        if next_run_str:
+            try:
+                # Handle ISO string with Z (Python 3.10 compatibility)
+                dt_str = next_run_str.replace('Z', '+00:00') if next_run_str.endswith('Z') else next_run_str
+                return datetime.fromisoformat(dt_str)
+            except ValueError as e:
+                logger.warning(f"Invalid next_run_at format '{next_run_str}': {e}. Falling back to computation.")
 
-        if "Monday" in recurrence and "weekly" in recurrence:
-            # Next Monday after today (Nov 08, 2025 is Saturday)
-            days_ahead = 2 if today.weekday() == 5 else (7 - today.weekday()) % 7 + (1 if today.weekday() == 0 else 0)
-            next_monday = today + timedelta(days=days_ahead)
-            time_str = trigger_config.get("time", "11:00")
+        # Compute from recurrence if present
+        recurrence = (entities.get("recurrence_pattern") or "").lower()
+        if recurrence:
+            today = datetime.now(pytz.timezone('Africa/Lagos'))
+            trigger_config = entities.get("workflow", {}).get("trigger", {}).get("config", {})
+
+            if "monday" in recurrence and "weekly" in recurrence:
+                # Next Monday after today
+                days_ahead = (7 - today.weekday()) % 7
+                if days_ahead == 0:  # Today is Monday
+                    days_ahead = 7
+                next_monday = today + timedelta(days=days_ahead)
+                time_str = trigger_config.get("time", "11:00")
+                try:
+                    hour, minute = map(int, time_str.split(":"))
+                except (ValueError, AttributeError):
+                    hour, minute = 11, 0
+                return next_monday.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            
+            # TODO: Add logic for daily, tuesday, monthly, etc.
+            # For now, fallback to today at config time
+            logger.warning(f"Unsupported recurrence pattern: {recurrence}. Using today.")
+
+        # Final fallback: today at default time from config
+        today = datetime.now(pytz.timezone('Africa/Lagos'))
+        trigger_config = entities.get("workflow", {}).get("trigger", {}).get("config", {})
+        time_str = trigger_config.get("time", "09:00")
+        try:
             hour, minute = map(int, time_str.split(":"))
-            return next_monday.replace(hour=hour, minute=minute, second=0, microsecond=0)
-        # Add logic for daily, etc.
-        return today  # Fallback
+        except (ValueError, AttributeError):
+            hour, minute = 9, 0
+        return today.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
     def handle_update_automation(self, entities, channel="all", data_source="automations"):
         service = AutomationService(self.user)
