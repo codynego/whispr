@@ -244,6 +244,7 @@ class IntentRouter:
         """
         Create automation using full workflow JSON.
         Computes next_run_at based on trigger/recurrence (e.g., next Monday).
+        For manual triggers, execute immediately after creation.
         """
         workflow = entities.get("workflow")
         if not workflow:
@@ -266,8 +267,18 @@ class IntentRouter:
         )
         if not automation:
             return "❌ Failed to create automation."
+        
         logger.info(f"Created automation '{automation.name}' (ID: {automation.id})")
-        return f"⚡ Automation '{automation.name}' created successfully. Next run: {next_run_at}."
+        
+        # For manual triggers, execute immediately
+        if automation.trigger_type == "manual":
+            success = service.trigger_automation(automation.id, context=entities)
+            if success:
+                return f"⚡ Automation '{automation.name}' created and executed successfully!"
+            else:
+                return f"⚡ Automation '{automation.name}' created, but execution skipped (conditions not met)."
+        else:
+            return f"⚡ Automation '{automation.name}' created successfully. Next run: {next_run_at}."
 
     def _get_next_run_at(self, entities):
         """Get or compute next_run_at from entities (prefers explicit, then recurrence, then default)."""

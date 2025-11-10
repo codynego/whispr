@@ -97,13 +97,13 @@ class AutomationService:
     def create_automation(
         self,
         name: str,
-        workflow: dict,
+        workflow: Dict[str, Any],
         trigger_type: str = "on_schedule",
         next_run_at: Optional[datetime] = None,
         recurrence_pattern: Optional[str] = None,
         description: Optional[str] = None,
         is_active: bool = True,
-        trigger_condition: Optional[dict] = None,
+        trigger_condition: Optional[Dict[str, Any]] = None,
     ) -> Optional[Automation]:
         """Create a new automation with validation and scheduling."""
         try:
