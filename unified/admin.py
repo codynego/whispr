@@ -2,14 +2,49 @@ from django.contrib import admin
 from .models import ChannelAccount, Conversation, Message, UserRule, CalendarEvent
 
 
+
 @admin.register(CalendarEvent)
 class CalendarEventAdmin(admin.ModelAdmin):
-    list_display = ("title", "start_time", "end_time", "created_by", "created_at")
-    list_filter = ("start_time", "end_time", "created_by")
-    search_fields = ("title", "description", "created_by__email")
-    readonly_fields = ("created_at", "updated_at")
-    ordering = ("-start_time",)
-    
+    """
+    Admin interface for CalendarEvent model.
+    """
+    list_display = ['summary', 'start_time', 'end_time', 'status', 'account', 'organizer']
+    list_filter = ['status', 'account', 'start_time', 'all_day', 'created_at']
+    search_fields = ['summary', 'description', 'organizer', 'external_id']
+    readonly_fields = ['external_id', 'i_cal_uid', 'html_link', 'created_at', 'updated_at']
+    date_hierarchy = 'start_time'
+    fieldsets = (
+        ('Event Basics', {
+            'fields': ('account', 'conversation', 'summary', 'description', 'status')
+        }),
+        ('Timing & Location', {
+            'fields': ('start_time', 'end_time', 'location', 'all_day')
+        }),
+        ('Attendees & Organizer', {
+            'fields': ('attendees', 'organizer')
+        }),
+        ('External Links', {
+            'fields': ('external_id', 'html_link', 'i_cal_uid'),
+            'classes': ('collapse',)  # Collapsible for less clutter
+        }),
+        ('Audit', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    filter_horizontal = ['attendees']  # If attendees were a M2M; JSONField so skip
+
+    def get_queryset(self, request):
+        """Optimize queryset for performance."""
+        qs = super().get_queryset(request)
+        return qs.select_related('account', 'conversation').prefetch_related('attendees')
+
+    def get_readonly_fields(self, request, obj=None):
+        """Make more fields readonly in production."""
+        readonly = list(self.readonly_fields)
+        if obj:  # Editing existing
+            readonly.extend(['start_time', 'end_time', 'status'])  # Prevent changes post-sync
+        return readonly
 
 
 @admin.register(ChannelAccount)
