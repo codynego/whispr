@@ -39,7 +39,7 @@ class AutomationService:
             "trigger": {
                 "type": "object",
                 "properties": {
-                    "type": {"type": "string", "enum": ["on_schedule"]},
+                    "type": {"type": "string", "enum": ["on_schedule", "manual"]},
                     "config": {"type": "object"}
                 }
             },
@@ -115,7 +115,11 @@ class AutomationService:
             # 2. Parse and validate next_run_at with timezone awareness
             next_run_at = self._parse_next_run_at(next_run_at, workflow)
 
-            # 3. Merge trigger configuration
+            # 3. Determine trigger_type from workflow if not provided
+            if "trigger" in workflow:
+                trigger_type = workflow["trigger"].get("type", trigger_type)
+
+            # 4. Merge trigger configuration
             action_params = workflow.copy()
             if trigger_condition:
                 if "trigger" not in action_params:
@@ -124,7 +128,7 @@ class AutomationService:
                     action_params["trigger"]["config"] = {}
                 action_params["trigger"]["config"].update(trigger_condition)
 
-            # 4. Create automation instance
+            # 5. Create automation instance
             automation = Automation.objects.create(
                 user=self.user,
                 name=name,
@@ -136,7 +140,7 @@ class AutomationService:
                 is_active=is_active,
             )
 
-            # 5. Schedule if active and scheduled trigger
+            # 6. Schedule if active and scheduled trigger
             if trigger_type == "on_schedule" and is_active:
                 self._schedule_automation(automation)
 
@@ -803,15 +807,15 @@ Requirements:
             trigger_time_str = str(context.get('trigger_time', 'now'))
 
             prompt = f"""
-    You're a friendly personal assistant reminding your user about something important. Craft a warm, natural reminder message (3-4 sentences) for: "{title}"
+You're a friendly personal assistant reminding your user about something important. Craft a warm, natural reminder message (3-4 sentences) for: "{title}"
 
-    Context: {title}  # Fallback to title if no description
-    Triggered at: {trigger_time_str}
+Context: {title}  # Fallback to title if no description
+Triggered at: {trigger_time_str}
 
-    Keep it casual and encouraging, like chatting with a close colleague—add a touch of empathy or motivation to make it feel personal (e.g., "Hey, just circling back on that chemistry session at 6pm—don't want you stressing over it, but let's get you prepped with those notes. You've got this, and I'm here if you need a quick summary."). Make sure it's urgent but supportive, building a bit more rapport.
+Keep it casual and encouraging, like chatting with a close colleague—add a touch of empathy or motivation to make it feel personal (e.g., "Hey, just circling back on that chemistry session at 6pm—don't want you stressing over it, but let's get you prepped with those notes. You've got this, and I'm here if you need a quick summary."). Make sure it's urgent but supportive, building a bit more rapport.
 
-    Output ONLY JSON: {{"message": "Your reminder text"}}
-    """
+Output ONLY JSON: {{"message": "Your reminder text"}}
+"""
 
             response = model.generate_content(prompt)
             text = response.text.strip()
