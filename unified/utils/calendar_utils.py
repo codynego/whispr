@@ -239,6 +239,13 @@ def store_calendar_events(self, account_id: int, event_details_list: List[Dict[s
 def create_calendar_event(self, account, summary, start_time, end_time=None, description="", location="", attendees=None, all_day=False):
     """Create a new Google Calendar event."""
     print("got to create_calendar_event")
+    import logging
+    logger = logging.getLogger(__name__)
+    from google.oauth2.credentials import Credentials
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+    from datetime import timedelta
+
     creds = Credentials(
         token=account.access_token,
         refresh_token=account.refresh_token,
@@ -264,11 +271,13 @@ def create_calendar_event(self, account, summary, start_time, end_time=None, des
     else:
         start_iso = start_time.isoformat()
         end_iso = end_time.isoformat() if end_time else (start_time + timedelta(hours=1)).isoformat()
+        start_tz = start_time.tzinfo.tzname(None) if start_time.tzinfo else "UTC"
+        end_tz = end_time.tzinfo.tzname(None) if end_time and end_time.tzinfo else "UTC"
         event_body = {
             "summary": summary,
             "description": description,
-            "start": {"dateTime": start_iso, "timeZone": start_time.tzinfo.zone if start_time.tzinfo else "UTC"},
-            "end": {"dateTime": end_iso, "timeZone": end_time.tzinfo.zone if end_time and end_time.tzinfo else "UTC"},
+            "start": {"dateTime": start_iso, "timeZone": start_tz},
+            "end": {"dateTime": end_iso, "timeZone": end_tz},
             "location": location,
             "attendees": [{"email": email} for email in (attendees or [])],
             "reminders": {"useDefault": False, "overrides": [{"method": "popup", "minutes": 10}]},
