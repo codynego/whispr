@@ -1,5 +1,15 @@
 from django.contrib import admin
-from .models import ChannelAccount, Conversation, Message, UserRule
+from .models import ChannelAccount, Conversation, Message, UserRule, CalendarEvent
+
+
+@admin.register(CalendarEvent)
+class CalendarEventAdmin(admin.ModelAdmin):
+    list_display = ("title", "start_time", "end_time", "created_by", "created_at")
+    list_filter = ("start_time", "end_time", "created_by")
+    search_fields = ("title", "description", "created_by__email")
+    readonly_fields = ("created_at", "updated_at")
+    ordering = ("-start_time",)
+    
 
 
 @admin.register(ChannelAccount)
