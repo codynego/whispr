@@ -19,7 +19,7 @@ class LLMService:
     # Shared in-memory conversation storage across sessions
     conversation_history: Dict[str, List[Dict[str, str]]] = {}
 
-    def __init__(self, user, api_key: str, model_name: str = "gemini-2.0-flash-lite"):
+    def __init__(self, user, api_key: str, model_name: str = "gemini-2.0-flash"):
         genai.configure(api_key=api_key)
         self.model_obj = genai.GenerativeModel(model_name)
         self.model = model_name
