@@ -868,7 +868,7 @@ Output ONLY JSON: {{"message": "Your reminder text"}}
 
         # Queue creation (pass account object, not ID)
         result = create_calendar_event.delay(
-            calendar_account,  # Object, not .id
+            calendar_account.id,  # Object, not .id
             summary, 
             start_time, 
             end_time,
