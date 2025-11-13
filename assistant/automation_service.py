@@ -654,7 +654,7 @@ class AutomationService:
             
             # Configure API
             genai.configure(api_key=settings.GEMINI_API_KEY)
-            model = genai.GenerativeModel('gemini-pro')
+            model = genai.GenerativeModel('gemini-2.0-flash-lite')
 
             # Serialize context data safely
             serializable_context = {
@@ -802,7 +802,7 @@ Requirements:
         try:
             import google.generativeai as genai
             genai.configure(api_key=settings.GEMINI_API_KEY)
-            model = genai.GenerativeModel('gemini-pro')
+            model = genai.GenerativeModel('gemini-2.0-flash-lite')
 
             trigger_time_str = str(context.get('trigger_time', 'now'))
 

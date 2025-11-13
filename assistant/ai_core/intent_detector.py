@@ -77,7 +77,7 @@ class IntentDetector:
     - Falls back to a light rule+NER extractor when the LLM fails or has low confidence.
     """
 
-    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-lite")
 
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or settings.GEMINI_API_KEY
