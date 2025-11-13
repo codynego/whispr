@@ -848,7 +848,14 @@ Output ONLY JSON: {{"message": "Your reminder text"}}
         if dj_timezone.is_naive(start_time):
             start_time = dj_timezone.make_aware(start_time)
         
-        duration = config.get("duration", 60)
+        # Safely coerce duration to int, default 60
+        duration_raw = config.get("duration")
+        try:
+            duration = int(duration_raw) if duration_raw is not None else 60
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid duration '{duration_raw}', defaulting to 60 minutes")
+            duration = 60
+        
         end_time = start_time + timedelta(minutes=duration)
         if dj_timezone.is_naive(end_time):
             end_time = dj_timezone.make_aware(end_time)
@@ -859,9 +866,12 @@ Output ONLY JSON: {{"message": "Your reminder text"}}
             logger.error("No Calendar account linked")
             return None
 
-        # Queue creation
+        # Queue creation (pass account object, not ID)
         result = create_calendar_event.delay(
-            calendar_account.id, summary, start_time, end_time,
+            calendar_account,  # Object, not .id
+            summary, 
+            start_time, 
+            end_time,
             description=config.get("description", ""),
             location=config.get("location", ""),
             attendees=config.get("attendees", []),
