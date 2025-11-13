@@ -854,7 +854,7 @@ Output ONLY JSON: {{"message": "Your reminder text"}}
             end_time = dj_timezone.make_aware(end_time)
         
         # Get calendar account (assume 'calendar' channel)
-        calendar_account = self.user.channel_accounts.filter(provider='Gmail').first()
+        calendar_account = self.user.channel_accounts.filter(provider='gmail').first()
         if not calendar_account:
             logger.error("No Calendar account linked")
             return None
