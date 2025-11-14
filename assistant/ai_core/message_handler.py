@@ -149,7 +149,7 @@ from django.conf import settings
 from typing import Dict, Any, Optional
 import re
 
-APIKEY = settings.GEMINI_API_KEY
+APIKEY = settings.OPENAI_API_KEY
 
 
 class MessageHandler:
