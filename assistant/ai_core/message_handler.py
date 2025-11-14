@@ -206,13 +206,8 @@ class MessageHandler:
         merged_context = self.context_manager.merge(previous_context, message)
 
 
-
-        # --- 2️⃣ Detect @command in message ---
-        command_match = re.search(r"(@\w+)", message)
-        user_command = command_match.group(1).lower() if command_match else None
-
-
         # --- 3️⃣ Detect intent & entities ---
+        print("getting intent data for message:", message)
         intent_data = self.intent_detector.detect_intent(user=self.user, message=message, previous_context=merged_context)
         print("Detected intent data:", intent_data)
 
@@ -222,17 +217,6 @@ class MessageHandler:
 
         # --- 6️⃣ Enforce required @commands ---
         required_cmd = self.required_commands.get(intent_data["intent"])
-        # if required_cmd and required_cmd != user_command:
-        #     clarification = (
-        #         f"Please include '{required_cmd}' in your message to confirm this action.\n"
-        #         f"Example: {required_cmd} Send a message to John saying 'I’ll be late'."
-        #     )
-        #     return {
-        #         "status": "confirmation_needed",
-        #         "reply": clarification,
-        #         "intent": intent_data["intent"],
-        #         "expected_command": required_cmd,
-        #     }
 
         # --- 7️⃣ Validate schema completeness ---
         print("Validating intent schema for intent:", intent_data["intent"])
