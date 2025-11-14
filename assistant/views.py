@@ -6,7 +6,7 @@ from .serializers import AssistantTaskSerializer, AssistantMessageSerializer
 from rest_framework import generics, permissions
 from .models import AssistantConfig, AssistantMessage, AssistantConfig
 from .serializers import AssistantConfigSerializer
-from whisprai.ai.gemini_client import get_gemini_response
+from whisprai.ai.gemini_client import get_ai_response
 import json
 from .ai_core.message_handler import MessageHandler
 from django.utils import timezone
