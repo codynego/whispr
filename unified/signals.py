@@ -9,7 +9,7 @@ from whatsapp.tasks import send_whatsapp_message_task
 
 from celery import shared_task
 from unified.models import Message
-from whisprai.ai.gemini_client import get_gemini_response
+from whisprai.ai.gemini_client import get_ai_response
 from django.utils import timezone
 import json
 import re
@@ -37,7 +37,7 @@ def analyze_message_insights(message_id):
         print(f"🔍 Running Gemini insights for message {message_id}...")
 
         # Call Gemini
-        response = get_gemini_response(prompt=text, task_type="insights", user_id=user.id)
+        response = get_ai_response(prompt=text, task_type="insights", user_id=user.id)
 
         # Extract the JSON block inside ```json ... ```
         raw_text = response.get("raw", "")

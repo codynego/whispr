@@ -310,7 +310,7 @@ User = get_user_model()
 conversation_memory = {}
 
 
-def get_openai_response(
+def get_ai_response(
     prompt,
     user_id,
     task_type="conversational",
