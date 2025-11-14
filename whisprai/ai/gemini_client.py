@@ -543,7 +543,7 @@ Generate a response that's concise (2–4 sentences), actionable, and leaves the
         model=model,
         messages=[{"role": "user", "content": system_prompt}],
         temperature=temperature,
-        max_tokens=max_tokens,
+        max_completion_tokens=max_tokens,
     )
 
     # === STEP 6: Parse JSON safely ===

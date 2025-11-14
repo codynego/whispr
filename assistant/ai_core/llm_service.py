@@ -234,7 +234,7 @@ Be conversational and adaptive to context tone.
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
-            max_tokens=150,
+            max_completion_tokens=150,
         )
         if not response.choices:
             raise ValueError("No response from OpenAI API")
@@ -305,7 +305,7 @@ Generate a single, cohesive response that stands alone but builds the relationsh
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
-            max_tokens=400,
+            max_completion_tokens=400,
         )
         if not response.choices:
             raise ValueError("No response from OpenAI API")

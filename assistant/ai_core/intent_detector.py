@@ -818,7 +818,7 @@ class IntentDetector:
                 model=self.model_name,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.7,
-                max_tokens=2000,
+                max_completion_tokens=2000,
             )
             if not response.choices:
                 raise ValueError("No response from OpenAI API")

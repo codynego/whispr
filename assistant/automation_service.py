@@ -1563,7 +1563,7 @@ Requirements:
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.7,
-                max_tokens=500,
+                max_completion_tokens=500,
             )
             if not response.choices:
                 raise ValueError("No response from OpenAI API")
@@ -1709,7 +1709,7 @@ Output ONLY JSON: {{"message": "Your reminder text"}}
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.7,
-                max_tokens=300,
+                max_completion_tokens=300,
             )
             if not response.choices:
                 raise ValueError("No response from OpenAI API")
