@@ -819,6 +819,7 @@ class IntentDetector:
                 messages=[{"role": "user", "content": prompt}],
                 max_completion_tokens=2000,
             )
+            print("OpenAI response:", response)
             if not response.choices:
                 raise ValueError("No response from OpenAI API")
             raw_text = response.choices[0].message.content.strip()
