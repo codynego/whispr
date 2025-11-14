@@ -235,7 +235,9 @@ class MessageHandler:
         #     }
 
         # --- 7️⃣ Validate schema completeness ---
+        print("Validating intent schema for intent:", intent_data["intent"])
         validation_result = self.intent_schema_parser.validate(intent_data, merged_context)
+        print("Validation result:", validation_result)
 
 
         # If intent is unclear or missing

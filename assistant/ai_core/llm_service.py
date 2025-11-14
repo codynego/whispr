@@ -308,5 +308,6 @@ Generate a single, cohesive response that stands alone but builds the relationsh
         if not response.choices:
             raise ValueError("No response from OpenAI API")
         reply = response.choices[0].message.content.strip()
+        print("OpenAI reply:", reply)
         self._update_context("assistant", reply)
         return reply
