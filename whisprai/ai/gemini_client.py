@@ -316,7 +316,7 @@ def get_ai_response(
     task_type="conversational",
     model="gpt-5-nano",
     temperature=0.7,
-    max_completion_tokens=2000,
+    max_tokens=2000,
     channel=None,
 ):
     """
