@@ -115,7 +115,7 @@ class AssistantDueTaskView(generics.ListAPIView):
 #         })
 
 
-from ai_core.message_handler import process_message  # Import the Celery task
+from assistant.ai_core.message_handler import process_message  # Import the Celery task
 
 class AssistantChatView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
