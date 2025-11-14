@@ -118,7 +118,7 @@ class AssistantDueTaskView(generics.ListAPIView):
 from assistant.ai_core.message_handler import process_message  # Import the Celery task
 
 class AssistantChatView(generics.GenericAPIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated]
     serializer_class = AssistantMessageSerializer
 
     def get(self, request):
