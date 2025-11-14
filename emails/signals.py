@@ -4,7 +4,7 @@ from django.dispatch import receiver
 from django.utils import timezone
 from .models import Email
 from .utils import is_email_important
-from whisprai.ai.gemini_client import get_gemini_response
+from whisprai.ai.gemini_client import get_ai_response
 from whatsapp.models import WhatsAppMessage
 from whatsapp.tasks import send_whatsapp_message_task
 from django.conf import settings
@@ -41,7 +41,7 @@ def generate_email_embedding_and_importance(sender, instance, created, **kwargs)
 
         if importance_level in ["medium", "high", "critical"]:
             analysis_text += " — Requires prompt attention."
-            report = get_gemini_response(instance.body, user_id=user.id, task_type="report")
+            report = get_ai_response(instance.body, user_id=user.id, task_type="report")
             print("report for importance", report)
             response_message = WhatsAppMessage.objects.create(
                 user=user,
