@@ -233,7 +233,7 @@ Be conversational and adaptive to context tone.
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
-            max_completion_tokens=150,
+            max_completion_tokens=2000,
         )
         if not response.choices:
             raise ValueError("No response from OpenAI API")
@@ -303,7 +303,7 @@ Generate a single, cohesive response that stands alone but builds the relationsh
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
-            max_completion_tokens=400,
+            max_completion_tokens=4000,
         )
         if not response.choices:
             raise ValueError("No response from OpenAI API")

@@ -1562,7 +1562,7 @@ Requirements:
             response = client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
-                max_completion_tokens=500,
+                max_completion_tokens=2000,
             )
             if not response.choices:
                 raise ValueError("No response from OpenAI API")
@@ -1707,7 +1707,7 @@ Output ONLY JSON: {{"message": "Your reminder text"}}
             response = client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
-                max_completion_tokens=300,
+                max_completion_tokens=2000,
             )
             if not response.choices:
                 raise ValueError("No response from OpenAI API")

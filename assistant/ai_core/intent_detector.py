@@ -817,7 +817,7 @@ class IntentDetector:
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=[{"role": "user", "content": prompt}],
-                max_completion_tokens=2000,
+                max_completion_tokens=6000,
             )
             print("OpenAI response:", response)
             if not response.choices:
