@@ -32,7 +32,7 @@ class CalendarEventAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
-    filter_horizontal = ['attendees']  # If attendees were a M2M; JSONField so skip
+    # filter_horizontal = ['attendees']  # Removed: attendees is JSONField, not M2M
 
     def get_queryset(self, request):
         """Optimize queryset for performance."""
