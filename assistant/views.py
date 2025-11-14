@@ -75,51 +75,12 @@ class AssistantDueTaskView(generics.ListAPIView):
             status__in=["pending", "scheduled"],
             due_datetime__lte=now,
         )
-# class AssistantChatView(generics.GenericAPIView):
-#     permission_classes = [permissions.IsAuthenticated]
-#     serializer_class = AssistantMessageSerializer
 
-
-#     def get(self, request):
-#         """
-#         Fetch the user's recent chat history with the assistant.
-#         You can limit the number of messages (e.g., last 20)
-#         """
-#         messages = AssistantMessage.objects.filter(user=request.user).order_by('-created_at')[:20]
-#         serializer = self.get_serializer(messages, many=True)
-#         return Response(serializer.data, status=status.HTTP_200_OK)
-
-#     def post(self, request):
-#         user = request.user
-#         prompt = request.data.get("message")
-
-#         if not prompt:
-#             return Response({"error": "Message is required"}, status=status.HTTP_400_BAD_REQUEST)
-
-#         # Get assistant config
-#         config, _ = AssistantConfig.objects.get_or_create(user=user)
-        
-#         # Save user message
-#         AssistantMessage.objects.create(user=user, role="user", content=prompt)
-#         handler = MessageHandler(user=user)
-#         response_text = handler.handle(prompt)
-
-#         response_text = response_text["reply"]
-#         print("Gemini response:", response_text)
-#         # Save assistant response
-#         reply = AssistantMessage.objects.create(user=user, role="assistant", content=response_text)
-
-#         return Response({
-#             "user_message": prompt,
-#             "assistant_reply": response_text
-#         })
-
-
-from assistant.ai_core.message_handler import process_message  # Import the Celery task
-
+    
 class AssistantChatView(generics.GenericAPIView):
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = AssistantMessageSerializer
+
 
     def get(self, request):
         """
@@ -137,24 +98,65 @@ class AssistantChatView(generics.GenericAPIView):
         if not prompt:
             return Response({"error": "Message is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Get assistant config (unused but kept for potential future use)
+        # Get assistant config
         config, _ = AssistantConfig.objects.get_or_create(user=user)
         
         # Save user message
         AssistantMessage.objects.create(user=user, role="user", content=prompt)
-        
-        # Process message using the Celery task (executes synchronously when called directly)
-        result = process_message(user.id, prompt)
-        response_text = result["reply"]
-        print("Assistant response:", response_text)
-        
+        handler = MessageHandler(user=user)
+        response_text = handler.handle(prompt)
+
+        response_text = response_text["reply"]
+        print("Gemini response:", response_text)
         # Save assistant response
-        AssistantMessage.objects.create(user=user, role="assistant", content=response_text)
+        reply = AssistantMessage.objects.create(user=user, role="assistant", content=response_text)
 
         return Response({
             "user_message": prompt,
             "assistant_reply": response_text
         })
+
+
+# from assistant.ai_core.message_handler import process_message  # Import the Celery task
+
+# class AssistantChatView(generics.GenericAPIView):
+#     permission_classes = [permissions.IsAuthenticated]
+#     serializer_class = AssistantMessageSerializer
+
+#     def get(self, request):
+#         """
+#         Fetch the user's recent chat history with the assistant.
+#         You can limit the number of messages (e.g., last 20)
+#         """
+#         messages = AssistantMessage.objects.filter(user=request.user).order_by('-created_at')[:20]
+#         serializer = self.get_serializer(messages, many=True)
+#         return Response(serializer.data, status=status.HTTP_200_OK)
+
+#     def post(self, request):
+#         user = request.user
+#         prompt = request.data.get("message")
+
+#         if not prompt:
+#             return Response({"error": "Message is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+#         # Get assistant config (unused but kept for potential future use)
+#         config, _ = AssistantConfig.objects.get_or_create(user=user)
+        
+#         # Save user message
+#         AssistantMessage.objects.create(user=user, role="user", content=prompt)
+        
+#         # Process message using the Celery task (executes synchronously when called directly)
+#         result = process_message(user.id, prompt)
+#         response_text = result["reply"]
+#         print("Assistant response:", response_text)
+        
+#         # Save assistant response
+#         AssistantMessage.objects.create(user=user, role="assistant", content=response_text)
+
+#         return Response({
+#             "user_message": prompt,
+#             "assistant_reply": response_text
+#         })
 
 
 
