@@ -817,7 +817,6 @@ class IntentDetector:
             response = self.client.chat.completions.create(
                 model=self.model_name,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.7,
                 max_completion_tokens=2000,
             )
             if not response.choices:

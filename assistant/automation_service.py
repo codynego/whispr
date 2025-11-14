@@ -1562,7 +1562,6 @@ Requirements:
             response = client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.7,
                 max_completion_tokens=500,
             )
             if not response.choices:
@@ -1708,7 +1707,6 @@ Output ONLY JSON: {{"message": "Your reminder text"}}
             response = client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.7,
                 max_completion_tokens=300,
             )
             if not response.choices:

@@ -233,7 +233,6 @@ Be conversational and adaptive to context tone.
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
             max_completion_tokens=150,
         )
         if not response.choices:
@@ -304,7 +303,6 @@ Generate a single, cohesive response that stands alone but builds the relationsh
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.7,
             max_completion_tokens=400,
         )
         if not response.choices:
