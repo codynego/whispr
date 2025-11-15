@@ -11,10 +11,7 @@ User = get_user_model()
 class TaskPlanner:
     """
     Converts natural language into structured tasks.
-    Supports:
-    - Context-aware planning using previous messages
-    - Notes, reminders, todos, calendar events
-    - Accurate date parsing relative to today
+    Now supports context-aware planning using previous messages.
     """
 
     def __init__(self, openai_api_key: str, model: str = "gpt-4o-mini", history_limit: int = 3):
@@ -23,17 +20,24 @@ class TaskPlanner:
         self.history_limit = history_limit
 
     def plan_tasks(self, user: User, user_message: str) -> List[Dict[str, Any]]:
-        # Retrieve recent conversation
+        """
+        Convert user natural language into structured action steps,
+        including context from previous messages.
+        """
+        # 1️⃣ Get previous conversation history
         history_msgs = AssistantMessage.objects.filter(user=user).order_by("-created_at")[:self.history_limit]
-        conversation_history = "\n".join(
-            f"{'User' if msg.role=='user' else 'Assistant'}: {msg.content}" for msg in reversed(history_msgs)
-        )
+        history_msgs = reversed(history_msgs)
+        conversation_history = ""
+        for msg in history_msgs:
+            role = "User" if msg.role == "user" else "Assistant"
+            conversation_history += f"{role}: {msg.content}\n"
 
-        # Call LLM with context
+        # 2️⃣ Call LLM with context
         raw_actions = self._call_llm(user_message, conversation_history)
 
-        # Normalize actions (date, service mapping, confidence)
-        return self._normalize_actions(raw_actions)
+        # 3️⃣ Normalize actions
+        cleaned_actions = self._normalize_actions(raw_actions)
+        return cleaned_actions
 
     def _call_llm(self, user_message: str, conversation_history: str, retry: int = 0) -> List[Dict[str, Any]]:
         today = datetime.now().date()
@@ -107,7 +111,7 @@ JSON Action Schema:
 The previous response was INVALID JSON:
 \"\"\"{bad_output}\"\"\"
 
-Today's date: {today}
+today's date is {today}.
 
 Fix it. Return ONLY a valid JSON array of actions based on:
 
@@ -125,12 +129,24 @@ User message:
             ],
             temperature=0
         )
+
+        content = response.choices[0].message.content
         try:
-            return json.loads(response.choices[0].message.content)
+            return json.loads(content)
         except:
             return []
 
+
+    # -------------------------
+    # INTERNAL: Normalize actions
+    # -------------------------
     def _normalize_actions(self, actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        - Ensures fields exist
+        - Fix missing datetime via natural language parsing
+        - Adds confidence if missing
+        """
+
         cleaned = []
 
         for task in actions:
@@ -139,11 +155,11 @@ User message:
             intent = task.get("intent", action_name)
             confidence = float(task.get("confidence", 0.90))
 
-            # Date normalization
+            # -------- Date normalization --------
             if "datetime" in params and params["datetime"]:
                 params["datetime"] = self._normalize_datetime(params["datetime"])
 
-            # Service inference
+            # -------- Basic service routing hint --------
             if "service" not in params:
                 params["service"] = self._infer_service(action_name)
 
@@ -156,13 +172,25 @@ User message:
 
         return cleaned
 
+    # -------------------------
+    # Parse natural datetime
+    # -------------------------
     def _normalize_datetime(self, dt_str: str) -> Optional[str]:
         """
-        Convert natural language date/time into ISO-8601 using today as reference.
+        Convert human language date/time into ISO-8601.
+        Uses dateparser with current reference date to avoid wrong years.
         """
-        result = dateparser.parse(dt_str, settings={'RELATIVE_BASE': datetime.now()})
-        return result.isoformat() if result else None
+        result = dateparser.parse(
+            dt_str,
+            settings={'RELATIVE_BASE': datetime.now()}
+        )
+        if result:
+            return result.isoformat()
+        return None
 
+    # -------------------------
+    # Map action → default integration
+    # -------------------------
     def _infer_service(self, action: str) -> str:
         if "email" in action:
             return "gmail"
@@ -171,7 +199,7 @@ User message:
         if "note" in action:
             return "notes"
         if "reminder" in action:
-            return "whatsapp"
+            return "whatsapp"  # your default reminder channel
         if "todo" in action:
             return "todo"
         return "system"
