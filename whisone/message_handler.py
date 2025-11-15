@@ -29,7 +29,6 @@ def process_user_message(user_id: int, message: str):
 
     # 1️⃣ Plan tasks
     planner = TaskPlanner(openai_api_key=settings.OPENAI_API_KEY)
-    print("Task plan:", task_plan)
     task_plan = planner.plan_tasks(message)
     print("Task plan:", task_plan)
 
