@@ -6,10 +6,14 @@ from .executor import Executor
 from .response_generator import ResponseGenerator
 from django.conf import settings
 from .models import Integration
+from django.contrib.auth import get_user_model
+
+
+User = get_user_model()
 
 @shared_task
 def process_user_message(user_id: int, message: str):
-    from django.contrib.auth.models import User
+
     print("Processing message for user:", user_id)
     user = User.objects.get(id=user_id)
     integration = Integration.objects.filter(user=user, provider="gmail").first()
