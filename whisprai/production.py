@@ -348,6 +348,7 @@ INSTALLED_APPS = [
     "notifications",
     "unified",
     'whisone',
+    
 ]
 
 # --- Middleware ---

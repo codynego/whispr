@@ -11,6 +11,7 @@ app = Celery('whisprai')
 # Load task modules from all registered Django app configs.
 app.autodiscover_tasks()
 
+
 # Load task-specific configurations from Django settings.
 app.config_from_object('django.conf:settings', namespace='CELERY')
 

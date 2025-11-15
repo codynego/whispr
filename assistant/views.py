@@ -161,6 +161,9 @@ from rest_framework.response import Response
 def get_assistant_response(request, task_id):
     task_result = AsyncResult(task_id)
     print("Checking task status for ID:", task_id, "Status:", task_result.status)
+    print("Task info:", task_result.info)
+    print("Is task ready?", task_result.ready())
+    print("Is task successful?", task_result.state)
 
     if task_result.ready():
         # Get assistant reply from DB
