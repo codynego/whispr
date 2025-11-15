@@ -30,7 +30,7 @@ def process_user_message(user_id: int, message: str):
 
     # 1️⃣ Plan tasks
     planner = TaskPlanner(openai_api_key=settings.OPENAI_API_KEY)
-    task_plan = planner.plan_tasks(message)
+    task_plan = planner.plan_tasks(user, message)
     print("Task plan:", task_plan)
 
     # 2️⃣ Execute tasks
