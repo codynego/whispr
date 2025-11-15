@@ -4,6 +4,7 @@ import json
 import dateparser
 from django.contrib.auth import get_user_model
 from assistant.models import AssistantMessage
+from datetime import datetime
 
 User = get_user_model()
 
