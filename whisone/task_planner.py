@@ -64,7 +64,7 @@ class TaskPlanner:
             "Rules:\n"
             "- Dates must be ISO8601.\n"
             "- Return ONLY a JSON array.\n"
-            "- If the user is searching emails/events/notes/todos/reminders, extract FILTER KEYWORDS as a list.\n"
+            "- If the user is searching emails/events/notes/todos/reminders, extract FILTER -  as a list of dictionary e.g [{sender: \"example@example.com\", from: \"example@example.com\"} etc].\n"
             "- Do NOT write explanations.\n\n"
             "- If the user wants to 'add' something but no specific note/reminder/todo exists, "
             "use create_note/create_reminder/create_todo.\n"
