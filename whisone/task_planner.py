@@ -13,7 +13,7 @@ class TaskPlanner:
     Now supports context-aware planning using previous messages.
     """
 
-    def __init__(self, openai_api_key: str, model: str = "gpt-4o-mini", history_limit: int = 10):
+    def __init__(self, openai_api_key: str, model: str = "gpt-4o-mini", history_limit: int = 3):
         self.client = openai.OpenAI(api_key=openai_api_key)
         self.model = model
         self.history_limit = history_limit
