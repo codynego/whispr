@@ -1,49 +1,56 @@
-import json
-import openai
-import dateparser
 from typing import List, Dict, Any, Optional
+import openai
+import json
+import dateparser
+from django.contrib.auth import get_user_model
+from .models import AssistantMessage
 
+User = get_user_model()
 
 class TaskPlanner:
     """
     Converts natural language into structured tasks.
-    Includes:
-    - Multi-intent detection
-    - Date & time normalization
-    - Strict JSON enforcement
-    - Retries for malformed output
+    Now supports context-aware planning using previous messages.
     """
 
-    def __init__(self, openai_api_key: str, model: str = "gpt-4o-mini"):
+    def __init__(self, openai_api_key: str, model: str = "gpt-4o-mini", history_limit: int = 10):
         self.client = openai.OpenAI(api_key=openai_api_key)
         self.model = model
+        self.history_limit = history_limit
 
-    # -------------------------
-    # Public entry
-    # -------------------------
-    def plan_tasks(self, user_message: str) -> List[Dict[str, Any]]:
+    def plan_tasks(self, user: User, user_message: str) -> List[Dict[str, Any]]:
         """
-        Convert user natural language into structured action steps.
-        Includes self-correction and date normalization.
+        Convert user natural language into structured action steps,
+        including context from previous messages.
         """
-        raw_actions = self._call_llm(user_message)
+        # 1️⃣ Get previous conversation history
+        history_msgs = AssistantMessage.objects.filter(user=user).order_by("-created_at")[:self.history_limit]
+        history_msgs = reversed(history_msgs)
+        conversation_history = ""
+        for msg in history_msgs:
+            role = "User" if msg.role == "user" else "Assistant"
+            conversation_history += f"{role}: {msg.content}\n"
 
-        # Fix and validate actions
+        # 2️⃣ Call LLM with context
+        raw_actions = self._call_llm(user_message, conversation_history)
+
+        # 3️⃣ Normalize actions
         cleaned_actions = self._normalize_actions(raw_actions)
-
         return cleaned_actions
 
-    # -------------------------
-    # INTERNAL: LLM call
-    # -------------------------
-    def _call_llm(self, user_message: str, retry: int = 0) -> List[Dict[str, Any]]:
+    def _call_llm(self, user_message: str, conversation_history: str, retry: int = 0) -> List[Dict[str, Any]]:
         """
         Calls GPT model and ensures valid JSON is returned.
         Retries up to 2 times if JSON is malformed.
         """
-
         prompt = f"""
 You are an AI Task Planner for an automation assistant called Whisone.
+
+Conversation so far:
+{conversation_history}
+
+User's new message:
+\"\"\"{user_message}\"\"\"
 
 Your job:
 1. Extract ALL tasks from the user's message.
@@ -56,8 +63,7 @@ Your job:
 8. NEVER include explanations, text, or code blocks — ONLY JSON.
 
 Supported actions:
-[
-  "create_note", "update_note", "delete_note",
+[ "create_note", "update_note", "delete_note",
   "create_reminder", "update_reminder", "delete_reminder",
   "add_todo", "update_todo", "delete_todo",
   "fetch_emails", "mark_email_read",
@@ -66,24 +72,11 @@ Supported actions:
 ]
 
 JSON Action Schema:
-[
-  {{
-    "action": "create_reminder",
-    "params": {{
-        "title": "string",
-        "datetime": "ISO8601 full timestamp or null",
-        "recurrence": "optional",
-        "service": "gmail|calendar|notes|todo|whatsapp|sms|system"
-    }},
-    "intent": "short natural language summary",
-    "confidence": 0.90
-  }}
-]
-
-User message:
-\"\"\"{user_message}\"\"\"
+[ {{"action": "create_reminder",
+   "params": {{"title": "string","datetime": "ISO8601","recurrence": "optional","service": "gmail|calendar|notes|todo|whatsapp|sms|system"}},
+   "intent": "short natural language summary",
+   "confidence": 0.90 }} ]
 """
-
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[
@@ -97,32 +90,25 @@ User message:
 
         try:
             parsed = json.loads(content)
-            if isinstance(parsed, list):
-                return parsed
-            else:
-                return []
+            return parsed if isinstance(parsed, list) else []
         except json.JSONDecodeError:
             if retry < 2:
-                return self._retry_fix_json(content, user_message, retry)
+                return self._retry_fix_json(content, user_message, conversation_history, retry)
             return []
 
-    # -------------------------
-    # INTERNAL: Retry JSON fix
-    # -------------------------
-    def _retry_fix_json(self, bad_output: str, original_message: str, retry: int) -> List[Dict[str, Any]]:
-        """
-        Second chance to repair broken JSON.
-        """
-
+    def _retry_fix_json(self, bad_output: str, original_message: str, conversation_history: str, retry: int) -> List[Dict[str, Any]]:
         repair_prompt = f"""
 The previous response was INVALID JSON:
 \"\"\"{bad_output}\"\"\"
 
 Fix it. Return ONLY a valid JSON array of actions based on:
 
+Conversation:
+{conversation_history}
+
+User message:
 \"\"\"{original_message}\"\"\"
 """
-
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[
@@ -133,11 +119,11 @@ Fix it. Return ONLY a valid JSON array of actions based on:
         )
 
         content = response.choices[0].message.content
-
         try:
             return json.loads(content)
         except:
-            return []  # Return empty actions if still bad
+            return []
+
 
     # -------------------------
     # INTERNAL: Normalize actions

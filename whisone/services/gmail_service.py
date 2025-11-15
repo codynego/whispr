@@ -1,9 +1,11 @@
 import base64
 from datetime import datetime
 from typing import List, Dict
+from django.core.cache import cache  # Django cache
 
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
+
 
 class GmailService:
     def __init__(self, access_token: str, refresh_token: str, client_id: str, client_secret: str):
@@ -17,7 +19,7 @@ class GmailService:
         self.service = build('gmail', 'v1', credentials=self.creds)
 
     # -----------------------------
-    # Fetch emails
+    # Fetch emails with caching
     # -----------------------------
     def fetch_emails(
         self,
@@ -25,8 +27,25 @@ class GmailService:
         after: datetime = None,
         before: datetime = None,
         unread_only: bool = False,
-        max_results: int = 10
+        max_results: int = 10,
+        cache_timeout: int = 300  # default 5 minutes
     ) -> List[Dict]:
+        # Build a unique cache key based on user, query, and filters
+        key_parts = [
+            query,
+            str(after) if after else "",
+            str(before) if before else "",
+            str(unread_only),
+            str(max_results)
+        ]
+        cache_key = "gmail_emails:" + ":".join(key_parts)
+
+        # Try getting from cache
+        cached_emails = cache.get(cache_key)
+        if cached_emails:
+            return cached_emails
+
+        # Build Gmail query
         q = query
         if unread_only:
             q += " is:unread"
@@ -35,6 +54,7 @@ class GmailService:
         if before:
             q += f" before:{before.strftime('%Y/%m/%d')}"
 
+        # Fetch from Gmail API
         result = self.service.users().messages().list(userId='me', q=q, maxResults=max_results).execute()
         messages = []
         for msg in result.get('messages', []):
@@ -60,6 +80,9 @@ class GmailService:
                 "snippet": msg_detail.get('snippet', ''),
                 "body": body_data
             })
+
+        # Save to cache
+        cache.set(cache_key, messages, timeout=cache_timeout)
         return messages
 
     # -----------------------------
@@ -102,9 +125,12 @@ class GmailService:
     # Reply to email
     # -----------------------------
     def reply_email(self, msg_id: str, body: str):
-        # Get original email headers
-        original = self.service.users().messages().get(userId='me', id=msg_id, format='metadata', metadataHeaders=['Subject','From','To','Message-ID']).execute()
+        original = self.service.users().messages().get(
+            userId='me', id=msg_id, format='metadata',
+            metadataHeaders=['Subject','From','To','Message-ID']
+        ).execute()
         headers = {h['name']: h['value'] for h in original['payload']['headers']}
+
         from email.mime.text import MIMEText
         import base64
 
