@@ -20,3 +20,26 @@ class TodoAdmin(admin.ModelAdmin):
     search_fields = ('task', 'user__username')
     list_filter = ('done',)
     readonly_fields = ('created_at', 'updated_at')
+
+
+# whisone/admin.py
+
+from django.contrib import admin
+from .models import AutomationRule
+
+@admin.register(AutomationRule)
+class AutomationRuleAdmin(admin.ModelAdmin):
+    list_display = ("name", "user", "trigger_type", "is_active", "created_at", "updated_at")
+    list_filter = ("trigger_type", "is_active")
+    search_fields = ("name", "user__username")
+    readonly_fields = ("created_at", "updated_at")  # Only include fields that exist on the model
+    ordering = ("-created_at",)
+
+    fieldsets = (
+        (None, {
+            "fields": ("user", "name", "description", "trigger_type", "trigger_params", "conditions", "actions", "is_active")
+        }),
+        ("Timestamps", {
+            "fields": ("created_at", "updated_at")
+        }),
+    )
