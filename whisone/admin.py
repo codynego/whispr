@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Note, Reminder, Todo
+from .models import Note, Reminder, Todo, Integration, AutomationRule
 
 @admin.register(Note)
 class NoteAdmin(admin.ModelAdmin):
@@ -22,10 +22,24 @@ class TodoAdmin(admin.ModelAdmin):
     readonly_fields = ('created_at', 'updated_at')
 
 
-# whisone/admin.py
+@admin.register(Integration)
+class IntegrationAdmin(admin.ModelAdmin):
+    list_display = ("user", "provider", "external_id", "is_active", "created_at", "updated_at")
+    list_filter = ("provider", "is_active")
+    search_fields = ("user__username", "external_id")
+    readonly_fields = ("created_at", "updated_at")  # timestamps are read-only
+    ordering = ("-created_at",)
 
-from django.contrib import admin
-from .models import AutomationRule
+    fieldsets = (
+        (None, {
+            "fields": ("user", "provider", "external_id", "access_token", "refresh_token", "expires_at", "is_active")
+        }),
+        ("Timestamps", {
+            "fields": ("created_at", "updated_at")
+        }),
+    )
+
+# whisone/admin.pu
 
 @admin.register(AutomationRule)
 class AutomationRuleAdmin(admin.ModelAdmin):
