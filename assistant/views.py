@@ -118,11 +118,6 @@ class AssistantDueTaskView(generics.ListAPIView):
 #             "assistant_reply": response_text
 #         })
 
-from rest_framework import generics, permissions, status
-from rest_framework.response import Response
-from .models import AssistantMessage, AssistantConfig
-from .serializers import AssistantMessageSerializer
-from .tasks import process_user_message  # Celery task
 
 class AssistantChatView(generics.GenericAPIView):
     permission_classes = [permissions.IsAuthenticated]
