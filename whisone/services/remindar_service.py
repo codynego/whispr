@@ -1,6 +1,6 @@
 from typing import List, Optional
 from datetime import datetime
-from .models import Reminder
+from whisone.models import Reminder
 from django.contrib.auth.models import User
 
 class ReminderService:

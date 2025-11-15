@@ -1,5 +1,5 @@
 from typing import List, Optional
-from .models import Note
+from whisone.models import Note
 from django.contrib.auth.models import User
 
 class NoteService:

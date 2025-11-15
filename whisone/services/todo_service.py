@@ -1,5 +1,5 @@
 from typing import List, Optional
-from .models import Todo
+from whisone.models import Todo
 from django.contrib.auth.models import User
 
 class TodoService:
