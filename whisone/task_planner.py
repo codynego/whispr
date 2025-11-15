@@ -135,10 +135,21 @@ Today's date: {today}
     # ---------------------------------------------------------------------
     # NORMALIZATION + KEYWORD EXTRACTION
     # ---------------------------------------------------------------------
-    def _normalize_actions(self, actions: List[Dict[str, Any]], original_message: str) -> List[Dict[str, Any]]:
+    def _normalize_actions(self, actions: List, original_message: str) -> List[Dict[str, Any]]:
+        """
+        Normalize actions:
+        - Ensure each action is a dict.
+        - Normalize datetime.
+        - Infer service if missing.
+        - Extract filters for fetch/search actions.
+        """
         cleaned = []
 
         for task in actions:
+            # ⚠️ Safety: skip if not a dict
+            if not isinstance(task, dict):
+                continue
+
             action = task.get("action")
             params = task.get("params", {})
             intent = task.get("intent", action)
@@ -148,15 +159,15 @@ Today's date: {today}
             if "datetime" in params:
                 params["datetime"] = self._normalize_datetime(params["datetime"])
 
-            # Infer service (if missing)
+            # Infer service if missing
             if "service" not in params:
                 params["service"] = self._infer_service(action)
 
-            # -----------------------------
-            # 🔥 NEW: Keyword extraction
-            # -----------------------------
+            # Keyword extraction for fetch/search actions
             if action in self.FETCH_ACTIONS:
-                params["filters"] = self._extract_keywords(original_message)
+                # Only add filters if not already present
+                if "filters" not in params:
+                    params["filters"] = self._extract_keywords(original_message)
 
             cleaned.append({
                 "action": action,
