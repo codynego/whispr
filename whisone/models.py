@@ -1,5 +1,4 @@
 from django.db import models
-from django.contrib.auth.models import User
 from django.conf import settings
 
 # -----------------------------
@@ -15,7 +14,7 @@ class BaseModel(models.Model):
 
 
 class Reminder(BaseModel):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     text = models.TextField()
     remind_at = models.DateTimeField()
     completed = models.BooleanField(default=False)
@@ -28,7 +27,7 @@ class Reminder(BaseModel):
 # 2. Note
 # -----------------------------
 class Note(BaseModel):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     content = models.TextField()
 
     def __str__(self):
@@ -38,7 +37,7 @@ class Note(BaseModel):
 # 3. Todo
 # -----------------------------
 class Todo(BaseModel):
-    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     task = models.TextField()
     done = models.BooleanField(default=False)
     def __str__(self):
