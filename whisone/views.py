@@ -229,12 +229,14 @@ class GmailOAuthInitView(generics.GenericAPIView):
         # encode user ID into state
         state_data = {"uid": urlsafe_base64_encode(force_bytes(request.user.id))}
         state_str = json.dumps(state_data)
+        print("Gmail OAuth init for user:", request.user.id)
 
         flow = Flow.from_client_secrets_file(
             CLIENT_SECRET_FILE,
             scopes=SCOPES,
             redirect_uri=REDIRECT_URI,
         )
+        print("Generated OAuth flow")
 
         auth_url, _ = flow.authorization_url(
             access_type="offline",
@@ -242,6 +244,7 @@ class GmailOAuthInitView(generics.GenericAPIView):
             prompt="consent",
             state=state_str,
         )
+        print("Gmail OAuth init URL:", auth_url)
 
         return JsonResponse({"url": auth_url})
 
@@ -251,6 +254,7 @@ class GmailOAuthCallbackView(generics.GenericAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        print("Gmail OAuth callback received")
         code = request.GET.get("code")
         if not code:
             return JsonResponse({"error": "Missing authorization code"}, status=400)
@@ -262,6 +266,7 @@ class GmailOAuthCallbackView(generics.GenericAPIView):
             scopes=SCOPES,
             redirect_uri=REDIRECT_URI,
         )
+        print("Fetching token with code:", code)
 
         try:
             flow.fetch_token(code=code)
@@ -276,6 +281,7 @@ class GmailOAuthCallbackView(generics.GenericAPIView):
 
         if not email_address:
             return JsonResponse({"error": "Could not extract email from token"}, status=400)
+        print("Gmail OAuth successful for:", email_address)
 
         # === Save Gmail integration ===
         integration, created = Integration.objects.update_or_create(
