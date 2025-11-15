@@ -97,9 +97,12 @@ JSON Action Schema:
             return []
 
     def _retry_fix_json(self, bad_output: str, original_message: str, conversation_history: str, retry: int) -> List[Dict[str, Any]]:
+        today = datetime.now().date().isoformat()
         repair_prompt = f"""
 The previous response was INVALID JSON:
 \"\"\"{bad_output}\"\"\"
+
+today's date is {today}.
 
 Fix it. Return ONLY a valid JSON array of actions based on:
 
@@ -166,9 +169,12 @@ User message:
     def _normalize_datetime(self, dt_str: str) -> Optional[str]:
         """
         Convert human language date/time into ISO-8601.
-        Uses dateparser as a fallback.
+        Uses dateparser with current reference date to avoid wrong years.
         """
-        result = dateparser.parse(dt_str)
+        result = dateparser.parse(
+            dt_str,
+            settings={'RELATIVE_BASE': datetime.now()}
+        )
         if result:
             return result.isoformat()
         return None

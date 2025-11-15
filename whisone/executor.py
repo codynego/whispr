@@ -44,40 +44,64 @@ class Executor:
 
             try:
                 if action == "create_note":
-                    note = self._safe_call(self.note_service.create_note, params)
+                    mapped_params = {"content": params.get("content", "")}
+                    note = self._safe_call(self.note_service.create_note, mapped_params)
                     results.append({"action": action, "result": {"id": note.id, "content": note.content}})
 
                 elif action == "update_note":
-                    note = self._safe_call(self.note_service.update_note, params)
+                    mapped_params = {
+                        "note_id": params.get("note_id"),
+                        "content": params.get("content", "")
+                    }
+                    note = self._safe_call(self.note_service.update_note, mapped_params)
                     results.append({"action": action, "result": note})
 
                 elif action == "delete_note":
-                    success = self._safe_call(self.note_service.delete_note, params)
+                    mapped_params = {"note_id": params.get("note_id")}
+                    success = self._safe_call(self.note_service.delete_note, mapped_params)
                     results.append({"action": action, "result": success})
 
                 elif action == "create_reminder":
-                    reminder = self._safe_call(self.reminder_service.create_reminder, params)
+                    mapped_params = {
+                        "text": params.get("title", ""),
+                        "remind_at": params.get("datetime")
+                    }
+                    reminder = self._safe_call(self.reminder_service.create_reminder, mapped_params)
                     results.append({"action": action, "result": {"id": reminder.id, "text": reminder.text}})
 
                 elif action == "update_reminder":
-                    reminder = self._safe_call(self.reminder_service.update_reminder, params)
+                    mapped_params = {
+                        "reminder_id": params.get("reminder_id"),
+                        "text": params.get("title", ""),
+                        "remind_at": params.get("datetime")
+                    }
+                    reminder = self._safe_call(self.reminder_service.update_reminder, mapped_params)
                     results.append({"action": action, "result": reminder})
 
                 elif action == "delete_reminder":
-                    success = self._safe_call(self.reminder_service.delete_reminder, params)
+                    mapped_params = {"reminder_id": params.get("reminder_id")}
+                    success = self._safe_call(self.reminder_service.delete_reminder, mapped_params)
                     results.append({"action": action, "result": success})
 
                 elif action == "add_todo":
-                    todo = self._safe_call(self.todo_service.add_todo, params)
+                    mapped_params = {"task": params.get("task", "")}
+                    todo = self._safe_call(self.todo_service.add_todo, mapped_params)
                     results.append({"action": action, "result": {"id": todo.id, "task": todo.task}})
 
                 elif action == "update_todo":
-                    todo = self._safe_call(self.todo_service.update_todo, params)
+                    mapped_params = {
+                        "todo_id": params.get("todo_id"),
+                        "task": params.get("task", None),
+                        "done": params.get("done", None)
+                    }
+                    todo = self._safe_call(self.todo_service.update_todo, mapped_params)
                     results.append({"action": action, "result": todo})
 
                 elif action == "delete_todo":
-                    success = self._safe_call(self.todo_service.delete_todo, params)
+                    mapped_params = {"todo_id": params.get("todo_id")}
+                    success = self._safe_call(self.todo_service.delete_todo, mapped_params)
                     results.append({"action": action, "result": success})
+
 
                 elif action == "fetch_emails" and self.gmail_service:
                     emails = self._safe_call(self.gmail_service.fetch_emails, params)
