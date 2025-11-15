@@ -42,7 +42,7 @@ def process_user_message(user_id: int, message: str):
     # 3️⃣ Generate response
     response_gen = ResponseGenerator(openai_api_key=settings.OPENAI_API_KEY)
     print("Generating response...")
-    response_text = response_gen.generate_response(message, executor_results)
+    response_text = response_gen.generate_response(user, message, executor_results)
     print("Generated response:", response_text)
 
 
