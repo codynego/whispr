@@ -110,7 +110,11 @@ class Executor:
                 elif action == "mark_email_read" and self.gmail_service:
                     self._safe_call(self.gmail_service.mark_as_read, params)
                     results.append({"action": action, "result": True})
+                    
+                elif action == "fetch_events" and self.calendar_service:
+                    events = self._safe_call(self.calendar_service.fetch_events, params)
 
+                    results.append({"action": action, "result": events})
                 elif action == "create_event" and self.calendar_service:
                     event = self._safe_call(self.calendar_service.create_event, params)
                     results.append({"action": action, "result": event})

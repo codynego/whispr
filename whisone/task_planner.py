@@ -62,7 +62,7 @@ class TaskPlanner:
             "- If the user wants to \"add\" something but no specific note/reminder/todo exists, "
             "use create_note/create_reminder/create_todo.\n"
             "- Use update_* only if a specific note/reminder/todo or event_id is referenced.\n"
-            "- For calendar events, use create_event/update_event/delete_event as needed.\n\n"
+            "- For calendar events, use fetch_events/create_event/update_event/delete_event as needed.\n\n"
             "Supported actions:\n"
             "[\"create_note\",\"update_note\",\"delete_note\","
             "\"create_reminder\",\"update_reminder\",\"delete_reminder\","

@@ -1,10 +1,11 @@
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from datetime import datetime, timedelta
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 class GoogleCalendarService:
     def __init__(self, access_token: str, refresh_token: str, client_id: str, client_secret: str):
+        """Initialize Google Calendar API service."""
         self.creds = Credentials(
             token=access_token,
             refresh_token=refresh_token,
@@ -21,13 +22,14 @@ class GoogleCalendarService:
         self,
         summary: str,
         description: str = "",
-        start_time: datetime = None,
-        end_time: datetime = None,
-        attendees: List[str] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        attendees: Optional[List[str]] = None,
         timezone: str = "UTC"
     ) -> Dict:
         start_time = start_time or datetime.utcnow()
         end_time = end_time or (start_time + timedelta(hours=1))
+
         event = {
             'summary': summary,
             'description': description,
@@ -51,13 +53,14 @@ class GoogleCalendarService:
     def update_event(
         self,
         event_id: str,
-        summary: str = None,
-        description: str = None,
-        start_time: datetime = None,
-        end_time: datetime = None,
-        attendees: List[str] = None
+        summary: Optional[str] = None,
+        description: Optional[str] = None,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+        attendees: Optional[List[str]] = None
     ) -> Dict:
         event = self.service.events().get(calendarId='primary', eventId=event_id).execute()
+
         if summary:
             event['summary'] = summary
         if description:
@@ -85,11 +88,18 @@ class GoogleCalendarService:
         return True
 
     # -----------------------------
-    # Fetch events (optional)
+    # Fetch events
     # -----------------------------
-    def fetch_events(self, time_min: datetime = None, time_max: datetime = None, max_results: int = 10) -> List[Dict]:
+    def fetch_events(
+        self,
+        time_min: Optional[datetime] = None,
+        time_max: Optional[datetime] = None,
+        max_results: int = 10
+    ) -> List[Dict]:
+        """Fetch events from Google Calendar within a time range."""
         time_min = time_min or datetime.utcnow()
         time_max = time_max or (time_min + timedelta(days=7))
+
         events_result = self.service.events().list(
             calendarId='primary',
             timeMin=time_min.isoformat() + 'Z',
@@ -98,6 +108,7 @@ class GoogleCalendarService:
             singleEvents=True,
             orderBy='startTime'
         ).execute()
+
         events = []
         for event in events_result.get('items', []):
             events.append({
@@ -106,6 +117,6 @@ class GoogleCalendarService:
                 "description": event.get('description'),
                 "start": event['start'],
                 "end": event['end'],
-                "attendees": [a.get('email') for a in event.get('attendees', [])]
+                "attendees": [a.get('email') for a in event.get('attendees', [])] if event.get('attendees') else []
             })
         return events
