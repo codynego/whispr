@@ -137,6 +137,12 @@ class Executor:
                 # CALENDAR
                 # -------------------------
                 elif action == "fetch_events" and self.calendar_service:
+                    # Convert time_min and time_max into proper datetime objects
+                    if "time_min" in params:
+                        params["time_min"] = self._parse_datetime(params["time_min"])
+                    if "time_max" in params:
+                        params["time_max"] = self._parse_datetime(params["time_max"])
+
                     events = self._safe_call(self.calendar_service.fetch_events, params)
                     results.append({"action": action, "result": events})
 
