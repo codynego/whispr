@@ -118,6 +118,7 @@ class MessageService:
             print("summarize_message called with:", sender, subject, date, query_text, channel, limit)
             messages = Message.objects.filter(account__user=self.user)
 
+
             if channel:
                 messages = messages.filter(channel=channel)
             if sender:
@@ -135,6 +136,7 @@ class MessageService:
                 elif date == "last_week":
                     start = timezone.now().date() - timedelta(days=7)
                     messages = messages.filter(sent_at__date__gte=start)
+            print()
 
             # 🔍 Use semantic search for relevance if query_text is provided
             # if query_text:

@@ -50,5 +50,6 @@ urlpatterns = [
     path('api/billing/', include('billing.urls')),
     path('api/notifications/', include('notifications.urls')),
     path('api/unified/', include('unified.urls')),
+    path('api/whisone/', include('whisone.urls')),
 ]
 

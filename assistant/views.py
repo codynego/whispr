@@ -19,6 +19,7 @@ from django.utils import timezone
 from rest_framework import generics, permissions, pagination
 from .models import AssistantTask
 from .serializers import AssistantTaskSerializer
+from whisone.message_handler import process_user_message
 
 
 class StandardResultsSetPagination(pagination.PageNumberPagination):
@@ -103,8 +104,9 @@ class AssistantChatView(generics.GenericAPIView):
         
         # Save user message
         AssistantMessage.objects.create(user=user, role="user", content=prompt)
-        handler = MessageHandler(user=user)
-        response_text = handler.handle(prompt)
+        # handler = MessageHandler(user=user)
+        # response_text = handler.handle(prompt)
+        response_text = process_user_message.delay(user.id, prompt)
 
         response_text = response_text["reply"]
         print("Gemini response:", response_text)

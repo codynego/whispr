@@ -347,6 +347,7 @@ INSTALLED_APPS = [
     "billing",
     "notifications",
     "unified",
+    'whisone',
 ]
 
 # --- Middleware ---
