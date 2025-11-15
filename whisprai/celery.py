@@ -2,6 +2,7 @@ from __future__ import absolute_import, unicode_literals
 import os
 from celery import Celery
 from celery.schedules import crontab
+from decouple import config
 
 # Set the default Django settings module for the 'celery' program.
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'whisprai.settings')
@@ -28,7 +29,7 @@ app.conf.update(
     task_reject_on_worker_lost=True,
     
     # Results backend (for inspecting task outcomes)
-    result_backend='django-db',  # Requires django-celery-results
+    result_backend= config("REDIS_URL", default="redis://127.0.0.1:6379/0"),
     result_expires=3600,  # Expire results after 1hr
     
     # Beat: Use DB for dynamic schedules
