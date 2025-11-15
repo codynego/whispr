@@ -1,13 +1,13 @@
 from typing import List, Dict, Any
 import openai  # Or your preferred GPT API
 import json
-from .models import AssistantMessage
+from assistant.models import AssistantMessage
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
 class ResponseGenerator:
-    def __init__(self, openai_api_key: str, model: str = "gpt-4o-mini", history_limit: int = 10):
+    def __init__(self, openai_api_key: str, model: str = "gpt-4o-mini", history_limit: int = 3):
         self.client = openai.OpenAI(api_key=openai_api_key)
         self.model = model
         self.history_limit = history_limit  # Number of previous messages to include

@@ -3,7 +3,7 @@ import openai
 import json
 import dateparser
 from django.contrib.auth import get_user_model
-from .models import AssistantMessage
+from assistant.models import AssistantMessage
 
 User = get_user_model()
 
