@@ -43,11 +43,7 @@ app.conf.beat_schedule = {
         'task': 'unified.tasks.common_tasks.periodic_channel_sync',
         'schedule': crontab(minute='*/2'),
     },
-    # Add if needed: e.g., daily cleanup
-    # 'cleanup-old-results': {
-    #     'task': 'assistant.tasks.cleanup_old_automations',
-    #     'schedule': crontab(hour=2, minute=0),  # 2AM UTC
-    # },
+
 }
 
 # Suppress tokenizer warnings (for HF models in tasks)
