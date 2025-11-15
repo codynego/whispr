@@ -42,13 +42,15 @@ class TaskPlanner:
     def _call_llm(self, user_message: str, conversation_history: str, retry: int = 0) -> List[Dict[str, Any]]:
         today = datetime.now().date()
 
-        # Use normal string instead of f-string for JSON-heavy prompt
         prompt = (
             "You are an AI Task Planner for Whisone.\n\n"
+
             "Conversation so far:\n"
             + conversation_history
             + f"\n\nToday's date: {today}\n\n"
+
             "User's new message:\n\"\"\"" + user_message + "\"\"\"\n\n"
+
             "Your job:\n"
             "1. Extract all tasks (notes, reminders, todos, calendar events).\n"
             "2. Break multi-step instructions into separate actions.\n"
@@ -58,23 +60,43 @@ class TaskPlanner:
             "5. Include a confidence score (0–1).\n"
             "6. ALWAYS return a valid JSON array.\n"
             "7. NEVER include explanations, text, or code blocks — ONLY JSON.\n\n"
+
             "Rules:\n"
-            "- If the user wants to \"add\" something but no specific note/reminder/todo exists, "
+            "- If the user wants to 'add' something but no specific note/reminder/todo exists, "
             "use create_note/create_reminder/create_todo.\n"
             "- Use update_* only if a specific note/reminder/todo or event_id is referenced.\n"
-            "- For calendar events, use fetch_events/create_event/update_event/delete_event as needed.\n\n"
+            "- For calendar events, use fetch_events/create_event/update_event/delete_event with the schema below.\n\n"
+
             "Supported actions:\n"
-            "[\"create_note\",\"update_note\",\"delete_note\","
+            "["
+            "\"create_note\",\"update_note\",\"delete_note\","
             "\"create_reminder\",\"update_reminder\",\"delete_reminder\","
             "\"add_todo\",\"update_todo\",\"delete_todo\","
-            "\"create_event\",\"update_event\",\"delete_event\","
-            "\"fetch_emails\",\"mark_email_read\",\"send_email\"]\n\n"
-            "JSON Action Schema:\n"
-            "[{{\"action\": \"create_reminder\","
-            "\"params\": {{\"title\": \"string\",\"datetime\": \"ISO8601\","
-            "\"recurrence\": \"optional\",\"service\": \"gmail|calendar|notes|todo|whatsapp|sms|system\"}},"
-            "\"intent\": \"short natural language summary\","
-            "\"confidence\": 0.90}}]"
+            "\"create_event\",\"update_event\",\"delete_event\",\"fetch_events\","
+            "\"fetch_emails\",\"mark_email_read\",\"send_email\""
+            "]\n\n"
+
+            "CALENDAR ACTION SCHEMA:\n"
+            "- create_event params:\n"
+            "  {\"summary\": \"string\", \"description\": \"optional string\", "
+            "\"start_time\": \"ISO8601\", \"end_time\": \"optional ISO8601\", "
+            "\"attendees\": [\"email\"], \"timezone\": \"optional string\", "
+            "\"service\": \"calendar\"}\n"
+            "- update_event params:\n"
+            "  {\"event_id\": \"string\", \"summary\": \"optional\", \"description\": \"optional\", "
+            "\"start_time\": \"optional ISO8601\", \"end_time\": \"optional ISO8601\", "
+            "\"attendees\": [\"email\"], \"service\": \"calendar\"}\n"
+            "- delete_event params:\n"
+            "  {\"event_id\": \"string\", \"service\": \"calendar\"}\n"
+            "- fetch_events params:\n"
+            "  {\"time_min\": \"optional ISO8601\", \"time_max\": \"optional ISO8601\", "
+            "\"max_results\": 10, \"service\": \"calendar\"}\n\n"
+
+            "JSON ACTION SCHEMA EXAMPLE:\n"
+            "[{\"action\": \"create_reminder\","
+            "\"params\": {\"title\": \"Buy milk\", \"datetime\": \"2025-11-15T18:00\", \"service\": \"calendar\"},"
+            "\"intent\": \"Set a reminder to buy milk\","
+            "\"confidence\": 0.90}]\n"
         )
 
         response = self.client.chat.completions.create(
@@ -87,6 +109,7 @@ class TaskPlanner:
         )
 
         content = response.choices[0].message.content
+
         try:
             parsed = json.loads(content)
             return parsed if isinstance(parsed, list) else []
@@ -94,6 +117,7 @@ class TaskPlanner:
             if retry < 2:
                 return self._retry_fix_json(content, user_message, conversation_history, retry)
             return []
+
 
     def _retry_fix_json(self, bad_output: str, original_message: str, conversation_history: str, retry: int) -> List[Dict[str, Any]]:
         today = datetime.now().date()
