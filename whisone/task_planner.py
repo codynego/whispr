@@ -14,8 +14,8 @@ class TaskPlanner:
     - Retries for malformed output
     """
 
-    def __init__(self, openai_api_key: str, model: str = "gpt-5-mini"):
-        openai.api_key = openai_api_key
+    def __init__(self, openai_api_key: str, model: str = "gpt-4o-mini"):
+        self.client = openai.OpenAI(api_key=openai_api_key)
         self.model = model
 
     # -------------------------
@@ -84,7 +84,7 @@ User message:
 \"\"\"{user_message}\"\"\"
 """
 
-        response = openai.ChatCompletion.create(
+        response = self.client.chat.completions.create(
             model=self.model,
             messages=[
                 {"role": "system", "content": "You convert natural language to structured JSON tasks."},
@@ -93,7 +93,7 @@ User message:
             temperature=0
         )
 
-        content = response['choices'][0]['message']['content']
+        content = response.choices[0].message.content
 
         try:
             parsed = json.loads(content)
@@ -123,7 +123,7 @@ Fix it. Return ONLY a valid JSON array of actions based on:
 \"\"\"{original_message}\"\"\"
 """
 
-        response = openai.ChatCompletion.create(
+        response = self.client.chat.completions.create(
             model=self.model,
             messages=[
                 {"role": "system", "content": "Fix invalid JSON and return clean JSON only."},
@@ -132,7 +132,7 @@ Fix it. Return ONLY a valid JSON array of actions based on:
             temperature=0
         )
 
-        content = response['choices'][0]['message']['content']
+        content = response.choices[0].message.content
 
         try:
             return json.loads(content)
