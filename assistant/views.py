@@ -169,6 +169,7 @@ def get_assistant_response(request, task_id):
         # Get assistant reply from DB
         # Optional: you could also return result.result
         last_reply = AssistantMessage.objects.filter(user=request.user, role="assistant").order_by('-created_at').first()
+        print("Last assistant reply:", last_reply.content if last_reply else "No reply found")
         return Response({
             "status": "done",
             "assistant_reply": last_reply.content if last_reply else "No reply"
