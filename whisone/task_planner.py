@@ -74,6 +74,9 @@ Supported actions:
   "create_event", "update_event", "delete_event",
   "send_email"
 ]
+If the user wants to "add" something to a note/reminder/todo but no specific note/reminder/todo is referenced, 
+return action create_note/create_reminder/create_todo with the content. Only use update if a reference is provided.
+
 
 JSON Action Schema:
 [ {{"action": "create_reminder",
