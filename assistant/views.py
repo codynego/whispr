@@ -108,7 +108,7 @@ class AssistantChatView(generics.GenericAPIView):
         # response_text = handler.handle(prompt)
         response_text = process_user_message.delay(user.id, prompt)
 
-        response_text = response_text["reply"]
+        response_text = response_text
         print("Gemini response:", response_text)
         # Save assistant response
         reply = AssistantMessage.objects.create(user=user, role="assistant", content=response_text)

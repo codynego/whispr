@@ -39,6 +39,7 @@ def process_user_message(user_id: int, message: str):
     response_gen = ResponseGenerator(openai_api_key=settings.OPENAI_API_KEY)
     print("Generating response...")
     response_text = response_gen.generate_response(message, executor_results)
+    print("Generated response:", response_text)
 
     # 4️⃣ Store or send response to user (example: save in DB or send via WebSocket/WhatsApp)
     # UserResponse.objects.create(user=user, original_message=message, response_text=response_text)
