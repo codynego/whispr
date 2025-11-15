@@ -159,9 +159,10 @@ from rest_framework.response import Response
 @api_view(['GET'])
 def get_assistant_response(request, task_id):
     task_result = AsyncResult(task_id)
+    print("Checking task status for ID:", task_id, "Status:", task_result.status)
 
     if task_result.ready():
-
+        print("Task result ready:", task_result.result)
         result_text = task_result.result
         AssistantMessage.objects.create(user=request.user, role="assistant", content=result_text)
         return Response({"assistant_reply": result_text, "status": "done"})
