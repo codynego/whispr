@@ -7,6 +7,7 @@ from .response_generator import ResponseGenerator
 from django.conf import settings
 from .models import Integration
 from django.contrib.auth import get_user_model
+from assistant.models import AssistantMessage
 
 
 User = get_user_model()
@@ -43,6 +44,13 @@ def process_user_message(user_id: int, message: str):
     print("Generating response...")
     response_text = response_gen.generate_response(message, executor_results)
     print("Generated response:", response_text)
+
+
+    AssistantMessage.objects.create(
+        user=user,
+        role="assistant",
+        content=response_text
+    )
 
     # 4️⃣ Store or send response to user (example: save in DB or send via WebSocket/WhatsApp)
     # UserResponse.objects.create(user=user, original_message=message, response_text=response_text)
