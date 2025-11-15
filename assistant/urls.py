@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import AssistantTaskListCreateView, AssistantTaskDetailView, AssistantDueTaskView, AssistantConfigView
+from .views import AssistantTaskListCreateView, AssistantTaskDetailView, AssistantDueTaskView, AssistantConfigView, get_assistant_response
 from .views import AssistantChatView, AutomationListCreateView, AutomationDetailView, AutomationTriggerView, AutomationToggleView
 
 urlpatterns = [
@@ -16,5 +16,5 @@ urlpatterns = [
     path("automations/<int:pk>/trigger/", AutomationTriggerView.as_view(), name="automation-trigger"),
     path("automations/<int:pk>/toggle/", AutomationToggleView.as_view(), name="automation-toggle"),
 
-    
+    path('chat/response/<str:task_id>/', get_assistant_response, name='assistant-response'),
 ]

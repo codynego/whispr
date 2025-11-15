@@ -78,16 +78,57 @@ class AssistantDueTaskView(generics.ListAPIView):
         )
 
     
+# class AssistantChatView(generics.GenericAPIView):
+#     permission_classes = [permissions.IsAuthenticated]
+#     serializer_class = AssistantMessageSerializer
+
+
+#     def get(self, request):
+#         """
+#         Fetch the user's recent chat history with the assistant.
+#         You can limit the number of messages (e.g., last 20)
+#         """
+#         messages = AssistantMessage.objects.filter(user=request.user).order_by('-created_at')[:20]
+#         serializer = self.get_serializer(messages, many=True)
+#         return Response(serializer.data, status=status.HTTP_200_OK)
+
+#     def post(self, request):
+#         user = request.user
+#         prompt = request.data.get("message")
+
+#         if not prompt:
+#             return Response({"error": "Message is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+#         # Get assistant config
+#         config, _ = AssistantConfig.objects.get_or_create(user=user)
+        
+#         # Save user message
+#         AssistantMessage.objects.create(user=user, role="user", content=prompt)
+#         # handler = MessageHandler(user=user)
+#         # response_text = handler.handle(prompt)
+#         response_text = process_user_message.delay(user.id, prompt)
+
+#         response_text = response_text
+#         print("Gemini response:", response_text)
+#         # Save assistant response
+#         reply = AssistantMessage.objects.create(user=user, role="assistant", content=response_text)
+
+#         return Response({
+#             "user_message": prompt,
+#             "assistant_reply": response_text
+#         })
+
+from rest_framework import generics, permissions, status
+from rest_framework.response import Response
+from .models import AssistantMessage, AssistantConfig
+from .serializers import AssistantMessageSerializer
+from .tasks import process_user_message  # Celery task
+
 class AssistantChatView(generics.GenericAPIView):
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = AssistantMessageSerializer
 
-
     def get(self, request):
-        """
-        Fetch the user's recent chat history with the assistant.
-        You can limit the number of messages (e.g., last 20)
-        """
         messages = AssistantMessage.objects.filter(user=request.user).order_by('-created_at')[:20]
         serializer = self.get_serializer(messages, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
@@ -104,19 +145,34 @@ class AssistantChatView(generics.GenericAPIView):
         
         # Save user message
         AssistantMessage.objects.create(user=user, role="user", content=prompt)
-        # handler = MessageHandler(user=user)
-        # response_text = handler.handle(prompt)
-        response_text = process_user_message.delay(user.id, prompt)
 
-        response_text = response_text
-        print("Gemini response:", response_text)
-        # Save assistant response
-        reply = AssistantMessage.objects.create(user=user, role="assistant", content=response_text)
+        # Enqueue GPT processing task
+        task = process_user_message.delay(user.id, prompt)
 
+        # Return task ID so frontend can poll for result
         return Response({
             "user_message": prompt,
-            "assistant_reply": response_text
-        })
+            "task_id": task.id,
+            "status": "processing"
+        }, status=status.HTTP_200_OK)
+
+
+from celery.result import AsyncResult
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+
+@api_view(['GET'])
+def get_assistant_response(request, task_id):
+    task_result = AsyncResult(task_id)
+
+    if task_result.ready():
+
+        result_text = task_result.result
+        AssistantMessage.objects.create(user=request.user, role="assistant", content=result_text)
+        return Response({"assistant_reply": result_text, "status": "done"})
+    
+    return Response({"status": "pending"})
+
 
 
 # from assistant.ai_core.message_handler import process_message  # Import the Celery task
