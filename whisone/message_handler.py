@@ -1,9 +1,9 @@
 from celery import shared_task
 from datetime import datetime
 
-from .services.task_planner import TaskPlanner
-from .services.executor import Executor
-from .services.response_generator import ResponseGenerator
+from .task_planner import TaskPlanner
+from .executor import Executor
+from .response_generator import ResponseGenerator
 from django.conf import settings
 from .models import Integration
 
