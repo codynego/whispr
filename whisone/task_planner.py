@@ -41,52 +41,42 @@ class TaskPlanner:
 
     def _call_llm(self, user_message: str, conversation_history: str, retry: int = 0) -> List[Dict[str, Any]]:
         today = datetime.now().date()
-        prompt = f"""
-You are an AI Task Planner for Whisone.
 
-Conversation so far:
-{conversation_history}
+        # Use normal string instead of f-string for JSON-heavy prompt
+        prompt = (
+            "You are an AI Task Planner for Whisone.\n\n"
+            "Conversation so far:\n"
+            + conversation_history
+            + f"\n\nToday's date: {today}\n\n"
+            "User's new message:\n\"\"\"" + user_message + "\"\"\"\n\n"
+            "Your job:\n"
+            "1. Extract all tasks (notes, reminders, todos, calendar events).\n"
+            "2. Break multi-step instructions into separate actions.\n"
+            "3. Identify intent clearly.\n"
+            "4. Parse date/time expressions into ISO format (YYYY-MM-DDTHH:MM).\n"
+            "   - If no date is given, assume today.\n"
+            "5. Include a confidence score (0–1).\n"
+            "6. ALWAYS return a valid JSON array.\n"
+            "7. NEVER include explanations, text, or code blocks — ONLY JSON.\n\n"
+            "Rules:\n"
+            "- If the user wants to \"add\" something but no specific note/reminder/todo exists, "
+            "use create_note/create_reminder/create_todo.\n"
+            "- Use update_* only if a specific note/reminder/todo or event_id is referenced.\n"
+            "- For calendar events, use create_event/update_event/delete_event as needed.\n\n"
+            "Supported actions:\n"
+            "[\"create_note\",\"update_note\",\"delete_note\","
+            "\"create_reminder\",\"update_reminder\",\"delete_reminder\","
+            "\"add_todo\",\"update_todo\",\"delete_todo\","
+            "\"create_event\",\"update_event\",\"delete_event\","
+            "\"fetch_emails\",\"mark_email_read\",\"send_email\"]\n\n"
+            "JSON Action Schema:\n"
+            "[{{\"action\": \"create_reminder\","
+            "\"params\": {{\"title\": \"string\",\"datetime\": \"ISO8601\","
+            "\"recurrence\": \"optional\",\"service\": \"gmail|calendar|notes|todo|whatsapp|sms|system\"}},"
+            "\"intent\": \"short natural language summary\","
+            "\"confidence\": 0.90}}]"
+        )
 
-Today's date: {today}
-
-User's new message:
-\"\"\"{user_message}\"\"\"
-
-Your job:
-1. Extract all tasks (notes, reminders, todos, calendar events).
-2. Break multi-step instructions into separate actions.
-3. Identify intent clearly.
-4. Parse date/time expressions into ISO format (YYYY-MM-DDTHH:MM).
-   - If no date is given, assume today.
-5. Include a confidence score (0–1).
-6. ALWAYS return a valid JSON array.
-7. NEVER include explanations, text, or code blocks — ONLY JSON.
-
-Rules:
-- If the user wants to "add" something but no specific note/reminder/todo exists, use create_note/create_reminder/create_todo.
-- Use update_* only if a specific note/reminder/todo or event_id is referenced.
-- For calendar events, use create_event/update_event/delete_event as needed.
-
-Supported actions:
-["create_note","update_note","delete_note",
- "create_reminder","update_reminder","delete_reminder",
- "add_todo","update_todo","delete_todo",
- "create_event","update_event","delete_event",
- "fetch_emails","mark_email_read","send_email"]
-
-JSON Action Schema:
-[{
-    "action": "create_reminder",
-    "params": {
-        "title": "string",
-        "datetime": "ISO8601",
-        "recurrence": "optional",
-        "service": "gmail|calendar|notes|todo|whatsapp|sms|system"
-    },
-    "intent": "short natural language summary",
-    "confidence": 0.90
-}]
-"""
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[
