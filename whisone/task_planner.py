@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 import openai
 import json
 import dateparser
@@ -14,6 +14,7 @@ class TaskPlanner:
     Includes:
     - Context-aware planning using previous messages.
     - Keyword extraction for fetch/search operations.
+    - Robust handling of invalid or incomplete LLM responses.
     """
 
     FETCH_ACTIONS = {
@@ -34,11 +35,10 @@ class TaskPlanner:
     # ---------------------------------------------------------------------
     def plan_tasks(self, user: User, user_message: str) -> List[Dict[str, Any]]:
         """Create structured tasks from natural language."""
-        
+
         # Load recent conversation history
         history_msgs = AssistantMessage.objects.filter(user=user).order_by("-created_at")[:self.history_limit]
         history_msgs = reversed(history_msgs)
-
         conversation_history = "\n".join(
             ("User: " if msg.role == "user" else "Assistant: ") + msg.content
             for msg in history_msgs
@@ -47,13 +47,22 @@ class TaskPlanner:
         # Get raw actions from LLM
         raw_actions = self._call_llm(user_message, conversation_history)
 
-        # Normalize + keyword extraction
+        # Ensure a list
+        if not isinstance(raw_actions, list):
+            raw_actions = [raw_actions] if raw_actions else []
+
+        # Normalize and extract keywords
         return self._normalize_actions(raw_actions, original_message=user_message)
 
     # ---------------------------------------------------------------------
     # LLM CALL
     # ---------------------------------------------------------------------
     def _call_llm(self, user_message: str, conversation_history: str, retry: int = 0) -> List[Dict[str, Any]]:
+        """
+        Calls OpenAI to get structured tasks from natural language.
+        Returns a list of dicts with keys: action, params, intent, confidence.
+        Handles invalid JSON, retries, and unexpected output.
+        """
         today = datetime.now().date()
 
         prompt = (
@@ -61,14 +70,12 @@ class TaskPlanner:
             f"Conversation history:\n{conversation_history}\n\n"
             f"Today's date: {today}\n\n"
             f"User message:\n\"\"\"{user_message}\"\"\"\n\n"
-
             "Output Rules:\n"
             "- Return ONLY a JSON array.\n"
             "- Each item must include: action, params, intent, confidence.\n"
             "- Dates must be ISO8601.\n"
             "- If the user is searching emails/events/notes/todos/reminders, extract FILTER KEYWORDS as a list.\n"
             "- Do NOT write explanations.\n\n"
-
             "Supported actions:\n"
             "[\"create_note\",\"update_note\",\"delete_note\","
             "\"create_reminder\",\"update_reminder\",\"delete_reminder\","
@@ -78,77 +85,92 @@ class TaskPlanner:
             "\"fetch_todos\",\"fetch_notes\",\"fetch_reminders\"]"
         )
 
-        response = self.client.chat.completions.create(
-            model=self.model,
-            temperature=0,
-            messages=[
-                {"role": "system", "content": "Convert natural language into machine-readable JSON tasks."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-
-        content = response.choices[0].message.content
-
         try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                temperature=0,
+                messages=[
+                    {"role": "system", "content": "Convert natural language into machine-readable JSON tasks."},
+                    {"role": "user", "content": prompt}
+                ]
+            )
+
+            content = response.choices[0].message.content
+
+            # Try parsing JSON
             parsed = json.loads(content)
-            return parsed if isinstance(parsed, list) else []
+
+            # Force list of dicts
+            if isinstance(parsed, list):
+                return [
+                    p if isinstance(p, dict) else {
+                        "action": str(p),
+                        "params": {},
+                        "intent": str(p),
+                        "confidence": 0.9
+                    } for p in parsed
+                ]
+            else:
+                return [{
+                    "action": str(parsed),
+                    "params": {},
+                    "intent": str(parsed),
+                    "confidence": 0.9
+                }]
+
         except json.JSONDecodeError:
+            # Retry JSON fix
             if retry < 2:
-                return self._retry_fix_json(content, user_message, conversation_history, retry)
+                return self._retry_fix_json(content, user_message, conversation_history, retry + 1)
             return []
+        except Exception as e:
+            # Catch all unexpected errors
+            print(f"[TaskPlanner _call_llm error]: {e}")
+            return []
+
 
     # ---------------------------------------------------------------------
     # FIX INVALID JSON
     # ---------------------------------------------------------------------
     def _retry_fix_json(self, bad_output: str, user_message: str, history: str, retry: int):
-        today = datetime.now().date()
-
         prompt = f"""
 The previous response was invalid JSON:
 
 \"\"\"{bad_output}\"\"\"
 
-Fix it. Return ONLY valid JSON.
+Fix it. Return ONLY valid JSON array of objects with keys: action, params, intent, confidence.
 
 Conversation:
 {history}
 
 User message:
 \"\"\"{user_message}\"\"\"
-
-Today's date: {today}
 """
-        response = self.client.chat.completions.create(
-            model=self.model,
-            temperature=0,
-            messages=[
-                {"role": "system", "content": "Return only valid JSON."},
-                {"role": "user", "content": prompt}
-            ]
-        )
-
         try:
-            return json.loads(response.choices[0].message.content)
+            response = self.client.chat.completions.create(
+                model=self.model,
+                temperature=0,
+                messages=[
+                    {"role": "system", "content": "Return only valid JSON."},
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            content = response.choices[0].message.content
+            parsed = json.loads(content)
+            if isinstance(parsed, list):
+                return [p if isinstance(p, dict) else {"action": str(p), "params": {}, "intent": str(p), "confidence": 0.9} for p in parsed]
+            return [{"action": str(parsed), "params": {}, "intent": str(parsed), "confidence": 0.9}]
         except:
             return []
 
     # ---------------------------------------------------------------------
     # NORMALIZATION + KEYWORD EXTRACTION
     # ---------------------------------------------------------------------
-    def _normalize_actions(self, actions: List, original_message: str) -> List[Dict[str, Any]]:
-        """
-        Normalize actions:
-        - Ensure each action is a dict.
-        - Normalize datetime.
-        - Infer service if missing.
-        - Extract filters for fetch/search actions.
-        """
+    def _normalize_actions(self, actions: List[Union[Dict[str, Any], str]], original_message: str) -> List[Dict[str, Any]]:
         cleaned = []
-
         for task in actions:
-            # ⚠️ Safety: skip if not a dict
             if not isinstance(task, dict):
-                continue
+                task = {"action": str(task), "params": {}, "intent": str(task), "confidence": 0.9}
 
             action = task.get("action")
             params = task.get("params", {})
@@ -159,15 +181,16 @@ Today's date: {today}
             if "datetime" in params:
                 params["datetime"] = self._normalize_datetime(params["datetime"])
 
-            # Infer service if missing
+            # Infer service
             if "service" not in params:
                 params["service"] = self._infer_service(action)
 
-            # Keyword extraction for fetch/search actions
-            if action in self.FETCH_ACTIONS:
-                # Only add filters if not already present
-                if "filters" not in params:
+            # Keyword extraction
+            if action in self.FETCH_ACTIONS and "filters" not in params:
+                try:
                     params["filters"] = self._extract_keywords(original_message)
+                except:
+                    params["filters"] = []
 
             cleaned.append({
                 "action": action,
@@ -175,17 +198,16 @@ Today's date: {today}
                 "intent": intent,
                 "confidence": confidence
             })
-
         return cleaned
 
     # ---------------------------------------------------------------------
     # NATURAL DATE PARSE
     # ---------------------------------------------------------------------
-    def _normalize_datetime(self, dt_str: str) -> Optional[str]:
+    def _normalize_datetime(self, dt_str: Optional[str]) -> Optional[str]:
         if not dt_str:
             return None
-        result = dateparser.parse(dt_str, settings={"RELATIVE_BASE": datetime.now()})
-        return result.isoformat() if result else None
+        dt = dateparser.parse(dt_str, settings={"RELATIVE_BASE": datetime.now()})
+        return dt.isoformat() if dt else None
 
     # ---------------------------------------------------------------------
     # SERVICE INFERENCE
@@ -204,23 +226,18 @@ Today's date: {today}
         return "system"
 
     # ---------------------------------------------------------------------
-    # 🔥 NEW: KEYWORD EXTRACTION LOGIC
+    # KEYWORD EXTRACTION
     # ---------------------------------------------------------------------
     def _extract_keywords(self, message: str) -> List[str]:
-        """
-        Extract meaningful search keywords.
-        E.g. "show me amazon payment emails" → ["amazon", "payment"]
-        """
-        response = self.client.chat.completions.create(
-            model=self.model,
-            temperature=0,
-            messages=[
-                {"role": "system", "content": "Extract concise search keywords from the message. Return JSON list only."},
-                {"role": "user", "content": f"Message: {message}\nReturn only a JSON list of keywords."}
-            ]
-        )
-
         try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                temperature=0,
+                messages=[
+                    {"role": "system", "content": "Extract concise search keywords from the message. Return JSON list only."},
+                    {"role": "user", "content": f"Message: {message}\nReturn only a JSON list of keywords."}
+                ]
+            )
             return json.loads(response.choices[0].message.content)
         except:
             return []
