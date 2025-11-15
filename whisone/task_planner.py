@@ -11,7 +11,10 @@ User = get_user_model()
 class TaskPlanner:
     """
     Converts natural language into structured tasks.
-    Now supports context-aware planning using previous messages.
+    Supports:
+    - Context-aware planning using previous messages
+    - Notes, reminders, todos, calendar events
+    - Accurate date parsing relative to today
     """
 
     def __init__(self, openai_api_key: str, model: str = "gpt-4o-mini", history_limit: int = 3):
@@ -20,69 +23,65 @@ class TaskPlanner:
         self.history_limit = history_limit
 
     def plan_tasks(self, user: User, user_message: str) -> List[Dict[str, Any]]:
-        """
-        Convert user natural language into structured action steps,
-        including context from previous messages.
-        """
-        # 1️⃣ Get previous conversation history
+        # Retrieve recent conversation
         history_msgs = AssistantMessage.objects.filter(user=user).order_by("-created_at")[:self.history_limit]
-        history_msgs = reversed(history_msgs)
-        conversation_history = ""
-        for msg in history_msgs:
-            role = "User" if msg.role == "user" else "Assistant"
-            conversation_history += f"{role}: {msg.content}\n"
+        conversation_history = "\n".join(
+            f"{'User' if msg.role=='user' else 'Assistant'}: {msg.content}" for msg in reversed(history_msgs)
+        )
 
-        # 2️⃣ Call LLM with context
+        # Call LLM with context
         raw_actions = self._call_llm(user_message, conversation_history)
 
-        # 3️⃣ Normalize actions
-        cleaned_actions = self._normalize_actions(raw_actions)
-        return cleaned_actions
+        # Normalize actions (date, service mapping, confidence)
+        return self._normalize_actions(raw_actions)
 
     def _call_llm(self, user_message: str, conversation_history: str, retry: int = 0) -> List[Dict[str, Any]]:
         today = datetime.now().date()
-        """
-        Calls GPT model and ensures valid JSON is returned.
-        Retries up to 2 times if JSON is malformed.
-        """
         prompt = f"""
-You are an AI Task Planner for an automation assistant called Whisone.
+You are an AI Task Planner for Whisone.
 
 Conversation so far:
 {conversation_history}
 
-today's date is {today}.
+Today's date: {today}
 
 User's new message:
 \"\"\"{user_message}\"\"\"
 
 Your job:
-1. Extract ALL tasks from the user's message.
+1. Extract all tasks (notes, reminders, todos, calendar events).
 2. Break multi-step instructions into separate actions.
 3. Identify intent clearly.
 4. Parse date/time expressions into ISO format (YYYY-MM-DDTHH:MM).
-5. If date/time is vague, guess a reasonable time.
-6. Include a confidence score (0–1).
-7. ALWAYS return a valid JSON array.
-8. NEVER include explanations, text, or code blocks — ONLY JSON.
+   - If no date is given, assume today.
+5. Include a confidence score (0–1).
+6. ALWAYS return a valid JSON array.
+7. NEVER include explanations, text, or code blocks — ONLY JSON.
+
+Rules:
+- If the user wants to "add" something but no specific note/reminder/todo exists, use create_note/create_reminder/create_todo.
+- Use update_* only if a specific note/reminder/todo or event_id is referenced.
+- For calendar events, use create_event/update_event/delete_event as needed.
 
 Supported actions:
-[ "create_note", "update_note", "delete_note",
-  "create_reminder", "update_reminder", "delete_reminder",
-  "add_todo", "update_todo", "delete_todo",
-  "fetch_emails", "mark_email_read",
-  "create_event", "update_event", "delete_event",
-  "send_email"
-]
-If the user wants to "add" something to a note/reminder/todo but no specific note/reminder/todo is referenced, 
-return action create_note/create_reminder/create_todo with the content. Only use update if a reference is provided.
-
+["create_note","update_note","delete_note",
+ "create_reminder","update_reminder","delete_reminder",
+ "add_todo","update_todo","delete_todo",
+ "create_event","update_event","delete_event",
+ "fetch_emails","mark_email_read","send_email"]
 
 JSON Action Schema:
-[ {{"action": "create_reminder",
-   "params": {{"title": "string","datetime": "ISO8601","recurrence": "optional","service": "gmail|calendar|notes|todo|whatsapp|sms|system"}},
-   "intent": "short natural language summary",
-   "confidence": 0.90 }} ]
+[{
+    "action": "create_reminder",
+    "params": {
+        "title": "string",
+        "datetime": "ISO8601",
+        "recurrence": "optional",
+        "service": "gmail|calendar|notes|todo|whatsapp|sms|system"
+    },
+    "intent": "short natural language summary",
+    "confidence": 0.90
+}]
 """
         response = self.client.chat.completions.create(
             model=self.model,
@@ -94,7 +93,6 @@ JSON Action Schema:
         )
 
         content = response.choices[0].message.content
-
         try:
             parsed = json.loads(content)
             return parsed if isinstance(parsed, list) else []
@@ -109,7 +107,7 @@ JSON Action Schema:
 The previous response was INVALID JSON:
 \"\"\"{bad_output}\"\"\"
 
-today's date is {today}.
+Today's date: {today}
 
 Fix it. Return ONLY a valid JSON array of actions based on:
 
@@ -127,24 +125,12 @@ User message:
             ],
             temperature=0
         )
-
-        content = response.choices[0].message.content
         try:
-            return json.loads(content)
+            return json.loads(response.choices[0].message.content)
         except:
             return []
 
-
-    # -------------------------
-    # INTERNAL: Normalize actions
-    # -------------------------
     def _normalize_actions(self, actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """
-        - Ensures fields exist
-        - Fix missing datetime via natural language parsing
-        - Adds confidence if missing
-        """
-
         cleaned = []
 
         for task in actions:
@@ -153,11 +139,11 @@ User message:
             intent = task.get("intent", action_name)
             confidence = float(task.get("confidence", 0.90))
 
-            # -------- Date normalization --------
+            # Date normalization
             if "datetime" in params and params["datetime"]:
                 params["datetime"] = self._normalize_datetime(params["datetime"])
 
-            # -------- Basic service routing hint --------
+            # Service inference
             if "service" not in params:
                 params["service"] = self._infer_service(action_name)
 
@@ -170,25 +156,13 @@ User message:
 
         return cleaned
 
-    # -------------------------
-    # Parse natural datetime
-    # -------------------------
     def _normalize_datetime(self, dt_str: str) -> Optional[str]:
         """
-        Convert human language date/time into ISO-8601.
-        Uses dateparser with current reference date to avoid wrong years.
+        Convert natural language date/time into ISO-8601 using today as reference.
         """
-        result = dateparser.parse(
-            dt_str,
-            settings={'RELATIVE_BASE': datetime.now()}
-        )
-        if result:
-            return result.isoformat()
-        return None
+        result = dateparser.parse(dt_str, settings={'RELATIVE_BASE': datetime.now()})
+        return result.isoformat() if result else None
 
-    # -------------------------
-    # Map action → default integration
-    # -------------------------
     def _infer_service(self, action: str) -> str:
         if "email" in action:
             return "gmail"
@@ -197,7 +171,7 @@ User message:
         if "note" in action:
             return "notes"
         if "reminder" in action:
-            return "whatsapp"  # your default reminder channel
+            return "whatsapp"
         if "todo" in action:
             return "todo"
         return "system"
