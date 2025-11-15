@@ -40,6 +40,7 @@ class TaskPlanner:
         return cleaned_actions
 
     def _call_llm(self, user_message: str, conversation_history: str, retry: int = 0) -> List[Dict[str, Any]]:
+        today = datetime.now().date()
         """
         Calls GPT model and ensures valid JSON is returned.
         Retries up to 2 times if JSON is malformed.
@@ -49,6 +50,8 @@ You are an AI Task Planner for an automation assistant called Whisone.
 
 Conversation so far:
 {conversation_history}
+
+today's date is {today}.
 
 User's new message:
 \"\"\"{user_message}\"\"\"
@@ -98,7 +101,7 @@ JSON Action Schema:
             return []
 
     def _retry_fix_json(self, bad_output: str, original_message: str, conversation_history: str, retry: int) -> List[Dict[str, Any]]:
-        today = datetime.now().date().isoformat()
+        today = datetime.now().date()
         repair_prompt = f"""
 The previous response was INVALID JSON:
 \"\"\"{bad_output}\"\"\"
