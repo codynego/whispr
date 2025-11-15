@@ -143,6 +143,7 @@ class AssistantChatView(generics.GenericAPIView):
 
         # Enqueue GPT processing task
         task = process_user_message.delay(user.id, prompt)
+        print("Enqueued task ID:", task.id)
 
         # Return task ID so frontend can poll for result
         return Response({
@@ -162,12 +163,15 @@ def get_assistant_response(request, task_id):
     print("Checking task status for ID:", task_id, "Status:", task_result.status)
 
     if task_result.ready():
-        print("Task result ready:", task_result.result)
-        result_text = task_result.result
-        AssistantMessage.objects.create(user=request.user, role="assistant", content=result_text)
-        return Response({"assistant_reply": result_text, "status": "done"})
-    
-    return Response({"status": "pending"})
+        # Get assistant reply from DB
+        # Optional: you could also return result.result
+        last_reply = AssistantMessage.objects.filter(user=request.user, role="assistant").order_by('-created_at').first()
+        return Response({
+            "status": "done",
+            "assistant_reply": last_reply.content if last_reply else "No reply"
+        })
+    else:
+        return Response({"status": "pending"})
 
 
 
