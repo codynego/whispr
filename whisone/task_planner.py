@@ -11,80 +11,101 @@ User = get_user_model()
 class TaskPlanner:
     """
     Converts natural language into structured tasks.
-    Includes:
-    - Context-aware planning using previous messages.
-    - Keyword extraction for fetch/search operations.
+    Now supports context-aware planning using previous messages.
     """
-
-    FETCH_ACTIONS = {
-        "fetch_emails",
-        "fetch_events",
-        "fetch_todos",
-        "fetch_notes",
-        "fetch_reminders",
-    }
 
     def __init__(self, openai_api_key: str, model: str = "gpt-4o-mini", history_limit: int = 3):
         self.client = openai.OpenAI(api_key=openai_api_key)
         self.model = model
         self.history_limit = history_limit
 
-    # ---------------------------------------------------------------------
-    # MAIN ENTRY
-    # ---------------------------------------------------------------------
     def plan_tasks(self, user: User, user_message: str) -> List[Dict[str, Any]]:
-        """Create structured tasks from natural language."""
-        
-        # Load recent conversation history
+        """
+        Convert user natural language into structured action steps,
+        including context from previous messages.
+        """
+        # 1️⃣ Get previous conversation history
         history_msgs = AssistantMessage.objects.filter(user=user).order_by("-created_at")[:self.history_limit]
         history_msgs = reversed(history_msgs)
+        conversation_history = ""
+        for msg in history_msgs:
+            role = "User" if msg.role == "user" else "Assistant"
+            conversation_history += f"{role}: {msg.content}\n"
 
-        conversation_history = "\n".join(
-            ("User: " if msg.role == "user" else "Assistant: ") + msg.content
-            for msg in history_msgs
-        )
-
-        # Get raw actions from LLM
+        # 2️⃣ Call LLM with context
         raw_actions = self._call_llm(user_message, conversation_history)
 
-        # Normalize + keyword extraction
-        return self._normalize_actions(raw_actions, original_message=user_message)
+        # 3️⃣ Normalize actions
+        cleaned_actions = self._normalize_actions(raw_actions)
+        return cleaned_actions
 
-    # ---------------------------------------------------------------------
-    # LLM CALL
-    # ---------------------------------------------------------------------
     def _call_llm(self, user_message: str, conversation_history: str, retry: int = 0) -> List[Dict[str, Any]]:
         today = datetime.now().date()
 
         prompt = (
-            "You are the Whisone Task Planner. Convert user text into structured JSON actions.\n\n"
-            f"Conversation history:\n{conversation_history}\n\n"
-            f"Today's date: {today}\n\n"
-            f"User message:\n\"\"\"{user_message}\"\"\"\n\n"
+            "You are an AI Task Planner for Whisone.\n\n"
 
-            "Output Rules:\n"
-            "- Return ONLY a JSON array.\n"
-            "- Each item must include: action, params, intent, confidence.\n"
-            "- Dates must be ISO8601.\n"
-            "- If the user is searching emails/events/notes/todos/reminders, extract FILTER KEYWORDS as a list.\n"
-            "- Do NOT write explanations.\n\n"
+            "Conversation so far:\n"
+            + conversation_history
+            + f"\n\nToday's date: {today}\n\n"
+
+            "User's new message:\n\"\"\"" + user_message + "\"\"\"\n\n"
+
+            "Your job:\n"
+            "1. Extract all tasks (notes, reminders, todos, calendar events).\n"
+            "2. Break multi-step instructions into separate actions.\n"
+            "3. Identify intent clearly.\n"
+            "4. Parse date/time expressions into ISO format (YYYY-MM-DDTHH:MM).\n"
+            "   - If no date is given, assume today.\n"
+            "5. Include a confidence score (0–1).\n"
+            "6. ALWAYS return a valid JSON array.\n"
+            "7. NEVER include explanations, text, or code blocks — ONLY JSON.\n\n"
+
+            "Rules:\n"
+            "- If the user wants to 'add' something but no specific note/reminder/todo exists, "
+            "use create_note/create_reminder/create_todo.\n"
+            "- Use update_* only if a specific note/reminder/todo or event_id is referenced.\n"
+            "- For calendar events, use fetch_events/create_event/update_event/delete_event with the schema below.\n\n"
 
             "Supported actions:\n"
-            "[\"create_note\",\"update_note\",\"delete_note\","
+            "["
+            "\"create_note\",\"update_note\",\"delete_note\","
             "\"create_reminder\",\"update_reminder\",\"delete_reminder\","
             "\"add_todo\",\"update_todo\",\"delete_todo\","
             "\"create_event\",\"update_event\",\"delete_event\",\"fetch_events\","
-            "\"fetch_emails\",\"mark_email_read\",\"send_email\","
-            "\"fetch_todos\",\"fetch_notes\",\"fetch_reminders\"]"
+            "\"fetch_emails\",\"mark_email_read\",\"send_email\""
+            "]\n\n"
+
+            "CALENDAR ACTION SCHEMA:\n"
+            "- create_event params:\n"
+            "  {\"summary\": \"string\", \"description\": \"optional string\", "
+            "\"start_time\": \"ISO8601\", \"end_time\": \"optional ISO8601\", "
+            "\"attendees\": [\"email\"], \"timezone\": \"optional string\", "
+            "\"service\": \"calendar\"}\n"
+            "- update_event params:\n"
+            "  {\"event_id\": \"string\", \"summary\": \"optional\", \"description\": \"optional\", "
+            "\"start_time\": \"optional ISO8601\", \"end_time\": \"optional ISO8601\", "
+            "\"attendees\": [\"email\"], \"service\": \"calendar\"}\n"
+            "- delete_event params:\n"
+            "  {\"event_id\": \"string\", \"service\": \"calendar\"}\n"
+            "- fetch_events params:\n"
+            "  {\"time_min\": \"optional ISO8601\", \"time_max\": \"optional ISO8601\", "
+            "\"max_results\": 10, \"service\": \"calendar\"}\n\n"
+
+            "JSON ACTION SCHEMA EXAMPLE:\n"
+            "[{\"action\": \"create_reminder\","
+            "\"params\": {\"title\": \"Buy milk\", \"datetime\": \"2025-11-15T18:00\", \"service\": \"calendar\"},"
+            "\"intent\": \"Set a reminder to buy milk\","
+            "\"confidence\": 0.90}]\n"
         )
 
         response = self.client.chat.completions.create(
             model=self.model,
-            temperature=0,
             messages=[
-                {"role": "system", "content": "Convert natural language into machine-readable JSON tasks."},
+                {"role": "system", "content": "You convert natural language to structured JSON tasks."},
                 {"role": "user", "content": prompt}
-            ]
+            ],
+            temperature=0
         )
 
         content = response.choices[0].message.content
@@ -97,80 +118,67 @@ class TaskPlanner:
                 return self._retry_fix_json(content, user_message, conversation_history, retry)
             return []
 
-    # ---------------------------------------------------------------------
-    # FIX INVALID JSON
-    # ---------------------------------------------------------------------
-    def _retry_fix_json(self, bad_output: str, user_message: str, history: str, retry: int):
+
+    def _retry_fix_json(self, bad_output: str, original_message: str, conversation_history: str, retry: int) -> List[Dict[str, Any]]:
         today = datetime.now().date()
-
-        prompt = f"""
-The previous response was invalid JSON:
-
+        repair_prompt = f"""
+The previous response was INVALID JSON:
 \"\"\"{bad_output}\"\"\"
 
-Fix it. Return ONLY valid JSON.
+today's date is {today}.
+
+Fix it. Return ONLY a valid JSON array of actions based on:
 
 Conversation:
-{history}
+{conversation_history}
 
 User message:
-\"\"\"{user_message}\"\"\"
-
-Today's date: {today}
+\"\"\"{original_message}\"\"\"
 """
         response = self.client.chat.completions.create(
             model=self.model,
-            temperature=0,
             messages=[
-                {"role": "system", "content": "Return only valid JSON."},
-                {"role": "user", "content": prompt}
-            ]
+                {"role": "system", "content": "Fix invalid JSON and return clean JSON only."},
+                {"role": "user", "content": repair_prompt}
+            ],
+            temperature=0
         )
 
+        content = response.choices[0].message.content
         try:
-            return json.loads(response.choices[0].message.content)
+            return json.loads(content)
         except:
             return []
 
-    # ---------------------------------------------------------------------
-    # NORMALIZATION + KEYWORD EXTRACTION
-    # ---------------------------------------------------------------------
-    def _normalize_actions(self, actions: List, original_message: str) -> List[Dict[str, Any]]:
+
+    # -------------------------
+    # INTERNAL: Normalize actions
+    # -------------------------
+    def _normalize_actions(self, actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        Normalize actions:
-        - Ensure each action is a dict.
-        - Normalize datetime.
-        - Infer service if missing.
-        - Extract filters for fetch/search actions.
+        - Ensures fields exist
+        - Fix missing datetime via natural language parsing
+        - Adds confidence if missing
         """
+
         cleaned = []
 
         for task in actions:
-            # ⚠️ Safety: skip if not a dict
-            if not isinstance(task, dict):
-                continue
-
-            action = task.get("action")
+            action_name = task.get("action")
             params = task.get("params", {})
-            intent = task.get("intent", action)
+            intent = task.get("intent", action_name)
             confidence = float(task.get("confidence", 0.90))
 
-            # Normalize datetime
-            if "datetime" in params:
+            # -------- Date normalization --------
+            if "datetime" in params and params["datetime"]:
                 params["datetime"] = self._normalize_datetime(params["datetime"])
 
-            # Infer service if missing
+            # -------- Basic service routing hint --------
             if "service" not in params:
-                params["service"] = self._infer_service(action)
-
-            # Keyword extraction for fetch/search actions
-            if action in self.FETCH_ACTIONS:
-                # Only add filters if not already present
-                if "filters" not in params:
-                    params["filters"] = self._extract_keywords(original_message)
+                params["service"] = self._infer_service(action_name)
 
             cleaned.append({
-                "action": action,
+                "action": action_name,
                 "params": params,
                 "intent": intent,
                 "confidence": confidence
@@ -178,18 +186,25 @@ Today's date: {today}
 
         return cleaned
 
-    # ---------------------------------------------------------------------
-    # NATURAL DATE PARSE
-    # ---------------------------------------------------------------------
+    # -------------------------
+    # Parse natural datetime
+    # -------------------------
     def _normalize_datetime(self, dt_str: str) -> Optional[str]:
-        if not dt_str:
-            return None
-        result = dateparser.parse(dt_str, settings={"RELATIVE_BASE": datetime.now()})
-        return result.isoformat() if result else None
+        """
+        Convert human language date/time into ISO-8601.
+        Uses dateparser with current reference date to avoid wrong years.
+        """
+        result = dateparser.parse(
+            dt_str,
+            settings={'RELATIVE_BASE': datetime.now()}
+        )
+        if result:
+            return result.isoformat()
+        return None
 
-    # ---------------------------------------------------------------------
-    # SERVICE INFERENCE
-    # ---------------------------------------------------------------------
+    # -------------------------
+    # Map action → default integration
+    # -------------------------
     def _infer_service(self, action: str) -> str:
         if "email" in action:
             return "gmail"
@@ -198,29 +213,7 @@ Today's date: {today}
         if "note" in action:
             return "notes"
         if "reminder" in action:
-            return "whatsapp"
+            return "whatsapp"  # your default reminder channel
         if "todo" in action:
             return "todo"
         return "system"
-
-    # ---------------------------------------------------------------------
-    # 🔥 NEW: KEYWORD EXTRACTION LOGIC
-    # ---------------------------------------------------------------------
-    def _extract_keywords(self, message: str) -> List[str]:
-        """
-        Extract meaningful search keywords.
-        E.g. "show me amazon payment emails" → ["amazon", "payment"]
-        """
-        response = self.client.chat.completions.create(
-            model=self.model,
-            temperature=0,
-            messages=[
-                {"role": "system", "content": "Extract concise search keywords from the message. Return JSON list only."},
-                {"role": "user", "content": f"Message: {message}\nReturn only a JSON list of keywords."}
-            ]
-        )
-
-        try:
-            return json.loads(response.choices[0].message.content)
-        except:
-            return []
