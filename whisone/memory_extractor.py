@@ -49,6 +49,16 @@ class MemoryExtractor:
             "Return JSON only with keys: entities, preferences, summary."
         )
 
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": "yo are whisone, a helpful assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2,
+            max_tokens=500,
+        )
+
         response_text = response.choices[0].message.content.strip()
 
         # Remove triple backticks if present
