@@ -1,5 +1,5 @@
 from typing import List, Dict, Any
-import openai  # Or your preferred GPT API
+import openai
 import json
 from assistant.models import AssistantMessage
 from django.contrib.auth import get_user_model
@@ -7,29 +7,39 @@ from django.contrib.auth import get_user_model
 User = get_user_model()
 
 class ResponseGenerator:
-    def __init__(self, openai_api_key: str, model: str = "gpt-4o-mini", history_limit: int = 3):
-        self.client = openai.OpenAI(api_key=openai_api_key)
-        self.model = model
-        self.history_limit = history_limit  # Number of previous messages to include
+    """
+    Generates natural language responses based on conversation history,
+    executor results, and optional vault context.
+    """
 
-    def generate_response(self, user: User, user_message: str, executor_results: List[Dict[str, Any]]) -> str:
-        """
-        Generates a natural language response based on executor results and conversation history.
-        """
+    def __init__(self, api_key: str, model: str = "gpt-4o-mini", history_limit: int = 1):
+        self.client = openai.OpenAI(api_key=api_key)
+        self.model = model
+        self.history_limit = history_limit
+
+    def generate_response(
+        self,
+        user: User,
+        user_message: str,
+        executor_results: List[Dict[str, Any]],
+        vault_context: Dict[str, Any] = None
+    ) -> str:
         # 1️⃣ Fetch recent conversation history
         history = AssistantMessage.objects.filter(user=user).order_by("-created_at")[:self.history_limit]
         history = reversed(history)  # Oldest first
 
-        # Format the history into a readable conversation
         conversation_history = ""
         for msg in history:
             role = "User" if msg.role == "user" else "Assistant"
             conversation_history += f"{role}: {msg.content}\n"
 
-        # 2️⃣ Include executor results
+        # 2️⃣ Serialize executor results
         executor_results_str = json.dumps(executor_results, indent=2, default=str)
 
-        # 3️⃣ Construct the prompt
+        # 3️⃣ Serialize vault context if available
+        vault_context_str = json.dumps(vault_context, indent=2, default=str) if vault_context else "None"
+
+        # 4️⃣ Construct the prompt
         prompt = f"""
 You are an AI assistant. Here's the conversation so far:
 {conversation_history}
@@ -40,10 +50,15 @@ The user just sent the following message:
 The system performed the following actions:
 {executor_results_str}
 
-Generate a concise, friendly, and informative response for the user about what was done and answer their message. Do not include any JSON or code in your response.
+Additional context from the user's knowledge vault:
+{vault_context_str}
+
+Generate a concise, friendly, and informative response for the user
+about what was done and answer their message.
+Do not include any JSON or code in your response.
 """
 
-        # 4️⃣ Call OpenAI API
+        # 5️⃣ Call OpenAI API
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[
@@ -55,7 +70,7 @@ Generate a concise, friendly, and informative response for the user about what w
 
         content = response.choices[0].message.content
 
-        # 5️⃣ Optionally save the assistant's reply to AssistantMessage
+        # 6️⃣ Optionally save the assistant's reply to AssistantMessage
         AssistantMessage.objects.create(user=user, role="assistant", content=content)
 
         return content

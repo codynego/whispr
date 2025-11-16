@@ -85,7 +85,7 @@ def process_user_message(user_id: int, message: str):
         user=user,
         user_message=message,
         executor_results=executor_results,
-        vault_context=vault_result
+        vault_context=vault_result,
     )
     print("📝 Final Response:", response_text)
 
