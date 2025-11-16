@@ -11,6 +11,7 @@ from django.db import transaction
 from .memory_extractor import MemoryExtractor
 from .knowledge_vault_manager import KnowledgeVaultManager
 from .models import KnowledgeVaultEntry  # ensure this exists in your app
+from .embedding_service import EmbeddingService
 
 logger = logging.getLogger(__name__)
 
