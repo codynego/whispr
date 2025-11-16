@@ -46,6 +46,12 @@ def process_user_message(user_id: int, message: str):
     # 2️⃣ KNOWLEDGE VAULT — find context + decide needed external data
     # -------------------------------------------------------------------------
     vault = KnowledgeVaultManager(user=user)
+    ingest = vault.ingest_memory(
+        content=message,
+        entities=extractor_output.get("entities", []),
+        summary=extractor_output.get("summary", ""),
+        prefs=extractor_output.get("preferences", {})
+    )
     vault_result = vault.query(
         keyword=message,
         entities=extractor_output.get("entities", {})
