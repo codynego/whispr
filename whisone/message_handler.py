@@ -47,7 +47,7 @@ def process_user_message(user_id: int, message: str):
     # -------------------------------------------------------------------------
     vault = KnowledgeVaultManager(user=user)
     vault_result = vault.query(
-        intent=extractor_output.get("intent"),
+        keyword=extractor_output.get("intent"),
         entities=extractor_output.get("entities", {})
     )
     print("📚 Knowledge Vault Result:", vault_result)
