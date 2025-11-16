@@ -19,29 +19,23 @@ class MemoryExtractor:
     # Main entry point
     # ---------------------------
     def extract(self, content: str, source_type: str, timestamp: datetime = None) -> Dict[str, Any]:
-        """
-        Process raw content from any source and extract structured memory data.
-        
-        Args:
-            content: The text content to extract from (email body, event description, message)
-            source_type: e.g., "email", "note", "calendar_event", "user_message"
-            timestamp: Optional datetime of the content
-        
-        Returns:
-            A dict with structured memory data: entities, preferences, summary, and source metadata
-        """
         timestamp = timestamp or datetime.now()
         memory_id = self._generate_id(content, source_type, timestamp)
 
         structured_data = self._call_llm_extract(content)
 
+        # Ensure no None values
+        entities = structured_data.get("entities") or []
+        preferences = structured_data.get("preferences") or {}
+        summary = structured_data.get("summary") or ""
+
         return {
             "id": memory_id,
-            "source_type": source_type,
+            "source_type": source_type or "unknown",
             "timestamp": timestamp.isoformat(),
-            "entities": structured_data.get("entities", []),
-            "preferences": structured_data.get("preferences", {}),
-            "summary": structured_data.get("summary", ""),
+            "entities": entities,
+            "preferences": preferences,
+            "summary": summary,
         }
 
     # ---------------------------
@@ -54,6 +48,7 @@ class MemoryExtractor:
         """
         prompt = (
             "You are an assistant that extracts important user context and preferences.\n\n"
+            "the json format must be strictly followed and must not be empty.\n\n"
             "Extract the following as JSON:\n"
             "1. Entities mentioned (people, companies, topics).\n"
             "2. User preferences or intent indicated.\n"
@@ -79,6 +74,7 @@ class MemoryExtractor:
                 "preferences": data.get("preferences", {}),
                 "summary": data.get("summary", ""),
             }
+            print("LLM response content:", response.choices[0].message.content)
         except json.JSONDecodeError:
             return {"entities": [], "preferences": {}, "summary": ""}
 
