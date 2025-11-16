@@ -6,7 +6,7 @@ class TodoService:
     def __init__(self, user: User):
         self.user = user
 
-    def add_todo(self, task: str) -> Todo:
+    def create_todo(self, task: str) -> Todo:
         todo = Todo.objects.create(user=self.user, task=task)
         return todo
 

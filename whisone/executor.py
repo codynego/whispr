@@ -185,8 +185,8 @@ class Executor:
             ]
 
         # -------- TODOS --------
-        elif action == "add_todo":
-            todo = self._safe_call(self.todo_service.add_todo, {"task": params.get("task")})
+        elif action == "create_todo":
+            todo = self._safe_call(self.todo_service.create_todo, {"task": params.get("task")})
             return {"id": todo.id, "task": todo.task, "done": todo.done}
 
         elif action == "update_todo":
