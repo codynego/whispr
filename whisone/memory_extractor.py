@@ -62,7 +62,7 @@ class MemoryExtractor:
             ]
         )
 
-        print("LLM response content:", response.choices[0].message.content)
+        print("LLM response content:", json.loads(response.choices[0].message.content))
 
         try:
             data = json.loads(response.choices[0].message.content)
