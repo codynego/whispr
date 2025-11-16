@@ -8,7 +8,7 @@ from .executor import Executor
 from .task_planner import TaskPlanner
 from .response_generator import ResponseGenerator
 from .memory_extractor import MemoryExtractor
-from .vault_manager import KnowledgeVaultManager
+from .knowledge_vault_manager import KnowledgeVaultManager
 from .memory_integrator import MemoryIntegrator
 
 from .models import Integration
