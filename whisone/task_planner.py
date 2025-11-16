@@ -39,7 +39,9 @@ class TaskPlanner:
 
         # 2️⃣ Append vault context if available
         if vault_context:
-            conversation_history += f"\nVault context:\n{json.dumps(vault_context)}\n"
+            vault_context_serializable = serialize_vault_context(vault_context)
+            conversation_history += f"\nVault context:\n{json.dumps(vault_context_serializable, indent=2)}\n"
+
 
         # 3️⃣ Call LLM
         raw_actions = self._call_llm(user_message, conversation_history)

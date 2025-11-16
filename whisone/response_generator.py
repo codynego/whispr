@@ -6,6 +6,27 @@ from django.contrib.auth import get_user_model
 
 User = get_user_model()
 
+
+
+def serialize_vault_context(vault_context):
+    """
+    Convert KnowledgeVaultEntry or list of entries to JSON-serializable dict(s).
+    """
+    if vault_context is None:
+        return None
+    if isinstance(vault_context, KnowledgeVaultEntry):
+        return {
+            "id": vault_context.id,
+            "summary": vault_context.summary,
+            "entities": vault_context.entities,
+            "preferences": vault_context.preferences,
+            "timestamp": vault_context.timestamp.isoformat() if vault_context.timestamp else None
+        }
+    if isinstance(vault_context, (list, tuple)):
+        return [serialize_vault_context(e) for e in vault_context]
+    return vault_context
+
+
 class ResponseGenerator:
     """
     Generates natural language responses based on conversation history,
