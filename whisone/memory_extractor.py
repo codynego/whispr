@@ -18,6 +18,21 @@ class MemoryExtractor:
     # ---------------------------
     # Main entry point
     # ---------------------------
+
+    def should_store(self, result: dict) -> bool:
+        """
+        Decide whether the action result is meaningful enough to store in knowledge vault.
+        For example, notes, reminders, todos, or external fetch results.
+        """
+        if not result:
+            return False
+
+        # If result contains an "id" or some content, it's worth storing
+        if isinstance(result, dict) and ("id" in result or "content" in result or "text" in result or "task" in result):
+            return True
+
+        return False
+        
     def extract(self, content: str, source_type: str, timestamp: datetime = None) -> Dict[str, Any]:
         timestamp = timestamp or datetime.now()
         memory_id = self._generate_id(content, source_type, timestamp)
