@@ -11,8 +11,8 @@ class MemoryExtractor:
     Does NOT store raw content. Instead, stores meaningful metadata, entities, and context.
     """
 
-    def __init__(self, api_key: str, model: str = "gpt-4o-mini"):
-        self.client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
+    def __init__(self, api_key: str = settings.OPENAI_API_KEY, model: str = "gpt-4o-mini"):
+        self.client = openai.OpenAI(api_key=api_key)
         self.model = model
 
     # ---------------------------
