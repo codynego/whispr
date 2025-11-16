@@ -274,11 +274,18 @@ class Executor:
             ]
 
         elif action == "create_event" and self.calendar_service:
-            ev = self._safe_call(self.calendar_service.create_event, {
+            event = self._safe_call(self.calendar_service.create_event, {
                 "summary": params.get("summary"),
                 "start_time": self._parse_datetime(params.get("start_time"))
             })
-            return {"id": ev.id, "summary": ev.summary, "start_time": ev.start_time.isoformat() if ev.start_time else None}
+            # If returned object is dict (from Google API), map keys
+            if isinstance(event, dict):
+                return {
+                    "id": event.get("id"),
+                    "summary": event.get("summary"),
+                    "start_time": event.get("start_time") or event.get("start")  # adapt if needed
+                }
+            return event
 
         elif action == "update_event" and self.calendar_service:
             ev = self._safe_call(self.calendar_service.update_event, {
