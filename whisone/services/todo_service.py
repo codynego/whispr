@@ -30,7 +30,7 @@ class TodoService:
         except Todo.DoesNotExist:
             return False
 
-    def list_todos(self, done: bool = None) -> List[Todo]:
+    def fetch_todos(self, done: bool = None) -> List[Todo]:
         qs = Todo.objects.filter(user=self.user)
         if done is not None:
             qs = qs.filter(done=done)
