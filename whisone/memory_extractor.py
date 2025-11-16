@@ -24,19 +24,15 @@ class MemoryExtractor:
 
         structured_data = self._call_llm_extract(content)
 
-        # Ensure no None values
-        entities = structured_data.get("entities") or []
-        preferences = structured_data.get("preferences") or {}
-        summary = structured_data.get("summary") or ""
-
         return {
             "id": memory_id,
             "source_type": source_type or "unknown",
             "timestamp": timestamp.isoformat(),
-            "entities": entities,
-            "preferences": preferences,
-            "summary": summary,
+            "entities": structured_data.get("entities") or [],
+            "preferences": structured_data.get("preferences") or {},
+            "summary": structured_data.get("summary") or "No summary available"
         }
+
 
     # ---------------------------
     # LLM Extraction
