@@ -3,6 +3,7 @@ import openai
 from datetime import datetime
 import hashlib
 import json
+from django.conf import settings
 
 class MemoryExtractor:
     """
@@ -11,7 +12,7 @@ class MemoryExtractor:
     """
 
     def __init__(self, openai_api_key: str, model: str = "gpt-4o-mini"):
-        self.client = openai.OpenAI(api_key=openai_api_key)
+        self.client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
         self.model = model
 
     # ---------------------------
