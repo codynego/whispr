@@ -108,3 +108,31 @@ class AutomationRule(BaseModel):
 
     def __str__(self):
         return f"{self.user.username} - {self.name}"
+
+
+
+import json
+
+class KnowledgeVaultEntry(models.Model):
+    """
+    Stores a single knowledge memory extracted from user interactions or events.
+    """
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="knowledge_entries")
+    memory_id = models.CharField(max_length=255, unique=True)  # could be a hash of content
+    entities = models.JSONField(default=list)  # list of entities/topics
+    summary = models.TextField(blank=True, null=True)  # extracted summary or important info
+    embedding = models.JSONField(blank=True, null=True)
+    preferences = models.JSONField(default=dict)  # optional preferences linked to this memory
+    timestamp = models.DateTimeField(auto_now_add=True)  # when memory was created/updated
+    last_accessed = models.DateTimeField(auto_now=True)  # for pruning old entries
+
+    class Meta:
+        ordering = ["-timestamp"]
+
+class UserPreference(models.Model):
+    """
+    Stores aggregated user preferences derived from multiple KnowledgeVault entries.
+    """
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="preference_model")
+    preferences = models.JSONField(default=dict)
+    last_updated = models.DateTimeField(auto_now=True)
