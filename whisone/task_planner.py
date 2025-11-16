@@ -192,16 +192,23 @@ User message:
     # -------------------------
     # INTERNAL: Normalize actions
     # -------------------------
-    def _normalize_actions(self, actions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _normalize_actions(self, actions: List[Any]) -> List[Dict[str, Any]]:
         """
         - Ensures fields exist
         - Fix missing datetime via natural language parsing
         - Adds confidence if missing
+        - Safely handles malformed LLM outputs
         """
-
         cleaned = []
 
+        if not isinstance(actions, list):
+            return cleaned
+
         for task in actions:
+            if not isinstance(task, dict):
+                # Try to recover if task is a list or other type
+                continue
+
             action_name = task.get("action")
             params = task.get("params", {})
             intent = task.get("intent", action_name)
@@ -223,6 +230,7 @@ User message:
             })
 
         return cleaned
+
 
     # -------------------------
     # Parse natural datetime
