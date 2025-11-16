@@ -135,16 +135,13 @@ class Executor:
     # SINGLE ACTION EXECUTION
     # -------------------------
     def _execute_single_action(self, action: str, params: Dict[str, Any]):
-        # ------------------- NOTES -------------------
+        # -------- NOTES --------
         if action == "create_note":
             note = self._safe_call(self.note_service.create_note, {"content": params.get("content")})
             return {"id": note.id, "content": note.content, "created_at": note.created_at.isoformat()}
-        
+
         elif action == "update_note":
-            note = self._safe_call(self.note_service.update_note, {
-                "note_id": params.get("note_id"),
-                "new_content": params.get("content")
-            })
+            note = self._safe_call(self.note_service.update_note, {"note_id": params.get("note_id"), "new_content": params.get("content")})
             if note:
                 return {"id": note.id, "content": note.content, "created_at": note.created_at.isoformat()}
             return None
@@ -159,7 +156,7 @@ class Executor:
                 for n in notes_qs
             ]
 
-        # ------------------- REMINDERS -------------------
+        # -------- REMINDERS --------
         elif action == "create_reminder":
             reminder = self._safe_call(self.reminder_service.create_reminder, {
                 "text": params.get("title"),
@@ -187,17 +184,13 @@ class Executor:
                 for r in reminders_qs
             ]
 
-        # ------------------- TODOS -------------------
+        # -------- TODOS --------
         elif action == "add_todo":
             todo = self._safe_call(self.todo_service.add_todo, {"task": params.get("task")})
             return {"id": todo.id, "task": todo.task, "done": todo.done}
 
         elif action == "update_todo":
-            todo = self._safe_call(self.todo_service.update_todo, {
-                "todo_id": params.get("todo_id"),
-                "task": params.get("task"),
-                "done": params.get("done")
-            })
+            todo = self._safe_call(self.todo_service.update_todo, {"todo_id": params.get("todo_id"), "task": params.get("task"), "done": params.get("done")})
             if todo:
                 return {"id": todo.id, "task": todo.task, "done": todo.done}
             return None
@@ -207,19 +200,15 @@ class Executor:
 
         elif action == "fetch_todos":
             todos_qs = self._safe_call(self.todo_service.fetch_todos, {"filters": params.get("filters", [])})
-            return [
-                {"id": t.id, "task": t.task, "done": t.done}
-                for t in todos_qs
-            ]
+            return [{"id": t.id, "task": t.task, "done": t.done} for t in todos_qs]
 
-        # ------------------- GMAIL -------------------
+        # -------- GMAIL --------
         elif action == "fetch_emails" and self.gmail_service:
             filters = params.get("filters", [])
             query = ""
             after = before = None
             unread_only = False
             max_results = params.get("max_results", 20)
-
             for f in filters:
                 key, value = f.get("key", "").lower(), f.get("value", "")
                 if key == "keyword": query += f" {value}"
@@ -229,7 +218,6 @@ class Executor:
                 elif key == "unread": unread_only = bool(value)
                 elif key == "after": after = self._parse_datetime(value)
                 elif key == "before": before = self._parse_datetime(value)
-
             emails = self._safe_call(self.gmail_service.fetch_emails, {
                 "query": query.strip(),
                 "after": after,
@@ -237,66 +225,56 @@ class Executor:
                 "unread_only": unread_only,
                 "max_results": max_results
             })
-            # ensure JSON-serializable
             return [
                 {
-                    "id": e.id,
-                    "subject": e.subject,
-                    "from": e.sender,
-                    "to": e.to,
-                    "snippet": e.snippet,
-                    "received_at": e.received_at.isoformat() if e.received_at else None,
-                    "unread": e.unread
-                }
-                for e in emails
+                    "id": getattr(e, "id", None),
+                    "subject": getattr(e, "subject", None),
+                    "from": getattr(e, "sender", None),
+                    "to": getattr(e, "to", None),
+                    "snippet": getattr(e, "snippet", None),
+                    "received_at": getattr(e, "received_at", None).isoformat() if getattr(e, "received_at", None) else None,
+                    "unread": getattr(e, "unread", None)
+                } for e in emails
             ]
 
         elif action == "mark_email_read" and self.gmail_service:
             self._safe_call(self.gmail_service.mark_as_read, {"email_id": params.get("email_id")})
             return True
 
-        # ------------------- CALENDAR -------------------
-        elif action == "fetch_events" and self.calendar_service:
-            events = self._safe_call(self.calendar_service.fetch_events, {
+        # -------- CALENDAR --------
+        elif action in {"fetch_events", "create_event", "update_event"} and self.calendar_service:
+            ev_result = self._safe_call(getattr(self.calendar_service, action), {
+                "event_id": params.get("event_id"),
+                "summary": params.get("summary"),
+                "start_time": self._parse_datetime(params.get("start_time")),
                 "time_min": self._parse_datetime(params.get("time_min")),
                 "time_max": self._parse_datetime(params.get("time_max")),
                 "filters": params.get("filters", []),
                 "max_results": params.get("max_results", 10)
             })
-            return [
-                {
-                    "id": ev.id,
-                    "summary": ev.summary,
-                    "start_time": ev.start_time.isoformat() if ev.start_time else None,
-                    "end_time": ev.end_time.isoformat() if ev.end_time else None
-                }
-                for ev in events
-            ]
-
-        elif action == "create_event" and self.calendar_service:
-            event = self._safe_call(self.calendar_service.create_event, {
-                "summary": params.get("summary"),
-                "start_time": self._parse_datetime(params.get("start_time"))
-            })
-            # If returned object is dict (from Google API), map keys
-            if isinstance(event, dict):
+            # Normalize dict response
+            if isinstance(ev_result, list):
+                return [
+                    {
+                        "id": ev.get("id"),
+                        "summary": ev.get("summary"),
+                        "start_time": ev.get("start_time", ev.get("start")),
+                        "end_time": ev.get("end_time", ev.get("end")),
+                        "description": ev.get("description")
+                    } for ev in ev_result
+                ]
+            elif isinstance(ev_result, dict):
                 return {
-                    "id": event.get("id"),
-                    "summary": event.get("summary"),
-                    "start_time": event.get("start_time") or event.get("start")  # adapt if needed
+                    "id": ev_result.get("id"),
+                    "summary": ev_result.get("summary"),
+                    "start_time": ev_result.get("start_time", ev_result.get("start")),
+                    "end_time": ev_result.get("end_time", ev_result.get("end")),
+                    "description": ev_result.get("description")
                 }
-            return event
-
-        elif action == "update_event" and self.calendar_service:
-            ev = self._safe_call(self.calendar_service.update_event, {
-                "event_id": params.get("event_id"),
-                "summary": params.get("summary"),
-                "start_time": self._parse_datetime(params.get("start_time"))
-            })
-            return {"id": ev.id, "summary": ev.summary, "start_time": ev.start_time.isoformat() if ev.start_time else None}
+            return ev_result
 
         elif action == "delete_event" and self.calendar_service:
             return self._safe_call(self.calendar_service.delete_event, {"event_id": params.get("event_id")})
 
         else:
-            return f"Unknown action or missing service for {action}"
+            return {"error": f"Unknown action or missing service for {action}"}
