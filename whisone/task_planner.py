@@ -14,17 +14,22 @@ class TaskPlanner:
     Now supports context-aware planning using previous messages.
     """
 
-    def __init__(self, openai_api_key: str, model: str = "gpt-4o-mini", history_limit: int = 3):
-        self.client = openai.OpenAI(api_key=openai_api_key)
+    def __init__(self, api_key: str, model: str = "gpt-4o-mini", history_limit: int = 2):
+        self.client = openai.OpenAI(api_key=api_key)
         self.model = model
         self.history_limit = history_limit
 
-    def plan_tasks(self, user: User, user_message: str) -> List[Dict[str, Any]]:
+    def plan_tasks(
+        self,
+        user: User,
+        user_message: str,
+        vault_context: Optional[Dict[str, Any]] = None
+    ) -> List[Dict[str, Any]]:
         """
         Convert user natural language into structured action steps,
-        including context from previous messages.
+        using previous messages and optional vault context.
         """
-        # 1️⃣ Get previous conversation history
+        # 1️⃣ Previous conversation history
         history_msgs = AssistantMessage.objects.filter(user=user).order_by("-created_at")[:self.history_limit]
         history_msgs = reversed(history_msgs)
         conversation_history = ""
@@ -32,12 +37,17 @@ class TaskPlanner:
             role = "User" if msg.role == "user" else "Assistant"
             conversation_history += f"{role}: {msg.content}\n"
 
-        # 2️⃣ Call LLM with context
+        # 2️⃣ Append vault context if available
+        if vault_context:
+            conversation_history += f"\nVault context:\n{json.dumps(vault_context)}\n"
+
+        # 3️⃣ Call LLM
         raw_actions = self._call_llm(user_message, conversation_history)
 
-        # 3️⃣ Normalize actions
+        # 4️⃣ Normalize actions
         cleaned_actions = self._normalize_actions(raw_actions)
         return cleaned_actions
+
 
     def _call_llm(self, user_message: str, conversation_history: str, retry: int = 0) -> List[Dict[str, Any]]:
         today = datetime.now().date()

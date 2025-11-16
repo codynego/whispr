@@ -56,9 +56,9 @@ def process_user_message(user_id: int, message: str):
     # 3️⃣ TASK PLANNER — determine actions
     # -------------------------------------------------------------------------
     planner = TaskPlanner(api_key=settings.OPENAI_API_KEY)
-    task_plan = planner.create_plan(
-        extractor_output=extractor_output,
-        vault_output=vault_result,
+    task_plan = planner.plan_tasks(
+        user_message=message,
+        vault_context=vault_result,
         user=user
     )
     print("🗂️ Task Plan:", task_plan)
