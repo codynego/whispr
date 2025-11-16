@@ -38,13 +38,9 @@ class MemoryExtractor:
     # LLM Extraction
     # ---------------------------
     def _call_llm_extract(self, content: str) -> Dict[str, Any]:
-        """
-        Call OpenAI LLM to extract entities, preferences, and summary from the content.
-        Returns structured JSON.
-        """
         prompt = (
             "You are an assistant that extracts important user context and preferences.\n\n"
-            "the json format must be strictly followed and must not be empty.\n\n"
+            "The JSON format must be strictly followed and must not be empty.\n\n"
             "Extract the following as JSON:\n"
             "1. Entities mentioned (people, companies, topics).\n"
             "2. User preferences or intent indicated.\n"
@@ -53,28 +49,27 @@ class MemoryExtractor:
             "Return JSON only with keys: entities, preferences, summary."
         )
 
-        response = self.client.chat.completions.create(
-            model=self.model,
-            temperature=0,
-            messages=[
-                {"role": "system", "content": "Extract structured memory from text."},
-                {"role": "user", "content": prompt},
-            ]
-        )
+        response_text = response.choices[0].message.content.strip()
 
-        print("LLM response content:", json.loads(response.choices[0].message.content))
+        # Remove triple backticks if present
+        if response_text.startswith("```") and response_text.endswith("```"):
+            response_text = "\n".join(response_text.splitlines()[1:-1]).strip()
 
         try:
-            data = json.loads(response.choices[0].message.content)
-            # Ensure keys exist
+            data = json.loads(response_text)
             return {
-                "entities": data.get("entities", []),
-                "preferences": data.get("preferences", {}),
-                "summary": data.get("summary", ""),
+                "entities": data.get("entities") or {"people": [], "companies": [], "topics": []},
+                "preferences": data.get("preferences") or {},
+                "summary": data.get("summary") or "No summary available"
             }
-            
         except json.JSONDecodeError:
-            return {"entities": [], "preferences": {}, "summary": ""}
+            # Fallback in case of parsing failure
+            return {
+                "entities": {"people": [], "companies": [], "topics": []},
+                "preferences": {},
+                "summary": "No summary available"
+            }
+
 
     # ---------------------------
     # Generate unique memory ID
