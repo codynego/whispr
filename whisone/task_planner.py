@@ -5,6 +5,7 @@ import dateparser
 from django.contrib.auth import get_user_model
 from assistant.models import AssistantMessage
 from datetime import datetime
+from .models import KnowledgeVaultEntry
 
 User = get_user_model()
 
