@@ -91,6 +91,7 @@ class KnowledgeVaultManager:
         if entities:
             for e in entities:
                 q |= Q(entities__icontains=e)
+        print("Querying Knowledge Vault with:", q)
 
         entries = KnowledgeVaultEntry.objects.filter(user=self.user).filter(q)
 
