@@ -66,6 +66,8 @@ class MemoryExtractor:
             ]
         )
 
+        print("LLM response content:", response)
+
         try:
             data = json.loads(response.choices[0].message.content)
             # Ensure keys exist
@@ -74,7 +76,7 @@ class MemoryExtractor:
                 "preferences": data.get("preferences", {}),
                 "summary": data.get("summary", ""),
             }
-            print("LLM response content:", response.choices[0].message.content)
+            
         except json.JSONDecodeError:
             return {"entities": [], "preferences": {}, "summary": ""}
 
