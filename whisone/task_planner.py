@@ -106,7 +106,7 @@ class TaskPlanner:
 
             "Supported actions:\n"
             "["
-            "\"fetch_note\",\"create_note\",\"update_note\",\"delete_note\","
+            "\"fetch_notes\",\"create_note\",\"update_note\",\"delete_note\","
             "\"fetch_reminders\",\"create_reminder\",\"update_reminder\",\"delete_reminder\","
             "\"fetch_todos\",\"create_todo\",\"update_todo\",\"delete_todo\","
             "\"create_event\",\"update_event\",\"delete_event\",\"fetch_events\","
