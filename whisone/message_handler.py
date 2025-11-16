@@ -81,7 +81,7 @@ def process_user_message(user_id: int, message: str):
     # -------------------------------------------------------------------------
     response_gen = ResponseGenerator(api_key=settings.OPENAI_API_KEY)
     print("💬 Generating response...")
-    response_text = response_gen.generate(
+    response_text = response_gen.generate_response(
         user=user,
         user_message=message,
         executor_results=executor_results,
