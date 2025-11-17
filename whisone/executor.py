@@ -21,12 +21,12 @@ User = settings.AUTH_USER_MODEL
 
 class Executor:
     """
-    Smart Executor that:
+    Smart Executor:
       - Queries KnowledgeVault first
       - Decides whether to fetch external data or use memory
       - Stores new results via MemoryIntegrator
       - Minimizes unnecessary API calls
-      - Executes structured tasks
+      - Executes structured tasks aligned with TaskFrameBuilder
     """
 
     FRESHNESS_MINUTES = 15
@@ -36,7 +36,7 @@ class Executor:
     def __init__(self, user: User, gmail_creds=None, calendar_creds=None):
         self.user = user
 
-        # Initialize services
+        # Services
         self.note_service = NoteService(user)
         self.reminder_service = ReminderService(user)
         self.todo_service = TodoService(user)
@@ -45,7 +45,7 @@ class Executor:
         self.gmail_service = GmailService(**gmail_creds) if gmail_creds else None
         self.calendar_service = GoogleCalendarService(**calendar_creds) if calendar_creds else None
 
-        # Vault & memory integration
+        # Vault & memory
         self.vault = KnowledgeVaultManager(user)
         self.memory_extractor = MemoryExtractor()
         self.memory_integrator = MemoryIntegrator(user, extractor=self.memory_extractor, vault_manager=self.vault)
@@ -101,7 +101,6 @@ class Executor:
     # -------------------------
     # MAIN EXECUTION
     # -------------------------
-
     def execute_tasks(self, task_plan: List[Dict[str, Any]]):
         results = []
         task_builder = TaskFrameBuilder()
@@ -112,8 +111,8 @@ class Executor:
 
             # Build task frame to validate required fields
             frame = task_builder.build(intent=step.get("intent", ""), action=action, parameters=params)
+
             if not frame["ready"]:
-                # If required fields are missing, skip execution and report
                 results.append({
                     "action": action,
                     "ready": False,
@@ -125,9 +124,7 @@ class Executor:
             if action in self.FETCH_ACTIONS:
                 vault_entries = self.query_knowledge_vault(action, params)
                 if self.should_query_source(action, params, vault_entries):
-                    # Fetch external
                     result = self._execute_single_action(action, frame["parameters"])
-                    # Store intelligently via MemoryIntegrator
                     self.memory_integrator.ingest_from_source(content=json.dumps(result), source_type=action)
                     results.append({"action": action, "ready": True, "result": result, "source": "external"})
                 else:
@@ -138,7 +135,6 @@ class Executor:
             # NON-FETCH ACTIONS
             try:
                 result = self._execute_single_action(action, frame["parameters"])
-                # Optionally store memory-significant actions
                 if self.memory_extractor.should_store(result):
                     self.memory_integrator.ingest_from_source(content=json.dumps(result), source_type=action)
                 results.append({"action": action, "ready": True, "result": result})
@@ -146,7 +142,6 @@ class Executor:
                 results.append({"action": action, "ready": True, "error": str(e)})
 
         return results
-
 
     # -------------------------
     # SINGLE ACTION EXECUTION
@@ -168,24 +163,21 @@ class Executor:
 
         elif action == "fetch_notes":
             notes_qs = self._safe_call(self.note_service.fetch_notes, {"filters": params.get("filters", [])})
-            return [
-                {"id": n.id, "content": n.content, "created_at": n.created_at.isoformat()}
-                for n in notes_qs
-            ]
+            return [{"id": n.id, "content": n.content, "created_at": n.created_at.isoformat()} for n in notes_qs]
 
         # -------- REMINDERS --------
         elif action == "create_reminder":
             reminder = self._safe_call(self.reminder_service.create_reminder, {
-                "text": params.get("title"),
-                "remind_at": self._parse_datetime(params.get("datetime"))
+                "text": params.get("text"),
+                "remind_at": self._parse_datetime(params.get("remind_at"))
             })
             return {"id": reminder.id, "text": reminder.text, "remind_at": reminder.remind_at.isoformat()}
 
         elif action == "update_reminder":
             reminder = self._safe_call(self.reminder_service.update_reminder, {
                 "reminder_id": params.get("reminder_id"),
-                "text": params.get("title"),
-                "remind_at": self._parse_datetime(params.get("datetime"))
+                "text": params.get("text"),
+                "remind_at": self._parse_datetime(params.get("remind_at"))
             })
             if reminder:
                 return {"id": reminder.id, "text": reminder.text, "remind_at": reminder.remind_at.isoformat()}
@@ -196,10 +188,7 @@ class Executor:
 
         elif action == "fetch_reminders":
             reminders_qs = self._safe_call(self.reminder_service.fetch_reminders, {"filters": params.get("filters", [])})
-            return [
-                {"id": r.id, "text": r.text, "remind_at": r.remind_at.isoformat()}
-                for r in reminders_qs
-            ]
+            return [{"id": r.id, "text": r.text, "remind_at": r.remind_at.isoformat()} for r in reminders_qs]
 
         # -------- TODOS --------
         elif action == "create_todo":
@@ -219,7 +208,7 @@ class Executor:
             todos_qs = self._safe_call(self.todo_service.fetch_todos, {"filters": params.get("filters", [])})
             return [{"id": t.id, "task": t.task, "done": t.done} for t in todos_qs]
 
-        # -------- GMAIL --------
+        # -------- EMAILS --------
         elif action == "fetch_emails" and self.gmail_service:
             filters = params.get("filters", [])
             query = ""
@@ -263,13 +252,14 @@ class Executor:
             ev_result = self._safe_call(getattr(self.calendar_service, action), {
                 "event_id": params.get("event_id"),
                 "summary": params.get("summary"),
+                "description": params.get("description"),
                 "start_time": self._parse_datetime(params.get("start_time")),
-                "time_min": self._parse_datetime(params.get("time_min")),
-                "time_max": self._parse_datetime(params.get("time_max")),
+                "end_time": self._parse_datetime(params.get("end_time")),
+                "attendees": params.get("attendees", []),
+                "timezone": params.get("timezone"),
                 "filters": params.get("filters", []),
                 "max_results": params.get("max_results", 10)
             })
-            # Normalize dict response
             if isinstance(ev_result, list):
                 return [
                     {
