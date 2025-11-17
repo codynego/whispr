@@ -122,8 +122,25 @@ class Executor:
             return self._safe_call(self.reminder_service.delete_reminder, {"reminder_id": params.get("reminder_id")})
 
         elif action == "fetch_reminders":
-            reminders_qs = self._safe_call(self.reminder_service.fetch_reminders, {"filters": params.get("filters", [])})
-            return [{"id": r.id, "text": r.text, "remind_at": r.remind_at.isoformat()} for r in reminders_qs]
+            # Build filters list from params
+            filters_list = params.get("filters", [])
+            # Handle time_min and time_max as special cases
+            if params.get('time_min'):
+                filters_list.append({"key": "after", "value": params['time_min']})
+            if params.get('time_max'):
+                filters_list.append({"key": "before", "value": params['time_max']})
+            # Process filters flexibly (direct dict or key/value)
+            processed_filters = []
+            for f in filters_list:
+                if isinstance(f, dict):
+                    if "key" in f and "value" in f:
+                        processed_filters.append(f)
+                    else:
+                        # Direct {filter_type: value}
+                        for k, v in f.items():
+                            processed_filters.append({"key": k, "value": v})
+            reminders_qs = self._safe_call(self.reminder_service.fetch_reminders, {"filters": processed_filters})
+            return [{"id": r.id, "text": r.text, "remind_at": r.remind_at.isoformat(), "completed": r.completed} for r in reminders_qs]
 
         # -------- TODOS --------
         elif action == "create_todo":
@@ -234,4 +251,3 @@ class Executor:
 
         else:
             return {"error": f"Unknown action or missing service for {action}"}
-

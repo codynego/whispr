@@ -42,32 +42,43 @@ class ReminderService:
     # -------------------------
     def fetch_reminders(self, filters: Optional[List[Dict[str, Any]]] = None) -> List[Reminder]:
         """
-        filters: list of dicts, e.g.
-        [
-            {"key": "keyword", "value": "meeting"},
-            {"key": "after", "value": "2025-11-01T00:00"},
-            {"key": "before", "value": "2025-11-15T23:59"}
-        ]
+        filters: list of dicts, supporting both formats:
+        - Legacy: [{"key": "keyword", "value": "meeting"}]
+        - Direct: [{"keyword": "meeting"}, {"after": "2025-11-01T00:00"}]
         """
         qs = Reminder.objects.filter(user=self.user)
 
         if filters:
             for f in filters:
-                key = f.get("key", "").lower()
-                value = f.get("value", "")
-                if key == "keyword" and value:
-                    qs = qs.filter(text__icontains=value)
-                elif key == "after" and value:
-                    try:
-                        dt = datetime.fromisoformat(value)
-                        qs = qs.filter(remind_at__gte=dt)
-                    except ValueError:
-                        continue
-                elif key == "before" and value:
-                    try:
-                        dt = datetime.fromisoformat(value)
-                        qs = qs.filter(remind_at__lte=dt)
-                    except ValueError:
-                        continue
+                if isinstance(f, dict):
+                    # Handle legacy {"key": ..., "value": ...}
+                    if "key" in f and "value" in f:
+                        key = f.get("key", "").lower()
+                        value = f.get("value", "")
+                    # Handle direct {filter_type: value}
+                    else:
+                        # Assume first item is key/value if single pair
+                        items = list(f.items())
+                        if items:
+                            key, value = items[0]
+                            key = key.lower()
+                        else:
+                            continue
+                    
+                    if key == "keyword" and value:
+                        qs = qs.filter(text__icontains=value)
+                    elif key == "after" and value:
+                        try:
+                            dt = datetime.fromisoformat(value)
+                            qs = qs.filter(remind_at__gte=dt)
+                        except ValueError:
+                            continue
+                    elif key == "before" and value:
+                        try:
+                            dt = datetime.fromisoformat(value)
+                            qs = qs.filter(remind_at__lte=dt)
+                        except ValueError:
+                            continue
+                    # Add more filter types here if needed (e.g., "completed": True/False)
 
         return qs.order_by('remind_at')

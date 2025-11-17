@@ -57,9 +57,8 @@ class MemoryExtractor:
 
         structured_data = self._call_llm_extract(content)
 
-        # Ensure preferences are always structured
+        # Ensure preferences are always structured (but don't overwrite defaults here; merging happens in vault)
         preferences = structured_data.get("preferences") or {}
-        normalized_preferences = {**self.DEFAULT_PREFERENCES, **preferences}
 
         # Ensure entities are always structured
         entities = structured_data.get("entities") or self.DEFAULT_ENTITIES
@@ -69,7 +68,7 @@ class MemoryExtractor:
             "source_type": source_type or "unknown",
             "timestamp": timestamp.isoformat(),
             "entities": entities,
-            "preferences": normalized_preferences,
+            "preferences": preferences,  # Pass partial prefs; smart merge in vault
             "summary": structured_data.get("summary") or "No summary available"
         }
 
@@ -102,13 +101,13 @@ class MemoryExtractor:
             data = json.loads(response_text)
             return {
                 "entities": data.get("entities") or self.DEFAULT_ENTITIES,
-                "preferences": data.get("preferences") or self.DEFAULT_PREFERENCES,
+                "preferences": data.get("preferences") or {},  # Allow partial; no default overwrite here
                 "summary": data.get("summary") or "No summary available"
             }
         except json.JSONDecodeError:
             return {
                 "entities": self.DEFAULT_ENTITIES,
-                "preferences": self.DEFAULT_PREFERENCES,
+                "preferences": {},  # Empty to avoid overriding
                 "summary": "No summary available"
             }
 
@@ -125,7 +124,9 @@ class MemoryExtractor:
             merged_entities.extend(mem.get("entities", {}).get("people", []) +
                                    mem.get("entities", {}).get("companies", []) +
                                    mem.get("entities", {}).get("topics", []))
-            merged_preferences.update(mem.get("preferences", {}))
+            # Smart merge preferences from each memory
+            mem_prefs = mem.get("preferences", {})
+            merged_preferences = self._smart_merge_prefs(merged_preferences, mem_prefs)  # Reuse from vault
             merged_summary.append(mem.get("summary", ""))
 
         # Ensure no duplicate entities

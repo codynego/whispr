@@ -159,8 +159,3 @@ class KnowledgeVaultManager:
     # ---------------------------
     def recent_memories(self, limit: int = 5) -> List[KnowledgeVaultEntry]:
         return KnowledgeVaultEntry.objects.filter(user=self.user).order_by("-timestamp")[:limit]
-
-
-
-
-
