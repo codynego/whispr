@@ -74,7 +74,6 @@ class TaskPlanner:
 
     def _call_llm(self, user_message: str, conversation_history: str, retry: int = 0) -> List[Dict[str, Any]]:
         today = datetime.now().date()
-
         prompt = (
             "You are an AI Task Planner for Whisone.\n\n"
 
@@ -85,56 +84,44 @@ class TaskPlanner:
             "User's new message:\n\"\"\"" + user_message + "\"\"\"\n\n"
 
             "Your job:\n"
-            "1. Extract all tasks (notes, reminders, todos, calendar events).\n"
+            "1. Extract all actionable tasks (notes, reminders, todos, calendar events, emails).\n"
             "2. Break multi-step instructions into separate actions.\n"
             "3. Identify intent clearly.\n"
-            "4. Parse date/time expressions into ISO format (YYYY-MM-DDTHH:MM).\n"
+            "4. Parse date/time expressions into ISO8601 format (YYYY-MM-DDTHH:MM).\n"
             "   - If no date is given, assume today.\n"
             "5. Include a confidence score (0–1).\n"
-            "6. ALWAYS return a valid JSON array.\n"
+            "6. ALWAYS return a valid JSON array of task objects.\n"
             "7. NEVER include explanations, text, or code blocks — ONLY JSON.\n\n"
 
             "Rules:\n"
             "- Dates must be ISO8601.\n"
-            "- always include datetime is available"
             "- Return ONLY a JSON array.\n"
-            "- If the user is searching emails/events/notes/todos/reminders, extract FILTER -  as a list of dictionary e.g [{sender: \"example@example.com\", from: \"example@example.com\"} etc].\n"
+            "- If the user is searching emails/events/notes/todos/reminders, extract FILTERS as a list of dictionaries, e.g. [{\"from\": \"example@example.com\"}, ...].\n"
             "- Do NOT write explanations.\n\n"
-            "- If the user wants to 'add' something but no specific note/reminder/todo exists, "
-            "use create_note/create_reminder/create_todo.\n"
-            "- Use update_* only if a specific note/reminder/todo or event_id is referenced.\n"
-            "- For calendar events, use fetch_events/create_event/update_event/delete_event with the schema below.\n\n"
 
-            "Supported actions:\n"
-            "["
-            "\"fetch_notes\",\"create_note\",\"update_note\",\"delete_note\","
-            "\"fetch_reminders\",\"create_reminder\",\"update_reminder\",\"delete_reminder\","
-            "\"fetch_todos\",\"create_todo\",\"update_todo\",\"delete_todo\","
-            "\"create_event\",\"update_event\",\"delete_event\",\"fetch_events\","
-            "\"fetch_emails\",\"mark_email_read\",\"send_email\""
+            "Action Mapping:\n"
+            "- Notes: create_note, update_note, delete_note, fetch_notes\n"
+            "   * Required field for create/update: 'content' (string)\n"
+            "- Reminders: create_reminder, update_reminder, delete_reminder, fetch_reminders\n"
+            "   * Required for create/update: 'text' (string), 'remind_at' (ISO8601 datetime)\n"
+            "- Todos: create_todo, update_todo, delete_todo, fetch_todos\n"
+            "   * Required for create/update: 'task' (string), 'done' (boolean optional for update)\n"
+            "- Calendar: create_event, update_event, delete_event, fetch_events\n"
+            "- Emails: fetch_emails, mark_email_read, send_email\n\n"
+
+            "If the user wants to add a note/reminder/todo and no existing item is referenced, use create_* actions.\n"
+            "Use update_* only if a specific item ID is referenced.\n\n"
+
+            "Supported actions and schema examples:\n"
+            "[\n"
+            "  {\"action\": \"create_note\", \"params\": {\"content\": \"Buy milk\", \"service\": \"notes\"}, \"intent\": \"Create a note to buy milk\", \"confidence\": 0.9},\n"
+            "  {\"action\": \"create_reminder\", \"params\": {\"text\": \"Attend meeting\", \"remind_at\": \"2025-11-17T14:00\", \"service\": \"calendar\"}, \"intent\": \"Set a reminder to attend meeting\", \"confidence\": 0.95},\n"
+            "  {\"action\": \"create_todo\", \"params\": {\"task\": \"Finish report\", \"service\": \"todos\"}, \"intent\": \"Create a todo to finish report\", \"confidence\": 0.9},\n"
+            "  {\"action\": \"fetch_events\", \"params\": {\"time_min\": \"2025-11-17T00:00\", \"time_max\": \"2025-11-17T23:59\", \"service\": \"calendar\"}, \"intent\": \"Get today's calendar events\", \"confidence\": 0.85},\n"
+            "  {\"action\": \"fetch_emails\", \"params\": {\"filters\": [{\"from\": \"boss@example.com\"}], \"max_results\": 10}, \"intent\": \"Check emails from my boss\", \"confidence\": 0.9}\n"
             "]\n\n"
 
-            "CALENDAR ACTION SCHEMA:\n"
-            "- create_event params:\n"
-            "  {\"summary\": \"string\", \"description\": \"optional string\", "
-            "\"start_time\": \"ISO8601\", \"end_time\": \"optional ISO8601\", "
-            "\"attendees\": [\"email\"], \"timezone\": \"optional string\", "
-            "\"service\": \"calendar\"}\n"
-            "- update_event params:\n"
-            "  {\"event_id\": \"string\", \"summary\": \"optional\", \"description\": \"optional\", "
-            "\"start_time\": \"optional ISO8601\", \"end_time\": \"optional ISO8601\", "
-            "\"attendees\": [\"email\"], \"service\": \"calendar\"}\n"
-            "- delete_event params:\n"
-            "  {\"event_id\": \"string\", \"service\": \"calendar\"}\n"
-            "- fetch_events params:\n"
-            "  {\"time_min\": \"optional ISO8601\", \"time_max\": \"optional ISO8601\", "
-            "\"max_results\": 10, \"service\": \"calendar\"}\n\n"
-
-            "JSON ACTION SCHEMA EXAMPLE:\n"
-            "[{\"action\": \"create_reminder\","
-            "\"params\": {\"title\": \"Buy milk\", \"datetime\": \"2025-11-15T18:00\", \"service\": \"calendar\"},"
-            "\"intent\": \"Set a reminder to buy milk\","
-            "\"confidence\": 0.90}]\n"
+            "Always return JSON in this exact format with proper field names so TaskFrameBuilder can validate 'ready' status.\n"
         )
 
         response = self.client.chat.completions.create(

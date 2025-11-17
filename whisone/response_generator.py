@@ -3,6 +3,7 @@ import openai
 import json
 from assistant.models import AssistantMessage
 from django.contrib.auth import get_user_model
+from .models import UserPreference
 
 User = get_user_model()
 
@@ -11,6 +12,7 @@ class ResponseGenerator:
     """
     Generates natural language responses based on conversation history,
     executor results, optional vault context, and missing task parameters.
+    Responses are tailored to feel more human-like and incorporate user preferences.
     """
 
     def __init__(self, api_key: str, model: str = "gpt-4o-mini", history_limit: int = 3):
@@ -29,6 +31,7 @@ class ResponseGenerator:
         # 1️⃣ Fetch recent conversation history
         history_qs = AssistantMessage.objects.filter(user=user).order_by("-created_at")[:self.history_limit]
         history = reversed(history_qs)  # Oldest first
+        preferences = UserPreference.objects.filter(user=user).first()
 
         conversation_history = ""
         for msg in history:
@@ -41,7 +44,10 @@ class ResponseGenerator:
         # 3️⃣ Serialize vault context if available
         vault_context_str = json.dumps(vault_context, indent=2, default=str) if vault_context else "None"
 
-        # 4️⃣ Handle missing fields
+        # 4️⃣ Serialize user preferences if available
+        preferences_str = json.dumps(preferences.json_data if preferences else {}, indent=2, default=str) if preferences else "{}"
+
+        # 5️⃣ Handle missing fields
         missing_prompt = ""
         if missing_fields:
             # Flatten list of missing fields
@@ -53,9 +59,14 @@ class ResponseGenerator:
                     "Ask the user politely to provide these values so the tasks can be completed."
                 )
 
-        # 5️⃣ Construct the prompt
+        # 6️⃣ Construct the prompt
         prompt = f"""
-You are an AI assistant. Here's the conversation so far:
+You are a friendly, human-like assistant—think of yourself as a helpful friend who's always got your back. Respond in a casual, natural way: use contractions, emojis sparingly if it fits, and keep it warm and empathetic. Tailor your tone and suggestions to the user's preferences, like their interests in topics (e.g., car maintenance or work-related notes), communication style (e.g., neutral), and any other details provided.
+
+User preferences to consider:
+{preferences_str}
+
+Here's the conversation so far:
 {conversation_history}
 
 The user just sent the following message:
@@ -69,28 +80,29 @@ Additional context from the user's knowledge vault:
 
 {missing_prompt}
 
-Generate a concise, friendly, and informative response to the user
-about what was done, answer their message, and if applicable, ask for any missing information politely.
-Do not include JSON or code in your response.
+Craft a concise, engaging response that chats naturally about what happened, answers their question, and gently follows up on anything needed. Make it feel like a real conversation—no stiff language, JSON, or code here.
 """
 
-        # 6️⃣ Call OpenAI API
+        # 7️⃣ Call OpenAI API
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a helpful assistant that summarizes system actions, responds naturally, "
-                               "and asks the user for missing information if needed."
+                    "content": (
+                        "You are a warm, relatable assistant who talks like a close friend—casual, supportive, and fun. "
+                        "Weave in user preferences seamlessly to make responses feel personalized. Always aim for brevity "
+                        "while being helpful and human."
+                    )
                 },
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.5
+            temperature=0.7  # Slightly higher for more natural, varied responses
         )
 
         content = response.choices[0].message.content
 
-        # 7️⃣ Save assistant reply to AssistantMessage
+        # 8️⃣ Save assistant reply to AssistantMessage
         AssistantMessage.objects.create(user=user, role="assistant", content=content)
 
         return content
