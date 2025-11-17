@@ -10,6 +10,7 @@ from .tasks import send_whatsapp_message_task
 import json
 from .tasks import process_whatsapp_message, send_whatsapp_message_task
 from django.contrib.auth import get_user_model
+from whisone.message_handler import process_user_message
 
 User = get_user_model()
 
