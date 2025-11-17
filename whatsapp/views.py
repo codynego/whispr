@@ -123,8 +123,12 @@ def webhook(request):
                 #     send_whatsapp_message_task.delay(reply_msg.id)
                 #     print("Reply message sent.")
 
+                msg_text = msg.get('text', {}).get('body', '')
+                if not msg_text:
+                    return HttpResponse('OK', status=200)  # ACK non-text messages for now
+
                 chain(
-                    process_user_message.s(user.id, msg),
+                    process_user_message.s(user.id, msg_text),
                     send_whatsapp_message_task.s()
                 ).apply_async()
                 
