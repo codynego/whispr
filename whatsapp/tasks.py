@@ -184,3 +184,37 @@ def send_email_alert_via_whatsapp(user_id, email_id):
     except Exception as e:
         logger.exception(f"Error sending WhatsApp email alert: {str(e)}")
         return {'status': 'error', 'message': str(e)}
+
+
+
+def send_whatsapp_text(user_id: int, text: str, alert_type: str = 'generic') -> dict:
+    """
+    Sends a WhatsApp message to a user given their ID and text.
+    """
+    try:
+        User = get_user_model()
+        user = User.objects.get(id=user_id)
+
+        if not user.whatsapp:
+            logger.warning(f"User {user_id} has no WhatsApp number configured")
+            return {'status': 'error', 'message': 'User has no WhatsApp number configured'}
+
+        whatsapp_message = WhatsAppMessage.objects.create(
+            user=user,
+            to_number=user.whatsapp,
+            message=text.strip(),
+            alert_type=alert_type
+        )
+
+        # Send asynchronously
+        send_whatsapp_message_task.delay(whatsapp_message.id)
+
+        logger.info(f"Queued WhatsApp message for user {user_id} → {user.whatsapp}")
+        return {'status': 'success', 'queued': True}
+
+    except User.DoesNotExist:
+        logger.warning(f"User {user_id} does not exist")
+        return {'status': 'error', 'message': 'User not found'}
+    except Exception as e:
+        logger.exception(f"Error sending WhatsApp message: {str(e)}")
+        return {'status': 'error', 'message': str(e)}

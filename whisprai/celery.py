@@ -38,12 +38,19 @@ app.conf.update(
 )
 
 # Static Beat schedule: Periodic syncs (stagger if multi-instance)
-app.conf.beat_schedule = {
-    'sync-messages-every-2-minutes': {
-        'task': 'unified.tasks.common_tasks.periodic_channel_sync',
-        'schedule': crontab(minute='*/2'),
-    },
+# app.conf.beat_schedule = {
+#     'sync-messages-every-2-minutes': {
+#         'task': 'unified.tasks.common_tasks.periodic_channel_sync',
+#         'schedule': crontab(minute='*/2'),
+#     },
 
+# }
+
+app.conf.beat_schedule = {
+    'check-reminders-every-minute': {
+        'task': 'whisone.tasks.check_and_send_reminders',
+        'schedule': 60.0,  # every minute
+    },
 }
 
 # Suppress tokenizer warnings (for HF models in tasks)
