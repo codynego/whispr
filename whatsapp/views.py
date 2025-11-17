@@ -57,6 +57,7 @@ def send_message(request):
 import json
 import hmac
 import hashlib
+from celery import chain
 
 
 @csrf_exempt
@@ -112,15 +113,20 @@ def webhook(request):
                 WhatsAppWebhook.objects.create(event_type=event_type, payload=data)
                 
                 # Generate reply
-                # reply_msg = process_whatsapp_message(data)
-                print("Processing message for user ID:", user.id)
-                reply_msg = process_user_message.delay(user.id, msg)
-                print("Message processing task queued.")
+                # # reply_msg = process_whatsapp_message(data)
+                # print("Processing message for user ID:", user.id)
+                # reply_task = process_user_message.delay(user.id, msg)
+                # print("Message processing task queued.")
                 
-                # Send reply
-                if reply_msg:
-                    send_whatsapp_message_task(reply_msg.id)
-                    print("Reply message sent.")
+                # # Send reply
+                # if reply_msg:
+                #     send_whatsapp_message_task.delay(reply_msg.id)
+                #     print("Reply message sent.")
+
+                chain(
+                    process_user_message.s(user.id, msg),
+                    send_whatsapp_message_task.s()
+                ).apply_async()
                 
             elif statuses:
                 # Status update: Just log and ACK (no reply)

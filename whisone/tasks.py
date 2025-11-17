@@ -51,7 +51,7 @@ def check_and_send_reminders():
             message_text = generate_friendly_text(r.text)
 
             # Send via WhatsApp
-            result = send_whatsapp_text(r.user.id, message_text)
+            result = send_whatsapp_text(message_text)
             if result.get("status") == "success":
                 # Mark as completed
                 r.completed = True

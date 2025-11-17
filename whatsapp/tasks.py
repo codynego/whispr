@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 from whisprai.ai.gemini_client import get_ai_response
 from .models import WhatsAppMessage
 from assistant.ai_core.message_handler import MessageHandler
+from assistant.models import AssistantMessage
 import logging
 
 User = get_user_model()
@@ -65,13 +66,27 @@ def process_whatsapp_message(message_instance):
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=10)
-def send_whatsapp_message_task(self, message_id):
+def send_whatsapp_message_task(self, message_id=None, message=None):
     """
     Send WhatsApp message via Cloud API
     """
     try:
         print("Sending WhatsApp message ID:", message_id)
-        message = WhatsAppMessage.objects.get(id=message_id)
+        # message = WhatsAppMessage.objects.get(id=message_id)
+
+        if message is not None:
+            message = message
+
+        if message_id is None and message is None:
+            try:
+                # Fetch the last message based on creation time (or ID if incrementing)
+                message = AssistantMessage.objects.latest('created_at')  # Make sure you have a 'created_at' field
+            except AssistantMessage.DoesNotExist:
+                message = None  # No messages exist yet
+        
+        elif message_id and message is None:
+            message = AssistantMessage.objects.get(id=message_id)
+        
 
         
         if not all([
@@ -199,15 +214,10 @@ def send_whatsapp_text(user_id: int, text: str, alert_type: str = 'generic') -> 
             logger.warning(f"User {user_id} has no WhatsApp number configured")
             return {'status': 'error', 'message': 'User has no WhatsApp number configured'}
 
-        whatsapp_message = WhatsAppMessage.objects.create(
-            user=user,
-            to_number=user.whatsapp,
-            message=text.strip(),
-            alert_type=alert_type
-        )
+
 
         # Send asynchronously
-        send_whatsapp_message_task.delay(whatsapp_message.id)
+        send_whatsapp_message_task.delay(message=text)
 
         logger.info(f"Queued WhatsApp message for user {user_id} → {user.whatsapp}")
         return {'status': 'success', 'queued': True}
