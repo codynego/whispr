@@ -92,7 +92,7 @@ def process_user_message(user_id: int, message: str):
     # -------------------------------------------------------------------------
     executor = Executor(user=user, gmail_creds=google_creds, calendar_creds=google_creds)
     print("⚙️ Executing ready tasks...")
-    executor_results = executor.execute_tasks(ready_tasks)
+    executor_results = executor.execute_task_frames(ready_tasks)
     print("✔️ Executor Results:", executor_results)
 
     # -------------------------------------------------------------------------
