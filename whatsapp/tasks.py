@@ -114,7 +114,7 @@ def send_whatsapp_message_task(self, task_id = None, message_id=None, message=No
             'messaging_product': 'whatsapp',
             'to': to_number if to_number else user.whatsapp,
             'type': 'text',
-            'text': {'body': message.message}
+            'text': {'body': message if message else message.content},
         }
         print("WhatsApp API payload:", payload)
         
