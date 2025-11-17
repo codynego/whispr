@@ -66,13 +66,15 @@ def process_whatsapp_message(message_instance):
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=10)
-def send_whatsapp_message_task(self, task_id = None, message_id=None, message=None):
+def send_whatsapp_message_task(self, task_id = None, message_id=None, message=None, user_id=None, to_number=None):
     """
     Send WhatsApp message via Cloud API
     """
+    
     try:
         print("Sending WhatsApp message ID:", message_id, "Message:", message)
         # message = WhatsAppMessage.objects.get(id=message_id)
+        user = User.objects.get(id=user_id) if user_id else None
 
         if message:
             message = message
@@ -110,7 +112,7 @@ def send_whatsapp_message_task(self, task_id = None, message_id=None, message=No
 
         payload = {
             'messaging_product': 'whatsapp',
-            'to': message.to_number,
+            'to': to_number if to_number else user.whatsapp,
             'type': 'text',
             'text': {'body': message.message}
         }
@@ -218,7 +220,7 @@ def send_whatsapp_text(user_id: int, text: str, alert_type: str = 'generic') -> 
 
 
         # Send asynchronously
-        send_whatsapp_message_task.delay(message=text)
+        send_whatsapp_message_task.delay(user_id=user_id, message=text)
 
         logger.info(f"Queued WhatsApp message for user {user_id} → {user.whatsapp}")
         return {'status': 'success', 'queued': True}

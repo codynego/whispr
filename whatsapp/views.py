@@ -101,8 +101,19 @@ def webhook(request):
                 sender_number = msg.get('from')
                 
                 # Safely get user (use filter to avoid DoesNotExist exception)
+                welcome_msg = """Hi there, I'm Whisone, your AI-powered personal assistant for reminders, to-dos, and notes right here on WhatsApp.
+                                    
+                I see you've started chatting without signing up yet. Whisone helps you capture ideas, set smart reminders, and manage tasks effortlessly—no app downloads needed.
+                                    
+                To get started and unlock unlimited features, sign up here: https://whisone.com/signup
+                                    
+                In the meantime, try me out:
+                • "Remind me tomorrow at 9 to pay the rent"
+                • "Create a to-do list: send report, call Marc, etc."
+                • "Remind me every Monday at 8 to take out the trash" """
                 users = User.objects.filter(whatsapp=sender_number)
                 if not users.exists():
+                    send_whatsapp_message_task.delay(to_number=sender_number, message=welcome_msg)
                     return HttpResponse('OK', status=200)  # Still ACK to stop retries; handle offline later
                 
                 user = users.first()
@@ -117,7 +128,7 @@ def webhook(request):
 
                 chain(
                     process_user_message.s(user.id, msg_text),
-                    send_whatsapp_message_task.s(message_id=None, message=None)
+                    send_whatsapp_message_task.s(user_id=user.id, message_id=None, message=None, to_number=sender_number)
                 ).apply_async()
                 
             elif statuses:
