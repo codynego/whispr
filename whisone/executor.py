@@ -13,8 +13,9 @@ from .services.todo_service import TodoService
 from .knowledge_vault_manager import KnowledgeVaultManager
 from .memory_integrator import MemoryIntegrator
 from .memory_extractor import MemoryExtractor
+from .task_frame_builder import TaskFrameBuilder
 
-User = ...  # import from settings.AUTH_USER_MODEL if needed
+User = settings.AUTH_USER_MODEL
 
 
 class Executor:
@@ -38,6 +39,7 @@ class Executor:
         self.note_service = NoteService(user)
         self.reminder_service = ReminderService(user)
         self.todo_service = TodoService(user)
+        self.task_builder = TaskFrameBuilder()
 
         self.gmail_service = GmailService(**gmail_creds) if gmail_creds else None
         self.calendar_service = GoogleCalendarService(**calendar_creds) if calendar_creds else None
@@ -98,38 +100,52 @@ class Executor:
     # -------------------------
     # MAIN EXECUTION
     # -------------------------
+
     def execute_tasks(self, task_plan: List[Dict[str, Any]]):
         results = []
+        task_builder = TaskFrameBuilder()
 
         for step in task_plan:
             action = step.get("action")
             params = step.get("params", {})
+
+            # Build task frame to validate required fields
+            frame = task_builder.build(intent=step.get("intent", ""), action=action, parameters=params)
+            if not frame["ready"]:
+                # If required fields are missing, skip execution and report
+                results.append({
+                    "action": action,
+                    "ready": False,
+                    "missing_fields": frame["missing_fields"]
+                })
+                continue
 
             # FETCHABLE ACTIONS
             if action in self.FETCH_ACTIONS:
                 vault_entries = self.query_knowledge_vault(action, params)
                 if self.should_query_source(action, params, vault_entries):
                     # Fetch external
-                    result = self._execute_single_action(action, params)
+                    result = self._execute_single_action(action, frame["parameters"])
                     # Store intelligently via MemoryIntegrator
                     self.memory_integrator.ingest_from_source(content=json.dumps(result), source_type=action)
-                    results.append({"action": action, "result": result, "source": "external"})
+                    results.append({"action": action, "ready": True, "result": result, "source": "external"})
                 else:
                     cached = json.loads(vault_entries[0].content) if vault_entries else []
-                    results.append({"action": action, "result": cached, "source": "knowledge_vault"})
+                    results.append({"action": action, "ready": True, "result": cached, "source": "knowledge_vault"})
                 continue
 
             # NON-FETCH ACTIONS
             try:
-                result = self._execute_single_action(action, params)
+                result = self._execute_single_action(action, frame["parameters"])
                 # Optionally store memory-significant actions
                 if self.memory_extractor.should_store(result):
                     self.memory_integrator.ingest_from_source(content=json.dumps(result), source_type=action)
-                results.append({"action": action, "result": result})
+                results.append({"action": action, "ready": True, "result": result})
             except Exception as e:
-                results.append({"action": action, "error": str(e)})
+                results.append({"action": action, "ready": True, "error": str(e)})
 
         return results
+
 
     # -------------------------
     # SINGLE ACTION EXECUTION

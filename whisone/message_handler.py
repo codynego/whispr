@@ -6,6 +6,7 @@ from django.contrib.auth import get_user_model
 
 from .executor import Executor
 from .task_planner import TaskPlanner
+from .task_frame_builder import TaskFrameBuilder
 from .response_generator import ResponseGenerator
 from .memory_extractor import MemoryExtractor
 from .knowledge_vault_manager import KnowledgeVaultManager
@@ -36,17 +37,17 @@ def process_user_message(user_id: int, message: str):
     print("🔐 Google credentials loaded:", google_creds)
 
     # -------------------------------------------------------------------------
-    # 1️⃣ MEMORY EXTRACTION — understand the user's message
+    # 1️⃣ MEMORY EXTRACTION — parse user message
     # -------------------------------------------------------------------------
     extractor = MemoryExtractor(api_key=settings.OPENAI_API_KEY)
     extractor_output = extractor.extract(content=message, source_type="user_message")
     print("🧠 Memory Extractor Output:", extractor_output)
 
     # -------------------------------------------------------------------------
-    # 2️⃣ KNOWLEDGE VAULT — find context + decide needed external data
+    # 2️⃣ KNOWLEDGE VAULT — add context + decide if external queries needed
     # -------------------------------------------------------------------------
     vault = KnowledgeVaultManager(user=user)
-    ingest = vault.ingest_memory(
+    vault.ingest_memory(
         content=message,
         entities=extractor_output.get("entities", []),
         summary=extractor_output.get("summary", ""),
@@ -62,15 +63,33 @@ def process_user_message(user_id: int, message: str):
     # 3️⃣ TASK PLANNER — determine actions
     # -------------------------------------------------------------------------
     planner = TaskPlanner(api_key=settings.OPENAI_API_KEY)
-    task_plan = planner.plan_tasks(
+    raw_task_plan = planner.plan_tasks(
         user_message=message,
         vault_context=vault_result,
         user=user
     )
-    print("🗂️ Task Plan:", task_plan)
+    print("🗂️ Raw Task Plan:", raw_task_plan)
 
     # -------------------------------------------------------------------------
-    # 4️⃣ EXECUTOR — perform the tasks
+    # 3.1️⃣ TASK FRAME BUILDER — validate & detect missing fields
+    # -------------------------------------------------------------------------
+    frame_builder = TaskFrameBuilder()
+    task_frames = [
+        frame_builder.build(
+            intent=step.get("intent", ""),
+            action=step.get("action"),
+            parameters=step.get("params", {})
+        )
+        for step in raw_task_plan
+    ]
+    print("🗂️ Task Frames with missing fields:", task_frames)
+
+    # Separate tasks ready for execution vs tasks with missing fields
+    ready_tasks = [tf for tf in task_frames if tf["ready"]]
+    skipped_tasks = [tf for tf in task_frames if not tf["ready"]]
+
+    # -------------------------------------------------------------------------
+    # 4️⃣ EXECUTOR — execute only ready tasks
     # -------------------------------------------------------------------------
     executor = Executor(
         user=user,
@@ -78,20 +97,20 @@ def process_user_message(user_id: int, message: str):
         calendar_creds=google_creds
     )
 
-    print("⚙️ Executing tasks...")
-    executor_results = executor.execute_tasks(task_plan)
+    print("⚙️ Executing ready tasks...")
+    executor_results = executor.execute_tasks(ready_tasks)
     print("✔️ Executor Results:", executor_results)
 
     # -------------------------------------------------------------------------
-    # 5️⃣ RESPONSE GENERATOR — craft natural reply
+    # 5️⃣ RESPONSE GENERATOR — craft reply + follow-ups for missing info
     # -------------------------------------------------------------------------
     response_gen = ResponseGenerator(api_key=settings.OPENAI_API_KEY)
-    print("💬 Generating response...")
     response_text = response_gen.generate_response(
         user=user,
         user_message=message,
         executor_results=executor_results,
         vault_context=vault_result,
+        missing_fields=[tf["missing_fields"] for tf in skipped_tasks if tf["missing_fields"]]
     )
     print("📝 Final Response:", response_text)
 
