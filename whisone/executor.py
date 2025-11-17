@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional 
 from datetime import datetime, timedelta
 import inspect
 import json
@@ -22,15 +22,12 @@ User = settings.AUTH_USER_MODEL
 class Executor:
     """
     Smart Executor:
-      - Queries KnowledgeVault first
-      - Decides whether to fetch external data or use memory
+      - Fetches live data for emails, notes, todos, reminders, and events
       - Stores new results via MemoryIntegrator
-      - Minimizes unnecessary API calls
+      - Minimizes unnecessary API calls for other data
       - Executes structured tasks aligned with TaskFrameBuilder
     """
 
-    FRESHNESS_MINUTES = 15
-    SIMILARITY_THRESHOLD = 0.85
     FETCH_ACTIONS = {"fetch_emails", "fetch_events", "fetch_todos", "fetch_notes", "fetch_reminders"}
 
     def __init__(self, user: User, gmail_creds=None, calendar_creds=None):
@@ -67,38 +64,6 @@ class Executor:
             return None
 
     # -------------------------
-    # KNOWLEDGE VAULT HELPERS
-    # -------------------------
-    def query_knowledge_vault(self, action: str, params: Dict[str, Any] = None):
-        key_map = {
-            "fetch_emails": "emails",
-            "fetch_events": "events",
-            "fetch_reminders": "reminders",
-            "fetch_todos": "todos",
-            "fetch_notes": "notes",
-        }
-        keyword = key_map.get(action, action)
-        if params:
-            filter_str = " ".join([f"{f.get('key','')}:{f.get('value','')}" for f in params.get("filters", [])])
-            keyword += f" {filter_str}".strip()
-        return self.vault.query(keyword=keyword, limit=1)
-
-    def should_query_source(self, action: str, params: Dict[str, Any], vault_entries):
-        if not vault_entries:
-            return True
-
-        latest = vault_entries[0]
-        age = timezone.now() - latest.timestamp
-        if age > timedelta(minutes=self.FRESHNESS_MINUTES):
-            return True
-
-        query_str = json.dumps(params or {})
-        query_embed = self.vault.embedding_service.embed(query_str)
-        memory_embed = latest.embedding
-        sim = self.vault._cosine_similarity(query_embed, memory_embed)
-        return sim < self.SIMILARITY_THRESHOLD
-
-    # -------------------------
     # MAIN EXECUTION
     # -------------------------
     def execute_task_frames(self, task_frames: List[Dict[str, Any]]):
@@ -118,16 +83,13 @@ class Executor:
                 })
                 continue
 
-            # FETCHABLE ACTIONS
+            # Always fetch live data for emails, notes, todos, reminders, events
             if action in self.FETCH_ACTIONS:
-                vault_entries = self.query_knowledge_vault(action, params)
-                if self.should_query_source(action, params, vault_entries):
-                    result = self._execute_single_action(action, params)
+                result = self._execute_single_action(action, params)
+                # Store in memory/vault for reference
+                if self.memory_extractor.should_store(result):
                     self.memory_integrator.ingest_from_source(content=json.dumps(result), source_type=action)
-                    results.append({"action": action, "ready": True, "result": result, "source": "external"})
-                else:
-                    cached = json.loads(vault_entries[0].content) if vault_entries else []
-                    results.append({"action": action, "ready": True, "result": cached, "source": "knowledge_vault"})
+                results.append({"action": action, "ready": True, "result": result, "source": "external"})
                 continue
 
             # NON-FETCH ACTIONS
