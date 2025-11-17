@@ -8,9 +8,9 @@ from whatsapp.tasks import send_whatsapp_text
 import openai
 import logging
 from django.conf import settings
-from whisone.services.gmail_service import GmailService
-from whisone.models import ImportantEmailRule
-from whatsapp.tasks import send_whatsapp_message_task
+# from whisone.services.gmail_service import GmailService
+# from whisone.models import ImportantEmailRule
+# from whatsapp.tasks import send_whatsapp_message_task
 
 
 
