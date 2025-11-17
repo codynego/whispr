@@ -101,22 +101,20 @@ class Executor:
     # -------------------------
     # MAIN EXECUTION
     # -------------------------
-    def execute_tasks(self, task_plan: List[Dict[str, Any]]):
+    def execute_task_frames(self, task_frames: List[Dict[str, Any]]):
         results = []
-        task_builder = TaskFrameBuilder()
+        print("🚀 Executing task frames:", task_frames)
 
-        for step in task_plan:
-            action = step.get("action")
-            params = step.get("params", {})
+        for frame in task_frames:
+            print("🚀 Executing frame:", frame)
+            action = frame.get("action")
+            params = frame.get("parameters", {})
 
-            # Build task frame to validate required fields
-            frame = task_builder.build(intent=step.get("intent", ""), action=action, parameters=params)
-
-            if not frame["ready"]:
+            if not frame.get("ready", False):
                 results.append({
                     "action": action,
                     "ready": False,
-                    "missing_fields": frame["missing_fields"]
+                    "missing_fields": frame.get("missing_fields", [])
                 })
                 continue
 
@@ -124,7 +122,7 @@ class Executor:
             if action in self.FETCH_ACTIONS:
                 vault_entries = self.query_knowledge_vault(action, params)
                 if self.should_query_source(action, params, vault_entries):
-                    result = self._execute_single_action(action, frame["parameters"])
+                    result = self._execute_single_action(action, params)
                     self.memory_integrator.ingest_from_source(content=json.dumps(result), source_type=action)
                     results.append({"action": action, "ready": True, "result": result, "source": "external"})
                 else:
@@ -134,7 +132,7 @@ class Executor:
 
             # NON-FETCH ACTIONS
             try:
-                result = self._execute_single_action(action, frame["parameters"])
+                result = self._execute_single_action(action, params)
                 if self.memory_extractor.should_store(result):
                     self.memory_integrator.ingest_from_source(content=json.dumps(result), source_type=action)
                 results.append({"action": action, "ready": True, "result": result})
