@@ -59,7 +59,7 @@ def check_and_send_reminders():
         if r.remind_at <= now_aware:
             # Generate friendly message via OpenAI
             message_text = generate_friendly_text(r.text)
-            message_text = "**QUICK REMINDER**\n" + message_text
+            message_text = "*QUICK REMINDER*\n" + message_text
 
             # Send via WhatsApp (pass user ID for phone lookup)
             result = send_whatsapp_text(r.user.id, message_text)

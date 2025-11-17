@@ -84,7 +84,7 @@ def send_whatsapp_message_task(self, task_id = None, message_id=None, message=No
             try:
                 # Fetch the last message based on creation time (or ID if incrementing)
                 message = AssistantMessage.objects.latest('created_at')  # Make sure you have a 'created_at' field
-                message = message.content
+                message = message.content.strip("*")
             except AssistantMessage.DoesNotExist:
                 message = None  # No messages exist yet
         
@@ -92,7 +92,6 @@ def send_whatsapp_message_task(self, task_id = None, message_id=None, message=No
             message = AssistantMessage.objects.get(id=message_id)
 
         
-        message = message.strip("*")
         
 
         
