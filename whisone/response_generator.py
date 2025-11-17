@@ -103,6 +103,11 @@ Craft a concise, engaging response that chats naturally about what happened, ans
         content = response.choices[0].message.content
 
         # 8️⃣ Save assistant reply to AssistantMessage
-        AssistantMessage.objects.create(user=user, role="assistant", content=content)
+        print("Saving assistant message to DB")
+        try:
+            print("Saving assistant message to DB")
+            AssistantMessage.objects.create(user=user, role="assistant", content=content)
+        except Exception as e:
+            logger.error(f"Error saving assistant message: {str(e)}")
 
         return content

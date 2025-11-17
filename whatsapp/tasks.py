@@ -74,10 +74,10 @@ def send_whatsapp_message_task(self, message_id=None, message=None):
         print("Sending WhatsApp message ID:", message_id)
         # message = WhatsAppMessage.objects.get(id=message_id)
 
-        if message is not None:
+        if message:
             message = message
 
-        if message_id is None and message is None:
+        elif message_id is None and message is None:
             try:
                 # Fetch the last message based on creation time (or ID if incrementing)
                 message = AssistantMessage.objects.latest('created_at')  # Make sure you have a 'created_at' field
