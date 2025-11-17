@@ -112,11 +112,14 @@ def webhook(request):
                 • "Create a to-do list: send report, call Marc, etc."
                 • "Remind me every Monday at 8 to take out the trash" """
                 users = User.objects.filter(whatsapp=sender_number)
+                print("Fetched users for number:", sender_number, "Count:", users.count())
                 if not users.exists():
+                    print("Unknown user number:", sender_number)
                     send_whatsapp_message_task.delay(to_number=sender_number, message=welcome_msg)
                     return HttpResponse('OK', status=200)  # Still ACK to stop retries; handle offline later
                 
                 user = users.first()
+                print("Known user number:", sender_number)
                 
                 # Log event (now works for messages too)
                 event_type = 'message_received'  # Or derive from msg type
