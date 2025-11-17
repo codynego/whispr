@@ -84,6 +84,7 @@ def send_whatsapp_message_task(self, task_id = None, message_id=None, message=No
             try:
                 # Fetch the last message based on creation time (or ID if incrementing)
                 message = AssistantMessage.objects.latest('created_at')  # Make sure you have a 'created_at' field
+                message = message.content
             except AssistantMessage.DoesNotExist:
                 message = None  # No messages exist yet
         
@@ -114,7 +115,7 @@ def send_whatsapp_message_task(self, task_id = None, message_id=None, message=No
             'messaging_product': 'whatsapp',
             'to': to_number if to_number else user.whatsapp,
             'type': 'text',
-            'text': {'body': message if message else message.content},
+            'text': {'body': message},
         }
         print("WhatsApp API payload:", payload)
         
