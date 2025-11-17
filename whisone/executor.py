@@ -14,6 +14,7 @@ from .knowledge_vault_manager import KnowledgeVaultManager
 from .memory_integrator import MemoryIntegrator
 from .memory_extractor import MemoryExtractor
 from .task_frame_builder import TaskFrameBuilder
+from django.conf import settings
 
 User = settings.AUTH_USER_MODEL
 
