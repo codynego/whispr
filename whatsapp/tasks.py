@@ -96,9 +96,9 @@ def send_whatsapp_message_task(self, message_id=None, message=None):
         ]):
             msg = 'WhatsApp API credentials not configured'
             logger.error(msg)
-            message.status = 'failed'
-            message.error_message = msg
-            message.save()
+            # message.status = 'failed'
+            # message.error_message = msg
+            # message.save()
             return {'status': 'error', 'message': msg}
         # Construct API request
         url = f"{settings.WHATSAPP_API_URL}/{settings.WHATSAPP_PHONE_NUMBER_ID}/messages"
@@ -121,20 +121,20 @@ def send_whatsapp_message_task(self, message_id=None, message=None):
             response_data = response.json()
             wa_msg_id = response_data.get('messages', [{}])[0].get('id', None)
             
-            message.status = 'sent'
-            message.sent_at = timezone.now()
-            message.message_id = wa_msg_id
-            message.save()
+            # message.status = 'sent'
+            # message.sent_at = timezone.now()
+            # message.message_id = wa_msg_id
+            # message.save()
             
-            logger.info(f"✅ WhatsApp message {message_id} sent successfully")
+            logger.info(f"✅ WhatsApp message sent successfully")
             return {'status': 'success', 'message_id': wa_msg_id}
         else:
             error_msg = response.text
-            logger.error(f"❌ Failed to send WhatsApp message {message_id}: {error_msg}")
+            logger.error(f"❌ Failed to send WhatsApp message : {error_msg}")
             
-            message.status = 'failed'
-            message.error_message = error_msg
-            message.save()
+            # message.status = 'failed'
+            # message.error_message = error_msg
+            # message.save()
             
             # Retry if it's a temporary network issue
             if response.status_code >= 500:
@@ -142,16 +142,16 @@ def send_whatsapp_message_task(self, message_id=None, message=None):
             
             return {'status': 'error', 'message': error_msg}
     
-    except WhatsAppMessage.DoesNotExist:
-        logger.error(f"Message {message_id} not found in DB")
+    except AssistantMessage.DoesNotExist:
+        logger.error(f"Message  not found in DB")
         return {'status': 'error', 'message': 'Message not found'}
     
     except Exception as e:
-        logger.exception(f"Error sending WhatsApp message {message_id}: {str(e)}")
-        if 'message' in locals():
-            message.status = 'failed'
-            message.error_message = str(e)
-            message.save()
+        logger.exception(f"Error sending WhatsApp message : {str(e)}")
+        # if 'message' in locals():
+        #     message.status = 'failed'
+        #     message.error_message = str(e)
+        #     message.save()
         return {'status': 'error', 'message': str(e)}
 
 
