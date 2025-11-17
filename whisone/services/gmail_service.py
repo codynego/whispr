@@ -1,14 +1,19 @@
+
 import base64
 from datetime import datetime
 from typing import List, Dict
 from django.core.cache import cache  # Django cache
+from django.contrib.auth import get_user_model
 
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 
+User = get_user_model()
+
 
 class GmailService:
-    def __init__(self, access_token: str, refresh_token: str, client_id: str, client_secret: str):
+    def __init__(self, access_token: str, refresh_token: str, client_id: str, client_secret: str, user_email: str = None):
+        self.user_email = user_email  # Store for cache key
         self.creds = Credentials(
             token=access_token,
             refresh_token=refresh_token,
@@ -32,6 +37,7 @@ class GmailService:
     ) -> List[Dict]:
         # Build a unique cache key based on user, query, and filters
         key_parts = [
+            self.user_email or "default_user",
             query,
             str(after) if after else "",
             str(before) if before else "",
@@ -78,7 +84,8 @@ class GmailService:
                 "to": headers.get('To', ''),
                 "date": headers.get('Date', ''),
                 "snippet": msg_detail.get('snippet', ''),
-                "body": body_data
+                "body": body_data,
+                "unread": "UNREAD" in [label for label in msg_detail.get('labelIds', [])]
             })
 
         # Save to cache

@@ -154,14 +154,29 @@ class Executor:
             max_results = params.get("max_results", 20)
 
             for f in filters:
-                key, value = f.get("key", "").lower(), f.get("value", "")
-                if key == "keyword": query += f" {value}"
-                elif key == "from": query += f" from:{value}"
-                elif key == "to": query += f" to:{value}"
-                elif key == "subject": query += f" subject:{value}"
-                elif key == "unread": unread_only = bool(value)
-                elif key == "after": after = self._parse_datetime(value)
-                elif key == "before": before = self._parse_datetime(value)
+                if isinstance(f, dict):
+                    # Handle filters as {filter_type: value} e.g., {'from': 'alx'}
+                    for filter_key, filter_value in f.items():
+                        key = filter_key.lower()
+                        value = filter_value
+                        if key == "keyword": query += f" {value}"
+                        elif key == "from": query += f" from:{value}"
+                        elif key == "to": query += f" to:{value}"
+                        elif key == "subject": query += f" subject:{value}"
+                        elif key == "unread": unread_only = bool(value)
+                        elif key == "after": after = self._parse_datetime(value)
+                        elif key == "before": before = self._parse_datetime(value)
+                elif isinstance(f, dict) and "key" in f and "value" in f:
+                    # Backward compatibility: Handle {'key': 'from', 'value': 'alx'}
+                    key = f.get("key", "").lower()
+                    value = f.get("value", "")
+                    if key == "keyword": query += f" {value}"
+                    elif key == "from": query += f" from:{value}"
+                    elif key == "to": query += f" to:{value}"
+                    elif key == "subject": query += f" subject:{value}"
+                    elif key == "unread": unread_only = bool(value)
+                    elif key == "after": after = self._parse_datetime(value)
+                    elif key == "before": before = self._parse_datetime(value)
 
             emails = self._safe_call(self.gmail_service.fetch_emails, {
                 "query": query.strip(),
@@ -219,3 +234,4 @@ class Executor:
 
         else:
             return {"error": f"Unknown action or missing service for {action}"}
+
