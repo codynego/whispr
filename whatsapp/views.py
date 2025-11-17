@@ -111,7 +111,10 @@ def webhook(request):
                 WhatsAppWebhook.objects.create(event_type=event_type, payload=data)
                 
                 # Generate reply
-                reply_msg = process_whatsapp_message(data)
+                # reply_msg = process_whatsapp_message(data)
+                print("Processing message for user ID:", user.id)
+                reply_msg = process_user_message.delay(user.id, msg)
+                print("Message processing task queued.")
                 
                 # Send reply
                 if reply_msg:
