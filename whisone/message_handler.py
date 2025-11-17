@@ -1,6 +1,4 @@
 from celery import shared_task
-from datetime import datetime
-
 from django.conf import settings
 from django.contrib.auth import get_user_model
 
@@ -20,10 +18,10 @@ User = get_user_model()
 
 @shared_task
 def process_user_message(user_id: int, message: str):
-    print("📩 Processing message for user:", user_id)
+    print(f"📩 Processing message for user {user_id}: {message}")
 
     # -------------------------------------------------------------------------
-    # 0️⃣ Load user + integration
+    # 0️⃣ Load user + integrations
     # -------------------------------------------------------------------------
     user = User.objects.get(id=user_id)
     integration = Integration.objects.filter(user=user, provider="gmail").first()
@@ -34,7 +32,7 @@ def process_user_message(user_id: int, message: str):
         "refresh_token": integration.refresh_token if integration else None,
         "access_token": integration.access_token if integration else None,
     }
-    print("🔐 Google credentials loaded:", google_creds)
+    print("🔐 Google credentials loaded")
 
     # -------------------------------------------------------------------------
     # 1️⃣ MEMORY EXTRACTION — parse user message
@@ -55,7 +53,7 @@ def process_user_message(user_id: int, message: str):
     )
     vault_result = vault.query(
         keyword=message,
-        entities=extractor_output.get("entities", {})
+        entities=extractor_output.get("entities", [])
     )
     print("📚 Knowledge Vault Result:", vault_result)
 
@@ -82,23 +80,19 @@ def process_user_message(user_id: int, message: str):
         )
         for step in raw_task_plan
     ]
-    print("🗂️ Task Frames with missing fields:", task_frames)
+    print("🗂️ Task Frames:", task_frames)
 
-    # Separate tasks ready for execution vs tasks with missing fields
     ready_tasks = [tf for tf in task_frames if tf["ready"]]
     skipped_tasks = [tf for tf in task_frames if not tf["ready"]]
+    if skipped_tasks:
+        print("⚠️ Tasks skipped due to missing fields:", skipped_tasks)
 
     # -------------------------------------------------------------------------
     # 4️⃣ EXECUTOR — execute only ready tasks
     # -------------------------------------------------------------------------
-    executor = Executor(
-        user=user,
-        gmail_creds=google_creds,
-        calendar_creds=google_creds
-    )
-
+    executor = Executor(user=user, gmail_creds=google_creds, calendar_creds=google_creds)
     print("⚙️ Executing ready tasks...")
-    executor_results = executor.execute_tasks(ready_tasks)
+    executor_results = executor.execute_task_frames(ready_tasks)
     print("✔️ Executor Results:", executor_results)
 
     # -------------------------------------------------------------------------
@@ -118,12 +112,9 @@ def process_user_message(user_id: int, message: str):
     # 6️⃣ MEMORY INTEGRATOR — store new memories
     # -------------------------------------------------------------------------
     if extractor_output.get("should_store_memory"):
-        mem_integrator = MemoryIntegrator()
-        mem_integrator.store(
-            user=user,
-            memory_data=extractor_output.get("memory_data", {})
-        )
-        print("💾 Memory stored:", extractor_output.get("memory_data"))
+        mem_integrator = MemoryIntegrator(user=user)
+        mem_integrator.store(memory_data=extractor_output.get("memory_data", {}))
+        print("💾 Memory stored")
 
     # -------------------------------------------------------------------------
     # 7️⃣ Save assistant reply
@@ -133,6 +124,6 @@ def process_user_message(user_id: int, message: str):
         role="assistant",
         content=response_text
     )
-
     print("🎉 Done processing message.")
+
     return response_text
