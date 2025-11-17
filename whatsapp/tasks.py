@@ -66,7 +66,7 @@ def process_whatsapp_message(message_instance):
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=10)
-def send_whatsapp_message_task(self, message_id=None, message=None):
+def send_whatsapp_message_task(self, task_id = None, message_id=None, message=None):
     """
     Send WhatsApp message via Cloud API
     """

@@ -6,7 +6,6 @@ from django.http import HttpResponse
 from django.conf import settings
 from .models import WhatsAppMessage, WhatsAppWebhook
 from .serializers import WhatsAppMessageSerializer, SendWhatsAppMessageSerializer
-from .tasks import send_whatsapp_message_task
 import json
 from .tasks import process_whatsapp_message, send_whatsapp_message_task
 from django.contrib.auth import get_user_model
@@ -111,17 +110,6 @@ def webhook(request):
                 # Log event (now works for messages too)
                 event_type = 'message_received'  # Or derive from msg type
                 WhatsAppWebhook.objects.create(event_type=event_type, payload=data)
-                
-                # Generate reply
-                # # reply_msg = process_whatsapp_message(data)
-                # print("Processing message for user ID:", user.id)
-                # reply_task = process_user_message.delay(user.id, msg)
-                # print("Message processing task queued.")
-                
-                # # Send reply
-                # if reply_msg:
-                #     send_whatsapp_message_task.delay(reply_msg.id)
-                #     print("Reply message sent.")
 
                 msg_text = msg.get('text', {}).get('body', '')
                 if not msg_text:
