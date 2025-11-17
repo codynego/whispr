@@ -1,7 +1,7 @@
 # tasks.py
 from celery import shared_task
 from datetime import datetime, timedelta
-from django.utils.timezone import now
+from django.utils import timezone
 from django.contrib.auth import get_user_model
 from .models import Reminder
 from whatsapp.tasks import send_whatsapp_text
@@ -11,7 +11,7 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-openai.api_key = settings.OPENAI_API_KEY
+client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
 
 def generate_friendly_text(reminder_text: str) -> str:
     """
@@ -19,8 +19,8 @@ def generate_friendly_text(reminder_text: str) -> str:
     """
     try:
         prompt = f"Rewrite the following reminder in a friendly, concise, human tone:\n\n{reminder_text}"
-        response = openai.ChatCompletion.create(
-            model="gpt-5-mini",
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.7,
             max_tokens=60
@@ -36,8 +36,13 @@ def check_and_send_reminders():
     """
     Periodic Celery task to check today's reminders and send WhatsApp messages.
     """
-    today_start = datetime.combine(now().date(), datetime.min.time())
-    today_end = datetime.combine(now().date(), datetime.max.time())
+    now_aware = timezone.now()
+    today_start = timezone.make_aware(
+        datetime.combine(now_aware.date(), datetime.min.time())
+    )
+    today_end = timezone.make_aware(
+        datetime.combine(now_aware.date(), datetime.max.time())
+    )
     
     reminders = Reminder.objects.filter(
         completed=False,
@@ -46,12 +51,12 @@ def check_and_send_reminders():
     )
 
     for r in reminders:
-        if r.remind_at <= now():
+        if r.remind_at <= now_aware:
             # Generate friendly message via OpenAI
             message_text = generate_friendly_text(r.text)
 
-            # Send via WhatsApp
-            result = send_whatsapp_text(message_text)
+            # Send via WhatsApp (pass user ID for phone lookup)
+            result = send_whatsapp_text(r.user.id, message_text)
             if result.get("status") == "success":
                 # Mark as completed
                 r.completed = True

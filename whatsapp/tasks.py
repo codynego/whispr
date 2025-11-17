@@ -90,6 +90,9 @@ def send_whatsapp_message_task(self, task_id = None, message_id=None, message=No
         
         elif message_id and message is None:
             message = AssistantMessage.objects.get(id=message_id)
+
+        
+        message = message.strip("*")
         
 
         
