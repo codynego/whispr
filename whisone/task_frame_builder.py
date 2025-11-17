@@ -1,4 +1,7 @@
-from typing import Dict, Any, List
+# -------------------------
+# task_frame_builder.py
+# -------------------------
+from typing import Dict, Any
 
 class TaskFrameBuilder:
     """
@@ -42,39 +45,31 @@ class TaskFrameBuilder:
 
         # OPTIONAL fields for each action
         self.optional_fields = {
-            # Calendar
             "create_event": ["description", "end_time", "attendees", "timezone", "service"],
             "update_event": ["summary", "description", "start_time", "end_time", "attendees", "timezone", "service"],
             "delete_event": ["service"],
             "fetch_events": ["time_min", "time_max", "max_results", "service"],
 
-            # Notes
             "create_note": ["title", "tags"],
             "update_note": ["title", "tags"],
             "delete_note": [],
             "fetch_notes": [],
 
-            # Reminders
             "create_reminder": ["timezone", "completed"],
             "update_reminder": ["text", "remind_at", "completed", "timezone"],
             "delete_reminder": [],
             "fetch_reminders": ["include_completed"],
 
-            # Todos
             "create_todo": ["due_date", "priority", "done"],
             "update_todo": ["task", "due_date", "priority", "done"],
             "delete_todo": [],
             "fetch_todos": ["done"],
 
-            # Emails
             "mark_email_read": [],
             "send_email": ["cc", "bcc"],
             "fetch_emails": ["from_email", "query", "after", "before", "unread_only", "max_results"]
         }
 
-    # --------------------------------------------------------------
-    # PUBLIC METHOD → Build Task Frame
-    # --------------------------------------------------------------
     def build(self, intent: str, action: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """
         Creates a fully structured task frame including:
@@ -85,6 +80,9 @@ class TaskFrameBuilder:
         - missing_fields
         - ready flag
         """
+        # Ensure parameter keys match TaskFrame naming
+        parameters = self._normalize_params(action, parameters)
+
         required = self.required_fields.get(action, [])
         missing = [field for field in required if field not in parameters or parameters[field] in (None, "")]
 
@@ -99,19 +97,24 @@ class TaskFrameBuilder:
 
         return task_frame
 
-    # --------------------------------------------------------------
-    # VALIDATION helper
-    # --------------------------------------------------------------
-    def validate_parameters(self, action: str, parameters: Dict[str, Any]) -> bool:
-        """Return True if all required fields are present."""
-        required = self.required_fields.get(action, [])
-        return all(param in parameters for param in required)
+    def _normalize_params(self, action: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Map TaskPlanner param names to TaskFrame required names
+        """
+        mapping = {
+            "create_reminder": {"datetime": "remind_at", "title": "text"},
+            "update_reminder": {"datetime": "remind_at", "title": "text"},
+            "create_event": {"datetime": "start_time"},
+            "update_event": {"datetime": "start_time"}
+        }
 
-    # --------------------------------------------------------------
-    # POST-PROCESSING — Fill defaults for optional fields
-    # --------------------------------------------------------------
+        if action in mapping:
+            for old_key, new_key in mapping[action].items():
+                if old_key in parameters and new_key not in parameters:
+                    parameters[new_key] = parameters.pop(old_key)
+        return parameters
+
     def apply_defaults(self, action: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """Fill missing optional values with None to keep structure stable."""
         for field in self.optional_fields.get(action, []):
             parameters.setdefault(field, None)
         return parameters

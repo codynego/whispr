@@ -192,21 +192,31 @@ User message:
     # -------------------------
     # INTERNAL: Normalize actions
     # -------------------------
+    # -------------------------
+    # task_planner.py
+    # -------------------------
+    # (Modified normalization to match TaskFrame naming)
+
     def _normalize_actions(self, actions: List[Any]) -> List[Dict[str, Any]]:
         """
         - Ensures fields exist
         - Fix missing datetime via natural language parsing
+        - Renames params to match TaskFrame required_fields
         - Adds confidence if missing
-        - Safely handles malformed LLM outputs
         """
         cleaned = []
-
         if not isinstance(actions, list):
             return cleaned
 
+        param_mapping = {
+            "create_reminder": {"datetime": "remind_at", "title": "text"},
+            "update_reminder": {"datetime": "remind_at", "title": "text"},
+            "create_event": {"datetime": "start_time"},
+            "update_event": {"datetime": "start_time"}
+        }
+
         for task in actions:
             if not isinstance(task, dict):
-                # Try to recover if task is a list or other type
                 continue
 
             action_name = task.get("action")
@@ -217,6 +227,12 @@ User message:
             # -------- Date normalization --------
             if "datetime" in params and params["datetime"]:
                 params["datetime"] = self._normalize_datetime(params["datetime"])
+
+            # -------- Map param names to TaskFrame --------
+            if action_name in param_mapping:
+                for old_key, new_key in param_mapping[action_name].items():
+                    if old_key in params and new_key not in params:
+                        params[new_key] = params.pop(old_key)
 
             # -------- Basic service routing hint --------
             if "service" not in params:
@@ -230,6 +246,7 @@ User message:
             })
 
         return cleaned
+
 
 
     # -------------------------
