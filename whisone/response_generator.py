@@ -45,7 +45,7 @@ class ResponseGenerator:
         vault_context_str = json.dumps(vault_context, indent=2, default=str) if vault_context else "None"
 
         # 4️⃣ Serialize user preferences if available
-        preferences_str = json.dumps(preferences.json_data if preferences else {}, indent=2, default=str) if preferences else "{}"
+        preferences_str = json.dumps(preferences.preferences if preferences else {}, indent=2, default=str)
 
         # 5️⃣ Handle missing fields
         missing_prompt = ""
