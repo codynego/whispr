@@ -129,7 +129,7 @@ def webhook(request):
 
                 chain(
                     process_user_message.s(user.id, msg_text),
-                    send_whatsapp_message_task.s()
+                    send_whatsapp_message_task.s(message_id=None, message=None)
                 ).apply_async()
                 
             elif statuses:
