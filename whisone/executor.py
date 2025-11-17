@@ -1,8 +1,9 @@
-from typing import List, Dict, Any, Optional 
-from datetime import datetime, timedelta
+from typing import List, Dict, Any, Optional
+from datetime import datetime
 import inspect
 import json
 from django.utils import timezone
+import email.utils
 
 # Services
 from .services.gmail_service import GmailService
@@ -10,9 +11,6 @@ from .services.calendar_service import GoogleCalendarService
 from .services.note_service import NoteService
 from .services.reminder_service import ReminderService
 from .services.todo_service import TodoService
-from .knowledge_vault_manager import KnowledgeVaultManager
-from .memory_integrator import MemoryIntegrator
-from .memory_extractor import MemoryExtractor
 from .task_frame_builder import TaskFrameBuilder
 from django.conf import settings
 
@@ -21,11 +19,8 @@ User = settings.AUTH_USER_MODEL
 
 class Executor:
     """
-    Smart Executor:
-      - Fetches live data for emails, notes, todos, reminders, and events
-      - Stores new results via MemoryIntegrator
-      - Minimizes unnecessary API calls for other data
-      - Executes structured tasks aligned with TaskFrameBuilder
+    Executor that always uses live data (no knowledge vault caching for fetchable actions).
+    Supports: emails, calendar events, notes, reminders, todos.
     """
 
     FETCH_ACTIONS = {"fetch_emails", "fetch_events", "fetch_todos", "fetch_notes", "fetch_reminders"}
@@ -41,11 +36,6 @@ class Executor:
 
         self.gmail_service = GmailService(**gmail_creds) if gmail_creds else None
         self.calendar_service = GoogleCalendarService(**calendar_creds) if calendar_creds else None
-
-        # Vault & memory
-        self.vault = KnowledgeVaultManager(user)
-        self.memory_extractor = MemoryExtractor()
-        self.memory_integrator = MemoryIntegrator(user, extractor=self.memory_extractor, vault_manager=self.vault)
 
     # -------------------------
     # UTILITY FUNCTIONS
@@ -68,10 +58,8 @@ class Executor:
     # -------------------------
     def execute_task_frames(self, task_frames: List[Dict[str, Any]]):
         results = []
-        print("🚀 Executing task frames:", task_frames)
 
         for frame in task_frames:
-            print("🚀 Executing frame:", frame)
             action = frame.get("action")
             params = frame.get("parameters", {})
 
@@ -83,20 +71,8 @@ class Executor:
                 })
                 continue
 
-            # Always fetch live data for emails, notes, todos, reminders, events
-            if action in self.FETCH_ACTIONS:
-                result = self._execute_single_action(action, params)
-                # Store in memory/vault for reference
-                if self.memory_extractor.should_store(result):
-                    self.memory_integrator.ingest_from_source(content=json.dumps(result), source_type=action)
-                results.append({"action": action, "ready": True, "result": result, "source": "external"})
-                continue
-
-            # NON-FETCH ACTIONS
             try:
                 result = self._execute_single_action(action, params)
-                if self.memory_extractor.should_store(result):
-                    self.memory_integrator.ingest_from_source(content=json.dumps(result), source_type=action)
                 results.append({"action": action, "ready": True, "result": result})
             except Exception as e:
                 results.append({"action": action, "ready": True, "error": str(e)})
@@ -113,10 +89,11 @@ class Executor:
             return {"id": note.id, "content": note.content, "created_at": note.created_at.isoformat()}
 
         elif action == "update_note":
-            note = self._safe_call(self.note_service.update_note, {"note_id": params.get("note_id"), "new_content": params.get("content")})
-            if note:
-                return {"id": note.id, "content": note.content, "created_at": note.created_at.isoformat()}
-            return None
+            note = self._safe_call(self.note_service.update_note, {
+                "note_id": params.get("note_id"),
+                "new_content": params.get("content")
+            })
+            return {"id": note.id, "content": note.content, "created_at": note.created_at.isoformat()} if note else None
 
         elif action == "delete_note":
             return self._safe_call(self.note_service.delete_note, {"note_id": params.get("note_id")})
@@ -139,9 +116,7 @@ class Executor:
                 "text": params.get("text"),
                 "remind_at": self._parse_datetime(params.get("remind_at"))
             })
-            if reminder:
-                return {"id": reminder.id, "text": reminder.text, "remind_at": reminder.remind_at.isoformat()}
-            return None
+            return {"id": reminder.id, "text": reminder.text, "remind_at": reminder.remind_at.isoformat()} if reminder else None
 
         elif action == "delete_reminder":
             return self._safe_call(self.reminder_service.delete_reminder, {"reminder_id": params.get("reminder_id")})
@@ -156,10 +131,12 @@ class Executor:
             return {"id": todo.id, "task": todo.task, "done": todo.done}
 
         elif action == "update_todo":
-            todo = self._safe_call(self.todo_service.update_todo, {"todo_id": params.get("todo_id"), "task": params.get("task"), "done": params.get("done")})
-            if todo:
-                return {"id": todo.id, "task": todo.task, "done": todo.done}
-            return None
+            todo = self._safe_call(self.todo_service.update_todo, {
+                "todo_id": params.get("todo_id"),
+                "task": params.get("task"),
+                "done": params.get("done")
+            })
+            return {"id": todo.id, "task": todo.task, "done": todo.done} if todo else None
 
         elif action == "delete_todo":
             return self._safe_call(self.todo_service.delete_todo, {"todo_id": params.get("todo_id")})
@@ -175,6 +152,7 @@ class Executor:
             after = before = None
             unread_only = False
             max_results = params.get("max_results", 20)
+
             for f in filters:
                 key, value = f.get("key", "").lower(), f.get("value", "")
                 if key == "keyword": query += f" {value}"
@@ -184,6 +162,7 @@ class Executor:
                 elif key == "unread": unread_only = bool(value)
                 elif key == "after": after = self._parse_datetime(value)
                 elif key == "before": before = self._parse_datetime(value)
+
             emails = self._safe_call(self.gmail_service.fetch_emails, {
                 "query": query.strip(),
                 "after": after,
@@ -191,20 +170,33 @@ class Executor:
                 "unread_only": unread_only,
                 "max_results": max_results
             })
-            return [
-                {
-                    "id": getattr(e, "id", None),
-                    "subject": getattr(e, "subject", None),
-                    "from": getattr(e, "sender", None),
-                    "to": getattr(e, "to", None),
-                    "snippet": getattr(e, "snippet", None),
-                    "received_at": getattr(e, "received_at", None).isoformat() if getattr(e, "received_at", None) else None,
-                    "unread": getattr(e, "unread", None)
-                } for e in emails
-            ]
+
+            result = []
+            for e in emails:
+                received_at = None
+                if e.get("date"):
+                    try:
+                        received_at = email.utils.parsedate_to_datetime(e["date"]).isoformat()
+                    except Exception:
+                        received_at = None
+
+                result.append({
+                    "id": e.get("id"),
+                    "subject": e.get("subject"),
+                    "from": e.get("from"),
+                    "to": e.get("to"),
+                    "snippet": e.get("snippet"),
+                    "received_at": received_at,
+                    "unread": e.get("unread", False)
+                })
+            return result
 
         elif action == "mark_email_read" and self.gmail_service:
-            self._safe_call(self.gmail_service.mark_as_read, {"email_id": params.get("email_id")})
+            self._safe_call(self.gmail_service.mark_as_read, {"msg_id": params.get("email_id")})
+            return True
+
+        elif action == "mark_email_unread" and self.gmail_service:
+            self._safe_call(self.gmail_service.mark_as_unread, {"msg_id": params.get("email_id")})
             return True
 
         # -------- CALENDAR --------
@@ -220,24 +212,6 @@ class Executor:
                 "filters": params.get("filters", []),
                 "max_results": params.get("max_results", 10)
             })
-            if isinstance(ev_result, list):
-                return [
-                    {
-                        "id": ev.get("id"),
-                        "summary": ev.get("summary"),
-                        "start_time": ev.get("start_time", ev.get("start")),
-                        "end_time": ev.get("end_time", ev.get("end")),
-                        "description": ev.get("description")
-                    } for ev in ev_result
-                ]
-            elif isinstance(ev_result, dict):
-                return {
-                    "id": ev_result.get("id"),
-                    "summary": ev_result.get("summary"),
-                    "start_time": ev_result.get("start_time", ev_result.get("start")),
-                    "end_time": ev_result.get("end_time", ev_result.get("end")),
-                    "description": ev_result.get("description")
-                }
             return ev_result
 
         elif action == "delete_event" and self.calendar_service:
