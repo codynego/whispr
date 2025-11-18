@@ -15,6 +15,7 @@ from whatsapp.tasks import send_whatsapp_text
 from .openai_client import generate_daily_summary
 from whisone.models import Integration
 from django.conf import settings
+from django.core.serializers.json import DjangoJSONEncoder
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
