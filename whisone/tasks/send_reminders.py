@@ -58,7 +58,7 @@ def check_and_send_reminders():
             message_text = "*QUICK REMINDER*\n" + message_text
 
             # Send via WhatsApp (pass user ID for phone lookup)
-            result = send_whatsapp_text(r.user.id, message_text)
+            result = send_whatsapp_text.delay(r.user.id, message_text)
             if result.get("status") == "success":
                 # Mark as completed
                 r.completed = True

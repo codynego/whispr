@@ -207,7 +207,7 @@ def send_email_alert_via_whatsapp(user_id, email_id):
         return {'status': 'error', 'message': str(e)}
 
 
-
+@shared_task
 def send_whatsapp_text(user_id: int, text: str, alert_type: str = 'generic') -> dict:
     """
     Sends a WhatsApp message to a user given their ID and text.
