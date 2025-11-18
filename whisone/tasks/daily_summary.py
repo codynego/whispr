@@ -39,8 +39,8 @@ def fetch_daily_emails(user_id):
             "user_email": user.email,
         }
         service = GmailService(**google_creds)
-        emails = service.get_emails_last_24h()  # assume this already returns plain data
-        print("Fetched emails:", emails)
+        emails = service.get_emails_last_24h()
+        print("Fetched emails:", len(emails))
 
     return {"emails": emails or []}
 
@@ -62,7 +62,6 @@ def fetch_daily_calendar(previous_result, user_id):
         service = GoogleCalendarService(**google_creds)
         raw_events = service.get_events_for_today()
         events = queryset_to_list(raw_events) if hasattr(raw_events, '__queryset__') else raw_events
-        print("Fetched calendar events:", events)
 
     previous_result["calendar"] = events
     return previous_result
@@ -73,20 +72,17 @@ def fetch_daily_todos(previous_result, user_id):
     user = User.objects.get(id=user_id)
     service = TodoService(user=user)
 
-    # CRITICAL: always convert to plain data
-    todos_qs = service.get_todos_for_today()
-    todos = queryset_to_list(todos_qs.values(
-        'id', 'task', 'done', 'created_at', 'updated_at'
-    ))
+    # Get overdue + today's todos properly
+    overdue = service.get_overdue_todos().values('id', 'task', 'done', 'created_at')
+    today = service.get_todos_for_today().values('id', 'task', 'done', 'created_at')
 
-    # Ensure timezone-aware datetimes (fix the warning)
-    for todo in todos:
-        for field in ['task', 'done', 'created_at', 'updated_at']:
-            if todo[field] and timezone.is_naive(todo[field]):
-                todo[field] = timezone.make_aware(todo[field])
+    todos = {
+        "overdue": queryset_to_list(overdue),
+        "today": queryset_to_list(today),
+    }
 
     previous_result["todos"] = todos
-    print("Fetched todos:", todos)
+    print(f"Fetched {len(todos['overdue'])} overdue + {len(todos['today'])} today todos")
     return previous_result
 
 
@@ -97,16 +93,11 @@ def fetch_daily_reminders(previous_result, user_id):
     reminders_qs = service.get_upcoming_reminders()
 
     reminders = queryset_to_list(reminders_qs.values(
-        'id', 'text', 'remind_at', 'completed'
+        'id', 'text', 'remind_at', 'completed', 'remind_at__date'
     ))
 
-    for r in reminders:
-        if r['remind_at'] and timezone.is_naive(r['remind_at']):
-            r['remind_at'] = timezone.make_aware(r['remind_at'])
-
     previous_result["reminders"] = reminders
-    print("Fetched reminders:", reminders)
-    
+    print("Fetched reminders:", len(reminders))
     return previous_result
 
 
@@ -114,25 +105,23 @@ def fetch_daily_reminders(previous_result, user_id):
 def fetch_daily_notes(previous_result, user_id):
     user = User.objects.get(id=user_id)
     service = NoteService(user=user)
-    notes_qs = service.get_recent_notes()
+    notes_qs = service.get_recent_notes(limit=5)  # optional: limit to recent ones
 
-    notes = queryset_to_list(notes_qs.values(
-        'id', 'content', 'created_at', 'updated_at'
-    ))
-
+    notes = queryset_to_list(notes_qs.values('id', 'content', 'updated_at'))
     previous_result["notes"] = notes
-    print("Fetched notes:", notes)
-
-    print("gettig previous result", previous_result)
+    print("Fetched notes:", len(notes))
     return previous_result
 
 
 @shared_task
 def generate_summary_and_send(previous_result, user_id):
-    # Clean data for OpenAI (remove internal keys if any)
-    clean_data = {k: v for k, v in previous_result.items() if k in {
-        "emails", "calendar", "todos", "reminders", "notes"
-    }}
+    clean_data = {
+        "emails": previous_result.get("emails", []),
+        "calendar": previous_result.get("calendar", []),
+        "todos": previous_result.get("todos", {"overdue": [], "today": []}),
+        "reminders": previous_result.get("reminders", []),
+        "notes": previous_result.get("notes", []),
+    }
 
     summary = generate_daily_summary(clean_data)
     send_whatsapp_text.delay(user_id=user_id, text=summary)
@@ -146,9 +135,9 @@ def run_daily_summary():
     if not users.exists():
         return "No active users"
 
-    chains = []
+    jobs = []
     for user in users:
-        chain_obj = chain(
+        workflow = chain(
             fetch_daily_emails.s(user.id),
             fetch_daily_calendar.s(user.id),
             fetch_daily_todos.s(user.id),
@@ -156,7 +145,7 @@ def run_daily_summary():
             fetch_daily_notes.s(user.id),
             generate_summary_and_send.s(user.id),
         )
-        chains.append(chain_obj)
+        jobs.append(workflow)
 
-    group(chains).apply_async()
+    group(jobs).apply_async()
     return f"Started daily summary for {users.count()} users"
