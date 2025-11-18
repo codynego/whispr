@@ -33,7 +33,7 @@ class GmailService:
         after: datetime = None,
         before: datetime = None,
         unread_only: bool = False,
-        max_results: int = 10,
+        max_results: int = 5,
         cache_timeout: int = 300  # default 5 minutes
     ) -> List[Dict]:
         # Build a unique cache key based on user, query, and filters
@@ -129,11 +129,11 @@ class GmailService:
             id=msg_id
         ).execute()
 
-    def get_emails_last_24h(self, max_results=50):
+    def get_emails_last_24h(self, max_results=5):
         after = datetime.utcnow() - timedelta(hours=24)
 
         return self.fetch_emails(
-            query="",
+            query="label:important",
             after=after,
             unread_only=False,
             max_results=max_results
@@ -143,7 +143,7 @@ class GmailService:
     # Fetch unread "important" emails
     # (Google marks emails with the IMPORTANT label)
     # -----------------------------
-    def get_important_unread(self, max_results=20):
+    def get_important_unread(self, max_results=5):
         return self.fetch_emails(
             query="label:important",
             unread_only=True,
@@ -153,7 +153,7 @@ class GmailService:
     # -----------------------------
     # Fetch today's emails only
     # -----------------------------
-    def get_today_emails(self, max_results=50):
+    def get_today_emails(self, max_results=5):
         now = datetime.utcnow()
         start_of_day = datetime(now.year, now.month, now.day)
 
