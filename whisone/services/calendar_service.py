@@ -14,6 +14,7 @@ class GoogleCalendarService:
             token_uri="https://oauth2.googleapis.com/token"
         )
         self.service = build('calendar', 'v3', credentials=self.creds)
+        print("calendarService initialized for user:", self.user_email, "cred", self.creds)
 
     # -----------------------------
     # Create event

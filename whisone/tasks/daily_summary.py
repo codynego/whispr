@@ -29,6 +29,7 @@ def fetch_daily_emails(user_id):
         "client_secret": settings.GMAIL_CLIENT_SECRET,
         "refresh_token": integration.refresh_token if integration else None,
         "access_token": integration.access_token if integration else None,
+        "user_email": user.email
     }
     
     service = GmailService(**google_creds)
@@ -46,6 +47,7 @@ def fetch_daily_calendar(user_id, previous):
         "client_secret": settings.GOOGLE_CALENDAR_CLIENT_SECRET,
         "refresh_token": integration.refresh_token if integration else None,
         "access_token": integration.access_token if integration else None,
+        "user_email": user.email
     }
 
     service = GoogleCalendarService(**google_creds)
@@ -91,16 +93,17 @@ def generate_summary_and_send(user_id, data):
 @shared_task
 def run_daily_summary():
     users = User.objects.all()
+    
 
     # Create a chain for each user
     user_chains = [
         chain(
-            fetch_daily_emails.s(user.id),
-            fetch_daily_calendar.s(user.id),
-            fetch_daily_todos.s(user.id),
-            fetch_daily_reminders.s(user.id),
-            fetch_daily_notes.s(user.id),
-            generate_summary_and_send.s(user.id)
+            fetch_daily_emails.s(user_id=user.id),
+            fetch_daily_calendar.s(user_id=user.id),
+            fetch_daily_todos.s(user_id=user.id),
+            fetch_daily_reminders.s(user_id=user.id),
+            fetch_daily_notes.s(user_id=user.id),
+            generate_summary_and_send.s(user_id=user.id)
         )
         for user in users
     ]
