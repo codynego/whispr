@@ -48,9 +48,13 @@ app.conf.update(
 
 app.conf.beat_schedule = {
     'check-reminders-every-minute': {
-        'task': 'whisone.tasks.check_and_send_reminders',
+        'task': 'whisone.tasks.send_reminders.check_and_send_reminders',
         'schedule': 60.0,  # every minute
     },
+    "daily-summary-9am": {
+        "task": "whisone.tasks.daily_summary.run_daily_summary",
+        "schedule": crontab(hour=9, minute=40),  # every day at 8 AM
+    }
 }
 
 # Suppress tokenizer warnings (for HF models in tasks)
