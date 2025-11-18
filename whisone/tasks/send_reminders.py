@@ -47,7 +47,7 @@ def check_and_send_reminders(self):
     due_reminders = Reminder.objects.filter(
         completed=False,
         remind_at__gte=today_start,
-        remind_at__lte=now_aware
+        remind_at__lte=today_end,
     ).select_related('user')
 
     for reminder in due_reminders:
