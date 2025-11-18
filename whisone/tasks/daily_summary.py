@@ -87,7 +87,7 @@ def generate_summary_and_send(user_id, data):
     return summary
 
 
-
+@shared_task
 def run_daily_summary():
     users = User.objects.all()
 
