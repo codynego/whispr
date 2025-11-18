@@ -32,7 +32,6 @@ def process_user_message(user_id: int, message: str):
         "refresh_token": integration.refresh_token if integration else None,
         "access_token": integration.access_token if integration else None,
     }
-    print("🔐 Google credentials loaded")
 
     # -------------------------------------------------------------------------
     # 1️⃣ MEMORY EXTRACTION — parse user message

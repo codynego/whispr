@@ -461,9 +461,13 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": 120.0,  # every 2 minutes
     },
     "check-reminders-every-minute": {
-        "task": "whisone.tasks.check_and_send_reminders",  # update with your app path
+        "task": "whisone.tasks.send_reminders.check_and_send_reminders",  # update with your app path
         "schedule": 60.0,  # every 1 minute
     },
+    "daily-summary-9am": {
+        "task": "unified.tasks.daily_summary.run_daily_summary",
+        "schedule": crontab(hour=9, minute=40),  # every day at 8 AM
+    }
 }
 
 

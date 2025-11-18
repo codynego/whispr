@@ -128,6 +128,41 @@ class GmailService:
             id=msg_id
         ).execute()
 
+    def get_emails_last_24h(self, max_results=50):
+        after = datetime.utcnow() - timedelta(hours=24)
+
+        return self.fetch_emails(
+            query="",
+            after=after,
+            unread_only=False,
+            max_results=max_results
+        )
+
+    # -----------------------------
+    # Fetch unread "important" emails
+    # (Google marks emails with the IMPORTANT label)
+    # -----------------------------
+    def get_important_unread(self, max_results=20):
+        return self.fetch_emails(
+            query="label:important",
+            unread_only=True,
+            max_results=max_results
+        )
+
+    # -----------------------------
+    # Fetch today's emails only
+    # -----------------------------
+    def get_today_emails(self, max_results=50):
+        now = datetime.utcnow()
+        start_of_day = datetime(now.year, now.month, now.day)
+
+        return self.fetch_emails(
+            query="",
+            after=start_of_day,
+            unread_only=False,
+            max_results=max_results
+        )
+
     # -----------------------------
     # Reply to email
     # -----------------------------

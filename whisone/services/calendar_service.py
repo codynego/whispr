@@ -120,3 +120,13 @@ class GoogleCalendarService:
                 "attendees": [a.get('email') for a in event.get('attendees', [])] if event.get('attendees') else []
             })
         return events
+
+    def get_events_for_today(self, max_results: int = 50) -> List[Dict]:
+        """
+        Fetch all events happening today (from 00:00 to 23:59 in UTC).
+        """
+        now = datetime.utcnow()
+        start_of_day = datetime.combine(now.date(), datetime.min.time(), tzinfo=timezone.utc)
+        end_of_day = datetime.combine(now.date(), datetime.max.time(), tzinfo=timezone.utc)
+
+        return self.fetch_events(time_min=start_of_day, time_max=end_of_day, max_results=max_results)

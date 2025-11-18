@@ -35,3 +35,20 @@ class TodoService:
         if done is not None:
             qs = qs.filter(done=done)
         return qs.order_by('-created_at')
+
+    def get_todos_for_today(self) -> List[Todo]:
+        """
+        Returns all todos due today and not yet completed.
+        """
+        now = datetime.now()
+        start_of_day = datetime.combine(now.date(), datetime.min.time())
+        end_of_day = datetime.combine(now.date(), datetime.max.time())
+
+        return (
+            Todo.objects.filter(
+                user=self.user,
+                done=False,
+                created_at__gte=start_of_day,
+                created_at__lte=end_of_day
+            ).order_by('created_at')
+        )

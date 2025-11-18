@@ -69,3 +69,14 @@ class NoteService:
 
     def search_notes(self, keyword: str) -> List[Note]:
         return Note.objects.filter(user=self.user, content__icontains=keyword)
+
+    def get_recent_notes(self, hours: int = 24) -> List[Note]:
+        """
+        Returns notes created within the last `hours` time window.
+        Default: last 24 hours.
+        """
+        cutoff = datetime.now() - timedelta(hours=hours)
+        return (
+            Note.objects.filter(user=self.user, created_at__gte=cutoff)
+            .order_by("-created_at")
+        )

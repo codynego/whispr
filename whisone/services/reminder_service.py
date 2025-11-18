@@ -82,3 +82,21 @@ class ReminderService:
                     # Add more filter types here if needed (e.g., "completed": True/False)
 
         return qs.order_by('remind_at')
+
+    def get_upcoming_reminders(self, hours: int = 24) -> List[Reminder]:
+        """
+        Returns reminders scheduled within the next `hours` window.
+        Default: next 24 hours.
+        """
+        now = datetime.now()
+        max_time = now + timedelta(hours=hours)
+
+        return (
+            Reminder.objects.filter(
+                user=self.user,
+                remind_at__gt=now,
+                remind_at__lte=max_time,
+                completed=False
+            )
+            .order_by("remind_at")
+        )
