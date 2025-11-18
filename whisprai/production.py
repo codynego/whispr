@@ -458,12 +458,16 @@ import os
 from celery.schedules import crontab
 
 CELERY_BEAT_SCHEDULE = {
+    "sync-messages-every-2-mins": {
+        "task": "unified.tasks.common_tasks.periodic_channel_sync",
+        "schedule": 120.0,  # every 2 minutes
+    },
     "check-reminders-every-minute": {
         "task": "whisone.tasks.send_reminders.check_and_send_reminders",  # update with your app path
         "schedule": 60.0,  # every 1 minute
     },
     "daily-summary-9am": {
-        "task": "unified.tasks.daily_summary.run_daily_summary",
+        "task": "whisone.tasks.daily_summary.run_daily_summary",
         "schedule": crontab(hour=9, minute=40),  # every day at 8 AM
     }
 }
