@@ -1,4 +1,4 @@
-from celery import chain, shared_task
+from celery import chain, shared_task, group
 from datetime import datetime, timedelta
 from whisone.services.gmail_service import GmailService
 from whisone.services.calendar_service import GoogleCalendarService
@@ -12,6 +12,7 @@ from django.conf import settings
 import json
 from whisone.models import Integration
 from django.contrib.auth import get_user_model
+
 
 
 
