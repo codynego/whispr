@@ -1,161 +1,166 @@
 from typing import Dict, Any, List, Optional
 from django.utils import timezone
 from django.db.models import Q
-from .models import KnowledgeVaultEntry, UserPreference
+from .models import KnowledgeVaultEntry
 import hashlib
-import json
-from django.conf import settings
-from .embedding_service import EmbeddingService
 
-User = settings.AUTH_USER_MODEL
+User = None  # Will be replaced with settings.AUTH_USER_MODEL in real usage
+
 
 class KnowledgeVaultManager:
     """
-    Production-ready Knowledge Vault Manager:
-    - Ingest memory from user interactions or external sources.
-    - Update knowledge vault entries intelligently.
-    - Maintain aggregated user preferences.
-    - Query for context or important information.
+    Knowledge Vault Manager for structured entries:
+    - Ingest user memories (facts, events, tasks, goals, preferences, etc.)
+    - Update memories intelligently
+    - Query by keyword, entities, or relationships
+    - Prune old memories
     """
 
     def __init__(self, user: User):
         self.user = user
-        # Ensure preference model exists
-        self.pref_model, _ = UserPreference.objects.get_or_create(user=user)
-        self.embedding_service = EmbeddingService()
-
-    def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
-        """
-        Compute cosine similarity between two vectors.
-        """
-        if not vec1 or not vec2:
-            return 0.0
-        dot = sum(a * b for a, b in zip(vec1, vec2))
-        norm1 = sum(a * a for a in vec1) ** 0.5
-        norm2 = sum(a * a for a in vec2) ** 0.5
-        return dot / (norm1 * norm2) if norm1 * norm2 != 0 else 0.0
 
     # ---------------------------
     # 1️⃣ Ingest Memory
     # ---------------------------
-    def ingest_memory(self, content: str, entities: List[str], summary: str, prefs: Optional[Dict[str, Any]] = None) -> KnowledgeVaultEntry:
+    def ingest_memory(
+        self,
+        content: str,
+        entities: Dict[str, Any],
+        relationships: List[Dict[str, str]],
+        summary: str
+    ) -> KnowledgeVaultEntry:
         """
-        Add new memory to the vault or update existing one if similar content exists.
+        Add a new memory or update existing memory if same memory_id exists.
         """
-        memory_id = hashlib.md5(content.encode("utf-8")).hexdigest()
-        embedding = self.embedding_service.embed(summary)
+        memory_id = self._generate_id(content)
 
         entry, created = KnowledgeVaultEntry.objects.update_or_create(
             user=self.user,
             memory_id=memory_id,
             defaults={
                 "entities": entities,
+                "relationships": relationships,
                 "summary": summary,
-                "preferences": prefs or {},
-                "embedding": embedding,
-                "timestamp": timezone.now()
+                "timestamp": timezone.now(),
             }
         )
-        # Update aggregated preferences
-        self.update_preferences(prefs or {})
+
         return entry
 
     # ---------------------------
-    # 2️⃣ Update Preferences
+    # 2️⃣ Update Existing Memory
     # ---------------------------
-    def update_preferences(self, new_prefs: Dict[str, Any]):
+    def update_memory(
+        self,
+        memory_id: str,
+        entities: Optional[Dict[str, Any]] = None,
+        relationships: Optional[List[Dict[str, str]]] = None,
+        summary: Optional[str] = None,
+    ) -> Optional[KnowledgeVaultEntry]:
         """
-        Merge new preferences with existing preference model intelligently.
+        Update an existing memory intelligently. Only updates provided fields.
+        Merges entities and relationships instead of overwriting completely.
         """
-        if not new_prefs:
-            return
+        try:
+            entry = KnowledgeVaultEntry.objects.get(user=self.user, memory_id=memory_id)
+            updated = False
 
-        updated_prefs = self.pref_model.preferences.copy()
-        for k, v in new_prefs.items():
-            # Simple merge: overwrite, or implement more complex logic here
-            updated_prefs[k] = v
+            # Merge entities
+            if entities:
+                for key, value in entities.items():
+                    if key in entry.entities and isinstance(entry.entities[key], list):
+                        entry.entities[key].extend(value)
+                        # Deduplicate
+                        entry.entities[key] = list({json.dumps(e, sort_keys=True) for e in entry.entities[key]})
+                        entry.entities[key] = [json.loads(e) for e in entry.entities[key]]
+                    else:
+                        entry.entities[key] = value
+                updated = True
 
-        self.pref_model.preferences = updated_prefs
-        self.pref_model.save()
+            # Merge relationships
+            if relationships:
+                entry.relationships.extend(relationships)
+                # Deduplicate
+                entry.relationships = list({json.dumps(r, sort_keys=True) for r in entry.relationships})
+                entry.relationships = [json.loads(r) for r in entry.relationships]
+                updated = True
+
+            if summary:
+                entry.summary = summary
+                updated = True
+
+            if updated:
+                entry.last_accessed = timezone.now()
+                entry.save()
+
+            return entry
+
+        except KnowledgeVaultEntry.DoesNotExist:
+            return None
 
     # ---------------------------
-    # 3️⃣ Query Knowledge
+    # 3️⃣ Query Memories
     # ---------------------------
-    def query(self, keyword: str, entities: Optional[List[str]] = None, limit: int = 5) -> List[KnowledgeVaultEntry]:
+    def query(
+        self,
+        keyword: Optional[str] = None,
+        entities: Optional[List[str]] = None,
+        relationships: Optional[List[str]] = None,
+        limit: int = 5
+    ) -> List[KnowledgeVaultEntry]:
         """
-        Search for relevant memories by keyword and/or entities, ranked by embedding similarity if keyword provided.
-        Falls back to timestamp ordering if no keyword.
+        Query memories by keyword in summary, entity categories, or relationship types.
+        Returns most recent matches first.
         """
-        # Build initial filter query
-        q = Q(summary__icontains=keyword) | Q(entities__icontains=keyword)
+        q = Q(user=self.user)
+
+        if keyword:
+            q &= Q(summary__icontains=keyword)
+
         if entities:
             for e in entities:
-                q |= Q(entities__icontains=e)
-        print("Querying Knowledge Vault with:", q)
+                q &= Q(entities__icontains=e)
 
-        entries = KnowledgeVaultEntry.objects.filter(user=self.user).filter(q)
+        if relationships:
+            for r in relationships:
+                q &= Q(relationships__icontains=r)
 
-        # If keyword provided, rank by similarity
-        if keyword.strip():
-            query_embedding = self.embedding_service.embed(keyword)
-            scored_entries = []
-            for entry in entries:
-                similarity = self._cosine_similarity(query_embedding, entry.embedding)
-                scored_entries.append((similarity, entry))
-            # Sort by similarity descending
-            scored_entries.sort(key=lambda x: x[0], reverse=True)
-            result = [entry for _, entry in scored_entries[:limit]]
-        else:
-            # Fallback to timestamp ordering
-            result = list(entries.order_by("-timestamp")[:limit])
+        entries = KnowledgeVaultEntry.objects.filter(q).order_by("-timestamp")[:limit]
 
-        # Update last_accessed for returned entries (assuming model has this field)
-        for entry in result:
+        # Update last_accessed
+        for entry in entries:
             entry.last_accessed = timezone.now()
             entry.save(update_fields=["last_accessed"])
 
-        return result
+        return list(entries)
 
     # ---------------------------
-    # 4️⃣ Delete / Prune Memory
+    # 4️⃣ Fetch Recent Memories
+    # ---------------------------
+    def recent_memories(self, limit: int = 5) -> List[KnowledgeVaultEntry]:
+        """
+        Fetch the most recent memories.
+        """
+        entries = KnowledgeVaultEntry.objects.filter(user=self.user).order_by("-timestamp")[:limit]
+
+        for entry in entries:
+            entry.last_accessed = timezone.now()
+            entry.save(update_fields=["last_accessed"])
+
+        return list(entries)
+
+    # ---------------------------
+    # 5️⃣ Prune Old Memories
     # ---------------------------
     def prune_old_memory(self, days: int = 90):
         """
-        Delete entries that haven't been accessed in the last `days`.
+        Delete memories not accessed in the last `days`.
         """
         cutoff = timezone.now() - timezone.timedelta(days=days)
         KnowledgeVaultEntry.objects.filter(user=self.user, last_accessed__lt=cutoff).delete()
 
     # ---------------------------
-    # 5️⃣ Update Existing Entry
+    # 6️⃣ Utility: Generate Memory ID
     # ---------------------------
-    def update_memory(self, memory_id: str, summary: Optional[str] = None, entities: Optional[List[str]] = None, prefs: Optional[Dict[str, Any]] = None) -> Optional[KnowledgeVaultEntry]:
-        """
-        Update an existing memory intelligently. Only updates fields provided.
-        Re-embeds if summary changes.
-        """
-        try:
-            entry = KnowledgeVaultEntry.objects.get(user=self.user, memory_id=memory_id)
-            updated = False
-            if summary is not None:
-                entry.summary = summary
-                entry.embedding = self.embedding_service.embed(summary)
-                updated = True
-            if entities is not None:
-                entry.entities = entities
-                updated = True
-            if prefs:
-                entry.preferences.update(prefs)
-                self.update_preferences(prefs)
-                updated = True
-            if updated:
-                entry.save()
-            return entry
-        except KnowledgeVaultEntry.DoesNotExist:
-            return None
-
-    # ---------------------------
-    # 6️⃣ Fetch Most Recent Memories
-    # ---------------------------
-    def recent_memories(self, limit: int = 5) -> List[KnowledgeVaultEntry]:
-        return KnowledgeVaultEntry.objects.filter(user=self.user).order_by("-timestamp")[:limit]
+    def _generate_id(self, content: str) -> str:
+        return hashlib.md5(content.encode("utf-8")).hexdigest()

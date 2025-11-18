@@ -1,9 +1,8 @@
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import inspect
-import json
-from django.utils import timezone
 import email.utils
+from django.conf import settings
 
 # Services
 from .services.gmail_service import GmailService
@@ -12,15 +11,15 @@ from .services.note_service import NoteService
 from .services.reminder_service import ReminderService
 from .services.todo_service import TodoService
 from .task_frame_builder import TaskFrameBuilder
-from django.conf import settings
+from .knowledge_vault_manager import KnowledgeVaultManager
 
 User = settings.AUTH_USER_MODEL
 
 
 class Executor:
     """
-    Executor that always uses live data (no knowledge vault caching for fetchable actions).
-    Supports: emails, calendar events, notes, reminders, todos.
+    Executor that handles all ready task frames.
+    Supports: emails, calendar events, notes, reminders, todos, and general queries.
     """
 
     FETCH_ACTIONS = {"fetch_emails", "fetch_events", "fetch_todos", "fetch_notes", "fetch_reminders"}
@@ -36,6 +35,9 @@ class Executor:
 
         self.gmail_service = GmailService(**gmail_creds) if gmail_creds else None
         self.calendar_service = GoogleCalendarService(**calendar_creds) if calendar_creds else None
+
+        # Knowledge Vault
+        self.vault_manager = KnowledgeVaultManager(user=user)
 
     # -------------------------
     # UTILITY FUNCTIONS
@@ -122,21 +124,17 @@ class Executor:
             return self._safe_call(self.reminder_service.delete_reminder, {"reminder_id": params.get("reminder_id")})
 
         elif action == "fetch_reminders":
-            # Build filters list from params
             filters_list = params.get("filters", [])
-            # Handle time_min and time_max as special cases
-            if params.get('time_min'):
+            if params.get("time_min"):
                 filters_list.append({"key": "after", "value": params['time_min']})
-            if params.get('time_max'):
+            if params.get("time_max"):
                 filters_list.append({"key": "before", "value": params['time_max']})
-            # Process filters flexibly (direct dict or key/value)
             processed_filters = []
             for f in filters_list:
                 if isinstance(f, dict):
                     if "key" in f and "value" in f:
                         processed_filters.append(f)
                     else:
-                        # Direct {filter_type: value}
                         for k, v in f.items():
                             processed_filters.append({"key": k, "value": v})
             reminders_qs = self._safe_call(self.reminder_service.fetch_reminders, {"filters": processed_filters})
@@ -169,13 +167,10 @@ class Executor:
             after = before = None
             unread_only = False
             max_results = params.get("max_results", 20)
-
             for f in filters:
                 if isinstance(f, dict):
-                    # Handle filters as {filter_type: value} e.g., {'from': 'alx'}
-                    for filter_key, filter_value in f.items():
-                        key = filter_key.lower()
-                        value = filter_value
+                    for key, value in f.items():
+                        key = key.lower()
                         if key == "keyword": query += f" {value}"
                         elif key == "from": query += f" from:{value}"
                         elif key == "to": query += f" to:{value}"
@@ -183,18 +178,6 @@ class Executor:
                         elif key == "unread": unread_only = bool(value)
                         elif key == "after": after = self._parse_datetime(value)
                         elif key == "before": before = self._parse_datetime(value)
-                elif isinstance(f, dict) and "key" in f and "value" in f:
-                    # Backward compatibility: Handle {'key': 'from', 'value': 'alx'}
-                    key = f.get("key", "").lower()
-                    value = f.get("value", "")
-                    if key == "keyword": query += f" {value}"
-                    elif key == "from": query += f" from:{value}"
-                    elif key == "to": query += f" to:{value}"
-                    elif key == "subject": query += f" subject:{value}"
-                    elif key == "unread": unread_only = bool(value)
-                    elif key == "after": after = self._parse_datetime(value)
-                    elif key == "before": before = self._parse_datetime(value)
-
             emails = self._safe_call(self.gmail_service.fetch_important_emails, {
                 "query": query.strip(),
                 "after": after,
@@ -202,7 +185,6 @@ class Executor:
                 "unread_only": unread_only,
                 "max_results": max_results
             })
-
             result = []
             for e in emails:
                 received_at = None
@@ -211,7 +193,6 @@ class Executor:
                         received_at = email.utils.parsedate_to_datetime(e["date"]).isoformat()
                     except Exception:
                         received_at = None
-
                 result.append({
                     "id": e.get("id"),
                     "subject": e.get("subject"),
@@ -223,12 +204,9 @@ class Executor:
                 })
             return result
 
-        elif action == "mark_email_read" and self.gmail_service:
-            self._safe_call(self.gmail_service.mark_as_read, {"msg_id": params.get("email_id")})
-            return True
-
-        elif action == "mark_email_unread" and self.gmail_service:
-            self._safe_call(self.gmail_service.mark_as_unread, {"msg_id": params.get("email_id")})
+        elif action in {"mark_email_read", "mark_email_unread"} and self.gmail_service:
+            func = self.gmail_service.mark_as_read if action == "mark_email_read" else self.gmail_service.mark_as_unread
+            self._safe_call(func, {"msg_id": params.get("email_id")})
             return True
 
         # -------- CALENDAR --------
@@ -248,6 +226,42 @@ class Executor:
 
         elif action == "delete_event" and self.calendar_service:
             return self._safe_call(self.calendar_service.delete_event, {"event_id": params.get("event_id")})
+
+        # -------- GENERAL QUERY --------
+        elif action == "general_query":
+            """
+            Executes a structured query against KnowledgeVault.
+            Expected params:
+              - entity_type: type of entity to fetch (events, notes, reminders, etc.)
+              - topic: main keyword/topic of query
+              - time_range: optional dict with "start" and "end" ISO datetimes
+              - filters: optional list of key/value filter dicts
+            """
+            entity_type = params.get("entity_type")
+            topic = params.get("topic")
+            time_range = params.get("time_range", {})
+            filters = params.get("filters", [])
+
+            query_filters = []
+
+            # Handle time_range filters
+            if "start" in time_range:
+                query_filters.append({"key": "after", "value": self._parse_datetime(time_range["start"])})
+            if "end" in time_range:
+                query_filters.append({"key": "before", "value": self._parse_datetime(time_range["end"])})
+
+            # Add other filters
+            for f in filters:
+                if isinstance(f, dict) and "key" in f and "value" in f:
+                    query_filters.append(f)
+
+            vault_results = self.vault_manager.query(
+                keyword=topic,
+                entities=[entity_type] if entity_type else [],
+                filters=query_filters
+            )
+
+            return {"results": vault_results}
 
         else:
             return {"error": f"Unknown action or missing service for {action}"}

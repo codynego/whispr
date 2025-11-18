@@ -113,26 +113,54 @@ class AutomationRule(BaseModel):
 
 import json
 
+from django.db import models
+from django.conf import settings
+import uuid
+
 class KnowledgeVaultEntry(models.Model):
     """
-    Stores a single knowledge memory extracted from user interactions or events.
+    Stores a single knowledge memory extracted from user interactions, events, or facts.
+    Supports structured entities and relationships for reasoning.
     """
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="knowledge_entries")
-    memory_id = models.CharField(max_length=255, unique=True)  # could be a hash of content
-    entities = models.JSONField(default=list)  # list of entities/topics
-    summary = models.TextField(blank=True, null=True)  # extracted summary or important info
-    embedding = models.JSONField(blank=True, null=True)
-    preferences = models.JSONField(default=dict)  # optional preferences linked to this memory
-    timestamp = models.DateTimeField(auto_now_add=True)  # when memory was created/updated
-    last_accessed = models.DateTimeField(auto_now=True)  # for pruning old entries
-
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.CASCADE, 
+        related_name="knowledge_entries"
+    )
+    
+    memory_id = models.UUIDField(
+        default=uuid.uuid4, 
+        editable=False, 
+        unique=True
+    )  # unique ID for the memory
+    
+    # Structured entities for this memory
+    entities = models.JSONField(
+        default=dict,
+        help_text="Structured entities. Example: { 'events': {...}, 'people': {...}, 'preferences': {...} }"
+    )
+    
+    # Relationships between entities
+    relationships = models.JSONField(
+        default=list,
+        help_text="Example: [{ 'from': 'user', 'relation': 'attending', 'to': 'evt_001' }]"
+    )
+    
+    # Optional summary or natural language description
+    summary = models.TextField(
+        blank=True,
+        null=True
+    )
+    
+    # Timestamp fields
+    timestamp = models.DateTimeField(auto_now_add=True)
+    last_accessed = models.DateTimeField(auto_now=True)
+    
     class Meta:
         ordering = ["-timestamp"]
+        verbose_name = "Knowledge Vault Entry"
+        verbose_name_plural = "Knowledge Vault Entries"
 
-class UserPreference(models.Model):
-    """
-    Stores aggregated user preferences derived from multiple KnowledgeVault entries.
-    """
-    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="preference_model")
-    preferences = models.JSONField(default=dict)
-    last_updated = models.DateTimeField(auto_now=True)
+    def __str__(self):
+        return f"Memory {self.memory_id} for {self.user}"
+

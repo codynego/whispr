@@ -5,51 +5,34 @@ import hashlib
 import json
 from django.conf import settings
 
+
 class MemoryExtractor:
     """
-    Extracts structured knowledge and user preferences from interactions, emails, and events.
-    Stores metadata, entities, and context. Ensures preferences are well-structured.
+    Extracts structured knowledge from user interactions, messages, or events.
+    Produces entities and relationships suitable for the graph/tree knowledge vault.
     """
 
-    DEFAULT_PREFERENCES = {
-        "topics": [],                  # subjects the user is interested in
-        "reminders": [],               # scheduled reminders
-        "notifications": [],           # notification settings or preferences
-        "language": "en",              # preferred language
-        "timezone": "UTC",             # user timezone
-        "likes": [],                   # things the user likes
-        "dislikes": [],                # things the user dislikes
-        "habits": [],                  # recurring behaviors or routines
-        "interests": [],               # hobbies or areas of curiosity
-        "priorities": [],              # high-priority items/tasks
-        "communication_style": "neutral",  # preferred tone of communication
-        "favorite_apps": [],           # apps or tools frequently used
-        "shopping_preferences": {},    # categories, brands, or styles liked
-        "dietary_preferences": {},     # food restrictions or favorites
-        "travel_preferences": {},      # preferred locations, transport modes, hotels
-        "learning_preferences": {},    # topics or formats the user prefers for learning
-        "work_preferences": {},        # working hours, environment, tools
-        "exercise_routine": {},        # workout preferences or schedules
-        "social_preferences": {},      # preferred interaction style or groups
-        "financial_preferences": {},   # budgeting or spending habits
-        "health_preferences": {},      # general wellness or medical info
-        "privacy_preferences": {},     # what info they want to keep private
-        "reminder_styles": "default"   # e.g., concise, detailed, polite, casual
+    DEFAULT_ENTITIES = {
+        "people": [],          # friends, family, colleagues, landlord
+        "events": [],          # weddings, meetings, appointments, birthdays
+        "tasks": [],           # to-dos, chores, bills
+        "goals": [],           # long-term or short-term goals
+        "preferences": {},     # likes, dislikes, habits, routines
+        "meals": [],           # meals eaten, dietary info
+        "shopping": [],        # shopping items, markets, stores
+        "locations": [],       # places visited or important addresses
+        "habits": [],          # recurring routines
+        "social": [],          # social interactions, groups
+        "financial": [],       # spending, savings, budgeting
+        "health": [],          # exercise, wellness, medical info
+        "learning": [],        # courses, topics, materials
+        "work": [],            # projects, work environment, tasks
     }
 
-
-    DEFAULT_ENTITIES = {"people": [], "companies": [], "topics": []}
 
     def __init__(self, api_key: str = settings.OPENAI_API_KEY, model: str = "gpt-4o-mini"):
         self.client = openai.OpenAI(api_key=api_key)
         self.model = model
-
-    def should_store(self, result: dict) -> bool:
-        if not result:
-            return False
-        if isinstance(result, dict) and any(k in result for k in ["id", "content", "text", "task"]):
-            return True
-        return False
 
     def extract(self, content: str, source_type: str, timestamp: datetime = None) -> Dict[str, Any]:
         timestamp = timestamp or datetime.now()
@@ -57,29 +40,26 @@ class MemoryExtractor:
 
         structured_data = self._call_llm_extract(content)
 
-        # Ensure preferences are always structured (but don't overwrite defaults here; merging happens in vault)
-        preferences = structured_data.get("preferences") or {}
-
-        # Ensure entities are always structured
+        # Use extracted entities and relationships; fallback to defaults
         entities = structured_data.get("entities") or self.DEFAULT_ENTITIES
+        relationships = structured_data.get("relationships") or []
 
         return {
             "id": memory_id,
             "source_type": source_type or "unknown",
             "timestamp": timestamp.isoformat(),
             "entities": entities,
-            "preferences": preferences,  # Pass partial prefs; smart merge in vault
+            "relationships": relationships,
             "summary": structured_data.get("summary") or "No summary available"
         }
 
     def _call_llm_extract(self, content: str) -> Dict[str, Any]:
         prompt = (
-            "You are an assistant that extracts important user context and preferences.\n\n"
-            "The JSON format must be strictly followed and must not be empty.\n\n"
-            "Return JSON with keys: entities, preferences, summary.\n"
-            "Entities should include people, companies, topics.\n"
-            "Preferences should include topics, reminders, notifications, language, timezone.\n"
-            "Summary should be 1-2 concise sentences without sensitive data.\n\n"
+            "You are an assistant that extracts important user facts, events, tasks, goals, and preferences.\n\n"
+            "Return JSON strictly with keys: entities, relationships, summary.\n"
+            "- Entities may include people, events, tasks, goals, preferences.\n"
+            "- Relationships should include 'from', 'relation', 'to' connecting entities.\n"
+            "- Summary should be 1-2 concise sentences.\n\n"
             f"Content:\n\"\"\"{content}\"\"\""
         )
 
@@ -101,13 +81,13 @@ class MemoryExtractor:
             data = json.loads(response_text)
             return {
                 "entities": data.get("entities") or self.DEFAULT_ENTITIES,
-                "preferences": data.get("preferences") or {},  # Allow partial; no default overwrite here
+                "relationships": data.get("relationships") or [],
                 "summary": data.get("summary") or "No summary available"
             }
         except json.JSONDecodeError:
             return {
                 "entities": self.DEFAULT_ENTITIES,
-                "preferences": {},  # Empty to avoid overriding
+                "relationships": [],
                 "summary": "No summary available"
             }
 
@@ -116,24 +96,45 @@ class MemoryExtractor:
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
     def merge_memories(self, memories: List[Dict[str, Any]]) -> Dict[str, Any]:
-        merged_entities = []
-        merged_preferences = dict(self.DEFAULT_PREFERENCES)
+        """
+        Merge multiple memory entries into a single structured object.
+        Deduplicates entities and relationships.
+        """
+        merged_entities = {
+            "people": [],
+            "events": [],
+            "tasks": [],
+            "goals": [],
+            "preferences": {}
+        }
+        merged_relationships = []
         merged_summary = []
 
         for mem in memories:
-            merged_entities.extend(mem.get("entities", {}).get("people", []) +
-                                   mem.get("entities", {}).get("companies", []) +
-                                   mem.get("entities", {}).get("topics", []))
-            # Smart merge preferences from each memory
-            mem_prefs = mem.get("preferences", {})
-            merged_preferences = self._smart_merge_prefs(merged_preferences, mem_prefs)  # Reuse from vault
+            entities = mem.get("entities", {})
+            merged_entities["people"].extend(entities.get("people", []))
+            merged_entities["events"].extend(entities.get("events", []))
+            merged_entities["tasks"].extend(entities.get("tasks", []))
+            merged_entities["goals"].extend(entities.get("goals", []))
+            merged_entities["preferences"].update(entities.get("preferences", {}))
+
+            # Merge relationships
+            merged_relationships.extend(mem.get("relationships", []))
+
+            # Merge summaries
             merged_summary.append(mem.get("summary", ""))
 
-        # Ensure no duplicate entities
-        merged_entities = list(set(merged_entities))
+        # Deduplicate entities
+        for key in ["people", "events", "tasks", "goals"]:
+            merged_entities[key] = list({json.dumps(e, sort_keys=True) for e in merged_entities[key]})
+            merged_entities[key] = [json.loads(e) for e in merged_entities[key]]
+
+        # Deduplicate relationships
+        merged_relationships = list({json.dumps(r, sort_keys=True) for r in merged_relationships})
+        merged_relationships = [json.loads(r) for r in merged_relationships]
 
         return {
-            "entities": {"people": merged_entities, "companies": [], "topics": []},  # could refine further
-            "preferences": merged_preferences,
+            "entities": merged_entities,
+            "relationships": merged_relationships,
             "summary": " ".join(merged_summary)
         }

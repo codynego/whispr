@@ -41,7 +41,7 @@ def process_user_message(user_id: int, message: str):
     print("🧠 Memory Extractor Output:", extractor_output)
 
     # -------------------------------------------------------------------------
-    # 2️⃣ KNOWLEDGE VAULT — add context + decide if external queries needed
+    # 2️⃣ KNOWLEDGE VAULT — ingest memory
     # -------------------------------------------------------------------------
     vault = KnowledgeVaultManager(user=user)
     vault.ingest_memory(
@@ -50,21 +50,12 @@ def process_user_message(user_id: int, message: str):
         summary=extractor_output.get("summary", ""),
         prefs=extractor_output.get("preferences", {})
     )
-    vault_result = vault.query(
-        keyword=message,
-        entities=extractor_output.get("entities", [])
-    )
-    print("📚 Knowledge Vault Result:", vault_result)
 
     # -------------------------------------------------------------------------
     # 3️⃣ TASK PLANNER — determine actions
     # -------------------------------------------------------------------------
     planner = TaskPlanner(api_key=settings.OPENAI_API_KEY)
-    raw_task_plan = planner.plan_tasks(
-        user_message=message,
-        vault_context=vault_result,
-        user=user
-    )
+    raw_task_plan = planner.plan_tasks(user=user, user_message=message)
     print("🗂️ Raw Task Plan:", raw_task_plan)
 
     # -------------------------------------------------------------------------
@@ -87,7 +78,7 @@ def process_user_message(user_id: int, message: str):
         print("⚠️ Tasks skipped due to missing fields:", skipped_tasks)
 
     # -------------------------------------------------------------------------
-    # 4️⃣ EXECUTOR — execute only ready tasks
+    # 4️⃣ EXECUTOR — execute ready tasks
     # -------------------------------------------------------------------------
     executor = Executor(user=user, gmail_creds=google_creds, calendar_creds=google_creds)
     print("⚙️ Executing ready tasks...")
@@ -95,27 +86,34 @@ def process_user_message(user_id: int, message: str):
     print("✔️ Executor Results:", executor_results)
 
     # -------------------------------------------------------------------------
-    # 5️⃣ RESPONSE GENERATOR — craft reply + follow-ups for missing info
+    # 4.1️⃣ Collect general_query results
+    # -------------------------------------------------------------------------
+    general_query_results = []
+    for frame in ready_tasks:
+        if frame.get("action") == "general_query":
+            # Executor already runs it; fetch result from executor_results
+            result = next((r["result"] for r in executor_results if r["action"] == "general_query"), None)
+            if result:
+                general_query_results.append(result)
+    print("📖 General Query Results:", general_query_results)
+
+    # -------------------------------------------------------------------------
+    # 5️⃣ RESPONSE GENERATOR — craft reply
     # -------------------------------------------------------------------------
     response_gen = ResponseGenerator(api_key=settings.OPENAI_API_KEY)
     response_text = response_gen.generate_response(
         user=user,
         user_message=message,
         executor_results=executor_results,
-        vault_context=vault_result,
+        vault_context=general_query_results or vault.query(
+            keyword=message,
+            entities=extractor_output.get("entities", [])
+        ),
         missing_fields=[tf["missing_fields"] for tf in skipped_tasks if tf["missing_fields"]]
     )
     print("📝 Final Response:", response_text)
 
-    # -------------------------------------------------------------------------
-    # 6️⃣ MEMORY INTEGRATOR — store new memories
-    # -------------------------------------------------------------------------
-    if extractor_output.get("should_store_memory"):
-        mem_integrator = MemoryIntegrator(user=user)
-        mem_integrator.store(memory_data=extractor_output.get("memory_data", {}))
-        print("💾 Memory stored")
 
-    # -------------------------------------------------------------------------
     # 7️⃣ Save assistant reply
     # -------------------------------------------------------------------------
     AssistantMessage.objects.create(
