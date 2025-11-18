@@ -454,12 +454,10 @@ CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 
 # settings.py (or celery.py if you define CELERY_BEAT_SCHEDULE there)
+import os
+from celery.schedules import crontab
 
 CELERY_BEAT_SCHEDULE = {
-    "sync-messages-every-2-mins": {
-        "task": "unified.tasks.common_tasks.periodic_channel_sync",
-        "schedule": 120.0,  # every 2 minutes
-    },
     "check-reminders-every-minute": {
         "task": "whisone.tasks.send_reminders.check_and_send_reminders",  # update with your app path
         "schedule": 60.0,  # every 1 minute
