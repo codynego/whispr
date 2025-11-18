@@ -49,7 +49,7 @@ app.conf.beat_schedule = {
     },
     "daily-summary-9am": {
         "task": "whisone.tasks.daily_summary.run_daily_summary",
-        "schedule": crontab(hour=9, minute=40),  # every day at 8 AM
+        "schedule": crontab(hour=10, minute=00),  # every day at 8 AM
     }
 }
 
