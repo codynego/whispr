@@ -2,7 +2,9 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 import inspect
 import email.utils
-from django.conf import settings
+import logging
+from dateutil.parser import parse as parse_dt
+from django.contrib.auth import get_user_model
 
 # Services
 from .services.gmail_service import GmailService
@@ -13,7 +15,8 @@ from .services.todo_service import TodoService
 from .task_frame_builder import TaskFrameBuilder
 from .knowledge_vault_manager import KnowledgeVaultManager
 
-User = settings.AUTH_USER_MODEL
+User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 class Executor:
@@ -45,7 +48,11 @@ class Executor:
     def _safe_call(self, func, params: Dict[str, Any]):
         sig = inspect.signature(func)
         allowed = {k: v for k, v in params.items() if k in sig.parameters}
-        return func(**allowed)
+        try:
+            return func(**allowed) if allowed else func()
+        except Exception as e:
+            logger.error(f"Error calling function {func.__name__} with params {allowed}: {e}")
+            return None
 
     def _parse_datetime(self, value: Optional[str]):
         if not value:
@@ -53,7 +60,10 @@ class Executor:
         try:
             return datetime.fromisoformat(value)
         except Exception:
-            return None
+            try:
+                return parse_dt(value)
+            except Exception:
+                return None
 
     # -------------------------
     # MAIN EXECUTION
@@ -77,6 +87,7 @@ class Executor:
                 result = self._execute_single_action(action, params)
                 results.append({"action": action, "ready": True, "result": result})
             except Exception as e:
+                logger.error(f"Error executing action {action}: {e}")
                 results.append({"action": action, "ready": True, "error": str(e)})
 
         return results
@@ -126,17 +137,10 @@ class Executor:
         elif action == "fetch_reminders":
             filters_list = params.get("filters", [])
             if params.get("time_min"):
-                filters_list.append({"key": "after", "value": params['time_min']})
+                filters_list.append({"key": "after", "value": self._parse_datetime(params['time_min'])})
             if params.get("time_max"):
-                filters_list.append({"key": "before", "value": params['time_max']})
-            processed_filters = []
-            for f in filters_list:
-                if isinstance(f, dict):
-                    if "key" in f and "value" in f:
-                        processed_filters.append(f)
-                    else:
-                        for k, v in f.items():
-                            processed_filters.append({"key": k, "value": v})
+                filters_list.append({"key": "before", "value": self._parse_datetime(params['time_max'])})
+            processed_filters = [f for f in filters_list if isinstance(f, dict) and "key" in f and "value" in f and f["value"] is not None]
             reminders_qs = self._safe_call(self.reminder_service.fetch_reminders, {"filters": processed_filters})
             return [{"id": r.id, "text": r.text, "remind_at": r.remind_at.isoformat(), "completed": r.completed} for r in reminders_qs]
 
@@ -167,6 +171,7 @@ class Executor:
             after = before = None
             unread_only = False
             max_results = params.get("max_results", 20)
+
             for f in filters:
                 if isinstance(f, dict):
                     for key, value in f.items():
@@ -178,13 +183,16 @@ class Executor:
                         elif key == "unread": unread_only = bool(value)
                         elif key == "after": after = self._parse_datetime(value)
                         elif key == "before": before = self._parse_datetime(value)
+
+            query = " ".join(query.split())  # Clean up spaces
             emails = self._safe_call(self.gmail_service.fetch_important_emails, {
-                "query": query.strip(),
+                "query": query,
                 "after": after,
                 "before": before,
                 "unread_only": unread_only,
                 "max_results": max_results
             })
+
             result = []
             for e in emails:
                 received_at = None
@@ -229,14 +237,6 @@ class Executor:
 
         # -------- GENERAL QUERY --------
         elif action == "general_query":
-            """
-            Executes a structured query against KnowledgeVault.
-            Expected params:
-              - entity_type: type of entity to fetch (events, notes, reminders, etc.)
-              - topic: main keyword/topic of query
-              - time_range: optional dict with "start" and "end" ISO datetimes
-              - filters: optional list of key/value filter dicts
-            """
             entity_type = params.get("entity_type")
             topic = params.get("topic")
             time_range = params.get("time_range", {})
@@ -244,15 +244,15 @@ class Executor:
 
             query_filters = []
 
-            # Handle time_range filters
             if "start" in time_range:
-                query_filters.append({"key": "after", "value": self._parse_datetime(time_range["start"])})
+                start = self._parse_datetime(time_range["start"])
+                if start: query_filters.append({"key": "after", "value": start})
             if "end" in time_range:
-                query_filters.append({"key": "before", "value": self._parse_datetime(time_range["end"])})
+                end = self._parse_datetime(time_range["end"])
+                if end: query_filters.append({"key": "before", "value": end})
 
-            # Add other filters
             for f in filters:
-                if isinstance(f, dict) and "key" in f and "value" in f:
+                if isinstance(f, dict) and "key" in f and "value" in f and f["value"] is not None:
                     query_filters.append(f)
 
             vault_results = self.vault_manager.query(
@@ -260,8 +260,8 @@ class Executor:
                 entities=[entity_type] if entity_type else [],
                 filters=query_filters
             )
-
             return {"results": vault_results}
 
         else:
-            return {"error": f"Unknown action or missing service for {action}"}
+            logger.warning(f"No service or unknown action for '{action}'")
+            return {"action": action, "ready": True, "error": f"Missing service or unknown action for '{action}'"}
