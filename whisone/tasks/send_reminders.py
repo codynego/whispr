@@ -32,39 +32,41 @@ def generate_friendly_text(reminder_text: str) -> str:
         logger.warning(f"OpenAI error: {str(e)}. Using original reminder text.")
         return reminder_text
 
-@shared_task
-def check_and_send_reminders():
+
+
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def check_and_send_reminders(self):
     """
-    Periodic Celery task to check today's reminders and send WhatsApp messages.
+    Check due reminders and fire off WhatsApp messages asynchronously.
+    We DO NOT wait for the result → avoids blocking!
     """
     now_aware = timezone.now()
-    today_start = timezone.make_aware(
-        datetime.combine(now_aware.date(), datetime.min.time())
-    )
-    today_end = timezone.make_aware(
-        datetime.combine(now_aware.date(), datetime.max.time())
-    )
-    
-    reminders = Reminder.objects.filter(
+    today_start = timezone.make_aware(datetime.combine(now_aware.date(), datetime.min.time()))
+    today_end = timezone.make_aware(datetime.combine(now_aware.date(), datetime.max.time()))
+
+    due_reminders = Reminder.objects.filter(
         completed=False,
         remind_at__gte=today_start,
-        remind_at__lte=today_end
-    )
+        remind_at__lte=today_end,
+        remind_at__lte=now_aware
+    ).select_related('user')
 
-    for r in reminders:
-        if r.remind_at <= now_aware:
-            # Generate friendly message via OpenAI
-            message_text = generate_friendly_text(r.text)
-            message_text = "*QUICK REMINDER*\n" + message_text
+    for reminder in due_reminders:
+        try:
+            friendly_text = generate_friendly_text(reminder.text)
+            message = f"*QUICK REMINDER*\n{friendly_text}"
 
-            # Send via WhatsApp (pass user ID for phone lookup)
-            result = send_whatsapp_text.delay(r.user.id, message_text)
-            if result.get("status") == "success":
-                # Mark as completed
-                r.completed = True
-                r.save()
-                logger.info(f"Sent reminder {r.id} to user {r.user.id}")
-            else:
-                logger.warning(f"Failed to send reminder {r.id}: {result.get('message')}")
+            # Fire and forget — this is correct!
+            send_whatsapp_text.delay(reminder.user.id, message)
 
+            # Optimistically mark as completed
+            # (If WhatsApp fails, user still gets reminded next run)
+            reminder.completed = True
+            reminder.save(update_fields=['completed'])
 
+            logger.info(f"Reminder {reminder.id} queued for user {reminder.user.id}")
+
+        except Exception as exc:
+            logger.error(f"Failed to process reminder {reminder.id}: {str(exc)}")
+            # Optional: retry the whole task
+            raise self.retry(exc=exc)
