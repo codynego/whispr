@@ -11,6 +11,10 @@ app = Celery('whisprai')
 
 # Load task modules from all registered Django app configs.
 app.autodiscover_tasks()
+app.conf.include = [
+    'whisone.tasks.send_reminders',
+    'whisone.tasks.daily_summary',
+]
 
 
 # Load task-specific configurations from Django settings.
@@ -37,14 +41,6 @@ app.conf.update(
     beat_timezone='UTC',  # Align with your AutomationService
 )
 
-# Static Beat schedule: Periodic syncs (stagger if multi-instance)
-# app.conf.beat_schedule = {
-#     'sync-messages-every-2-minutes': {
-#         'task': 'unified.tasks.common_tasks.periodic_channel_sync',
-#         'schedule': crontab(minute='*/2'),
-#     },
-
-# }
 
 app.conf.beat_schedule = {
     'check-reminders-every-minute': {
