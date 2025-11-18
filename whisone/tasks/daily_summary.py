@@ -94,7 +94,7 @@ def fetch_daily_reminders(previous_result, user_id):
     reminders_qs = service.get_upcoming_reminders()
 
     reminders = queryset_to_list(reminders_qs.values(
-        'id', 'title', 'remind_at', 'completed'
+        'id', 'text', 'remind_at', 'completed'
     ))
 
     for r in reminders:
@@ -112,7 +112,7 @@ def fetch_daily_notes(previous_result, user_id):
     notes_qs = service.get_recent_notes()
 
     notes = queryset_to_list(notes_qs.values(
-        'id', 'title', 'content', 'created_at', 'updated_at'
+        'id', 'content', 'created_at', 'updated_at'
     ))
 
     previous_result["notes"] = notes
