@@ -1,3 +1,14 @@
+# whisone/tasks/openai_client.py
+
+import json
+from typing import Any, Dict, List
+
+from openai import OpenAI
+from django.conf import settings
+
+# Initialize the client once (best practice)
+client = OpenAI(api_key=settings.OPENAI_API_KEY)
+
 
 DAILY_SUMMARY_PROMPT = """
 You are WhisOne, a personal AI assistant. Your job is to generate a clear,
@@ -25,30 +36,30 @@ Write a friendly, structured daily summary with the following sections:
 
 ---
 
-🌅 **Morning Briefing**
+Morning Briefing
 One or two sentences giving a friendly greeting and overview of the day.
 
-📧 **Important Emails**
+Important Emails
 - Summaries of only important or recent emails
 - If nothing important, say: "No important emails."
 
-📅 **Today’s Schedule**
+Today’s Schedule
 - Events in chronological order
 - Show time and title
 - If calendar is empty, say so.
 
-📝 **Tasks & Todos**
+Tasks & Todos
 - Overdue tasks first
 - Due today next
 - Upcoming tasks if relevant
 
-⏰ **Reminders**
+Reminders
 - Upcoming reminders with times
 
-🗒️ **Notes (Optional)**
+Notes (Optional)
 - Recently updated notes (if provided)
 
-💡 **Smart Suggestion**
+Smart Suggestion
 Provide ONE personalized suggestion based on patterns:
 - e.g. "You have free time at 2 PM — want me to set a focus block?"
 
@@ -56,25 +67,11 @@ Be concise, friendly, and avoid long paragraphs.
 """
 
 
-import openai
-from django.conf import settings
-import json
-
-openai.api_key = settings.OPENAI_API_KEY
-
-
-def generate_daily_summary(data):
+def generate_daily_summary(data: Dict[str, Any]) -> str:
     """
-    Generate a clean daily summary using OpenAI.
-    Input data must include:
-    - emails
-    - calendar
-    - todos
-    - reminders
-    - notes
+    Generate a clean daily summary using OpenAI (v1+ client).
     """
-
-    # Make sure none are missing
+    # Safely extract lists with defaults
     emails = data.get("emails") or []
     calendar = data.get("calendar") or []
     todos = data.get("todos") or []
@@ -82,30 +79,37 @@ def generate_daily_summary(data):
     notes = data.get("notes") or []
 
     prompt = DAILY_SUMMARY_PROMPT.format(
-        emails=_format_json(emails),
-        calendar=_format_json(calendar),
-        todos=_format_json(todos),
-        reminders=_format_json(reminders),
-        notes=_format_json(notes)
+        emails=_format_section(emails),
+        calendar=_format_section(calendar),
+        todos=_format_section(todos),
+        reminders=_format_section(reminders),
+        notes=_format_section(notes),
     )
 
-    response = openai.ChatCompletion.create(
-        model="gpt-5.1",
+    # New v1+ syntax
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",           # Recommended: use gpt-4o-mini or gpt-4o (gpt-5.1 doesn't exist yet)
         messages=[
-            {"role": "system", "content": "You are a concise daily planning assistant."},
-            {"role": "user", "content": prompt}
+            {"role": "system", "content": "You are a concise, friendly daily planning assistant."},
+            {"role": "user", "content": prompt},
         ],
-        temperature=0.4
+        temperature=0.4,
+        max_tokens=1500,
     )
 
-    summary = response["choices"][0]["message"]["content"]
-    return summary
+    return response.choices[0].message.content.strip()
 
 
+def _format_section(items: List[Any]) -> str:
+    """
+    Safely format a list of dicts/objects as pretty JSON.
+    Falls back to repr() if not JSON-serializable.
+    """
+    if not items:
+        return "None"
 
-
-def _format_json(obj):
     try:
-        return json.dumps(obj, indent=2)
-    except:
-        return str(obj)
+        return json.dumps(items, indent=2, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        # Fallback for objects that aren't directly serializable
+        return "\n".join(str(item) for item in items)
