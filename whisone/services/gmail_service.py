@@ -34,7 +34,7 @@ class GmailService:
         after: datetime = None,
         before: datetime = None,
         unread_only: bool = False,
-        max_results: int = 5,
+        max_results: int = 10,
         cache_timeout: int = 300  # default 5 minutes
     ) -> List[Dict]:
         # Build a unique cache key based on user, query, and filters
@@ -130,7 +130,7 @@ class GmailService:
             id=msg_id
         ).execute()
 
-    def get_emails_last_24h(self, max_results=5):
+    def get_emails_last_24h(self, max_results=10):
         after = datetime.utcnow() - timedelta(hours=24)
 
         return self.fetch_emails(
@@ -154,7 +154,7 @@ class GmailService:
     # -----------------------------
     # Fetch today's emails only
     # -----------------------------
-    def get_today_emails(self, max_results=5):
+    def get_today_emails(self, max_results=10):
         now = datetime.utcnow()
         start_of_day = datetime(now.year, now.month, now.day)
 
@@ -164,6 +164,117 @@ class GmailService:
             unread_only=False,
             max_results=max_results
         )
+
+        # -----------------------------
+    # Fetch IMPORTANT emails + optional search query
+    # -----------------------------
+    def fetch_important_emails(
+        self,
+        query: str = "",              # e.g. "invoice", "from:netflix", "refund", etc.
+        unread_only: bool = False,
+        after: datetime = None,
+        before: datetime = None,
+        max_results: int = 10,
+        cache_timeout: int = 300
+    ) -> List[Dict]:
+        """
+        Fetch only emails marked as IMPORTANT by Gmail's AI,
+        with optional additional keyword filtering.
+        """
+        # Build cache key
+        cache_key = (
+            f"gmail_important:{self.user_email or 'user'}:"
+            f"q={query.strip()}:unread={unread_only}:"
+            f"after={after}:before={before}:max={max_results}"
+        )
+
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        # Always start with Gmail's IMPORTANT system label
+        q_parts = ["label:IMPORTANT"]
+
+        # Add user's custom query (if any)
+        if query.strip():
+            q_parts.append(query.strip())
+
+        # Add filters
+        if unread_only:
+            q_parts.append("is:unread")
+        if after:
+            q_parts.append(f"after:{after.strftime('%Y/%m/%d')}")
+        if before:
+            q_parts.append(f"before:{before.strftime('%Y/%m/%d')}")
+
+        final_query = " ".join(q_parts)
+
+        try:
+            response = self.service.users().messages().list(
+                userId='me',
+                q=final_query,
+                maxResults=max_results
+            ).execute()
+
+            messages = response.get('messages', [])
+            emails = []
+
+            for msg in messages:
+                msg_detail = self.service.users().messages().get(
+                    userId='me',
+                    id=msg['id'],
+                    format='full'
+                ).execute()
+
+                payload = msg_detail['payload']
+                headers = {h['name']: h['value'] for h in payload.get('headers', [])}
+
+                # Extract plain text body
+                body = ""
+                if 'parts' in payload:
+                    for part in payload['parts']:
+                        if part.get('mimeType') == 'text/plain' and part['body'].get('data'):
+                            body += base64.urlsafe_b64decode(part['body']['data']).decode('utf-8', errors='ignore')
+                            break
+                elif payload.get('mimeType') == 'text/plain' and payload['body'].get('data'):
+                    body = base64.urlsafe_b64decode(payload['body']['data']).decode('utf-8', errors='ignore')
+
+                # Optional: limit body size
+                if len(body) > 1500:
+                    body = body[:1500] + "..."
+
+                emails.append({
+                    "id": msg['id'],
+                    "threadId": msg_detail.get('threadId'),
+                    "subject": headers.get('Subject', '(no subject)'),
+                    "from": headers.get('From', 'Unknown'),
+                    "date": headers.get('Date', ''),
+                    "snippet": msg_detail.get('snippet', ''),
+                    "body_preview": body.strip(),
+                    "is_unread": 'UNREAD' in msg_detail.get('labelIds', []),
+                    "labels": msg_detail.get('labelIds', []),
+                })
+
+            cache.set(cache_key, emails, timeout=cache_timeout)
+            return emails
+
+        except Exception as e:
+            print(f"[GmailService] Error fetching important emails: {e}")
+            return []
+
+    # -----------------------------
+    # Convenient wrappers
+    # -----------------------------
+    def get_important_unread(self, max_results: int = 10) -> List[Dict]:
+        return self.fetch_important_emails(unread_only=True, max_results=max_results)
+
+    def search_important(self, query: str, max_results: int = 10) -> List[Dict]:
+        """Search within important emails only"""
+        return self.fetch_important_emails(query=query, max_results=max_results)
+
+    def get_important_today(self, max_results: int = 10) -> List[Dict]:
+        today = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        return self.fetch_important_emails(after=today, max_results=max_results)
 
     # -----------------------------
     # Reply to email

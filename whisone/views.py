@@ -258,3 +258,154 @@ class IntegrationDeactivateView(generics.GenericAPIView):
         integration.save(update_fields=["is_active"])
 
         return Response({"message": "Integration deactivated"}, status=200)
+
+
+
+
+from django.utils import timezone
+from django.contrib.auth.decorators import login_required
+from django.http import JsonResponse
+from django.shortcuts import render
+
+from .models import (
+    Reminder, Note, Todo, Integration, AutomationRule,
+    KnowledgeVaultEntry, UserPreference
+)
+
+# If you have service classes:
+# from .services.gmail_service import GmailService
+# from .services.calendar_service import GoogleCalendarService
+
+
+@login_required
+def dashboard_overview(request):
+    user = request.user
+    now = timezone.now()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_end = today_start + timezone.timedelta(days=1)
+
+    # -----------------------------
+    # 1. Reminders (Today + upcoming)
+    # -----------------------------
+    reminders_today = Reminder.objects.filter(
+        user=user,
+        remind_at__gte=today_start,
+        remind_at__lt=today_end,
+        completed=False
+    ).order_by("remind_at")
+
+    upcoming_reminders = Reminder.objects.filter(
+        user=user,
+        remind_at__gte=today_end,
+        completed=False
+    ).order_by("remind_at")[:5]
+
+    # -----------------------------
+    # 2. Todos (Today and pending)
+    # -----------------------------
+    todos_today = Todo.objects.filter(
+        user=user,
+        done=False,
+        created_at__gte=today_start
+    ).order_by("created_at")
+
+    pending_todos = Todo.objects.filter(
+        user=user,
+        done=False
+    ).order_by("created_at")[:10]
+
+    # -----------------------------
+    # 3. Notes (recent)
+    # -----------------------------
+    recent_notes = Note.objects.filter(
+        user=user
+    ).order_by("-created_at")[:5]
+
+    # -----------------------------
+    # 4. Integrations
+    # -----------------------------
+    integrations = Integration.objects.filter(user=user, is_active=True)
+
+    # -----------------------------
+    # 5. Automations
+    # -----------------------------
+    automations = AutomationRule.objects.filter(
+        user=user,
+        is_active=True
+    ).order_by("-created_at")[:5]
+
+    # -----------------------------
+    # 6. Knowledge Vault (recent insights)
+    # -----------------------------
+    knowledge_entries = KnowledgeVaultEntry.objects.filter(
+        user=user
+    ).order_by("-timestamp")[:10]
+
+    # -----------------------------
+    # 7. User Preferences
+    # -----------------------------
+    try:
+        preference_model = user.preference_model
+        user_preferences = preference_model.preferences
+    except UserPreference.DoesNotExist:
+        user_preferences = {}
+
+    # -----------------------------
+    # 8. Important Emails (via Gmail)
+    # -----------------------------
+    important_emails = []
+    gmail_integration = integrations.filter(provider="gmail").first()
+
+    if gmail_integration:
+        try:
+            gmail = GmailService(gmail_integration)
+            important_emails = gmail.get_important_emails(limit=5)
+        except Exception:
+            important_emails = []
+
+    # -----------------------------
+    # 9. Calendar Events (today)
+    # -----------------------------
+    today_events = []
+    calendar_integration = integrations.filter(provider="google_calendar").first()
+
+    if calendar_integration:
+        try:
+            calendar = GoogleCalendarService(calendar_integration)
+            today_events = calendar.get_events(time_min=today_start, time_max=today_end)
+        except Exception:
+            today_events = []
+
+    # -----------------------------
+    # Package Data for Template or JSON
+    # -----------------------------
+    data = {
+        "reminders_today": list(reminders_today.values()),
+        "upcoming_reminders": list(upcoming_reminders.values()),
+
+        "todos_today": list(todos_today.values()),
+        "pending_todos": list(pending_todos.values()),
+
+        "recent_notes": list(recent_notes.values("id", "content", "created_at")),
+
+        "integrations": list(integrations.values("provider", "external_id", "is_active")),
+        "automations": list(automations.values("id", "name", "trigger_type", "is_active")),
+
+        "knowledge_recent": [
+            {
+                "id": k.id,
+                "entities": k.entities,
+                "summary": k.summary,
+                "timestamp": k.timestamp,
+            }
+            for k in knowledge_entries
+        ],
+
+        "user_preferences": user_preferences,
+
+        "important_emails": important_emails,
+        "today_events": today_events,
+    }
+
+    # If you want API response:
+    return JsonResponse({"status": "success", "overview": data}, safe=False)
