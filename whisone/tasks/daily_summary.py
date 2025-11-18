@@ -21,6 +21,75 @@ logger = logging.getLogger(__name__)
 User = get_user_model()
 
 
+# Add this function anywhere (e.g. in openai_client.py or a utils.py)
+
+def clean_for_whatsapp(text: str) -> str:
+    """
+    Clean GPT summary for WhatsApp:
+    - Remove ** (double asterisks) used for section headers
+    - Keep single * for bold (WhatsApp native bold)
+    - Clean up common GPT formatting issues
+    - Add nice emojis for sections
+    """
+    lines = text.split("\n")
+    result = []
+
+    # Section header mapping: replace **Header** → 🌅 Header (with single * for bold if you want)
+    header_map = {
+        "Morning Briefing": "🌅 *Morning Briefing*",
+        "Important Emails": "📧 *Important Emails*",
+        "Today’s Schedule": "📅 *Today’s Schedule*",
+        "Tasks & Todos": "✅ *Tasks & Todos*",
+        "Overdue Tasks": "⚠️ Overdue Tasks",
+        "Due Today": "📌 Due Today",
+        "Reminders": "⏰ *Reminders*",
+        "Notes": "🗒️ *Notes*",
+        "Smart Suggestion": "💡 *Smart Suggestion*",
+    }
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Skip empty lines with just stars
+        if stripped in ["*", "**", "***", "----", "---"]:
+            continue
+
+        # Replace known section headers (with or without **)
+        replaced = False
+        for old, new in header_map.items():
+            if old.lower() in stripped.lower():
+                if stripped.startswith("**") or stripped.startswith("*"):
+                    line = new
+                    replaced = True
+                    break
+                elif stripped == old:
+                    line = new
+                    replaced = True
+                    break
+
+        # Remove ** but keep single * (this is the key part)
+        line = line.replace("**", "")  # Removes all double asterisks
+
+        # Clean bullet points: turn "- *text*" → "• text" or keep "*text*" as bold
+        if stripped.startswith("- *") and stripped.endswith("*"):
+            # Was a bold bullet → keep bold
+            line = "• *" + stripped[3:-1].strip() + "*"
+        elif stripped.startswith("- "):
+            line = "• " + stripped[2:].strip()
+
+        # Clean reminder times: "*1:00 PM*" → "*1:00 PM*"
+        if ": " in line and "*" in line:
+            # Preserve time in bold if already formatted
+            pass
+
+        result.append(line.rstrip())
+
+    # Join and clean extra blank lines
+    final = "\n".join(result)
+    final = "\n\n".join([part.strip() for part in final.split("\n\n") if part.strip()])
+    return final.strip() + "\n"
+
+
 def safe_serialize(data):
     """Convert anything (QuerySet, model instances, datetimes) → clean JSON-serializable dict/list"""
     return json.loads(json.dumps(data, cls=DjangoJSONEncoder, default=str))
@@ -152,6 +221,7 @@ def generate_summary_and_send(previous_result, user_id):
 
         logger.info(f"User {user_id}: Generating summary with data keys: {list(data.keys())}")
         summary = generate_daily_summary(data)
+        summary = clean_for_whatsapp(summary)
 
         send_whatsapp_text.delay(user_id=user_id, text=summary)
         logger.info(f"User {user_id}: Summary sent via WhatsApp")
