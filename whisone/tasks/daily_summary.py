@@ -1,6 +1,10 @@
+# whisone/tasks/daily_summary.py
+
 from celery import chain, shared_task, group
-from datetime import datetime, timedelta
 from django.contrib.auth import get_user_model
+from django.utils import timezone
+from django.core.serializers.json import DjangoJSONEncoder
+import json
 
 from whisone.services.gmail_service import GmailService
 from whisone.services.calendar_service import GoogleCalendarService
@@ -15,29 +19,31 @@ from django.conf import settings
 User = get_user_model()
 
 
-# First task in the chain – only receives user_id
+def queryset_to_list(qs):
+    """Safely convert any QuerySet → list of dicts (JSON-serializable)"""
+    return json.loads(json.dumps(list(qs), cls=DjangoJSONEncoder))
+
+
 @shared_task
 def fetch_daily_emails(user_id):
     user = User.objects.get(id=user_id)
     integration = Integration.objects.filter(user=user, provider="gmail").first()
 
-    if not integration:
-        return {"emails": [], "user_id": user_id}
+    emails = []
+    if integration:
+        google_creds = {
+            "client_id": settings.GMAIL_CLIENT_ID,
+            "client_secret": settings.GMAIL_CLIENT_SECRET,
+            "refresh_token": integration.refresh_token,
+            "access_token": integration.access_token,
+            "user_email": user.email,
+        }
+        service = GmailService(**google_creds)
+        emails = service.get_emails_last_24h()  # assume this already returns plain data
 
-    google_creds = {
-        "client_id": settings.GMAIL_CLIENT_ID,
-        "client_secret": settings.GMAIL_CLIENT_SECRET,
-        "refresh_token": integration.refresh_token,
-        "access_token": integration.access_token,
-        "user_email": user.email,
-    }
-
-    service = GmailService(**google_creds)
-    emails = service.get_emails_last_24h()
-    return {"emails": emails, "user_id": user_id}
+    return {"emails": emails or []}
 
 
-# All subsequent tasks receive (previous_result, user_id)
 @shared_task
 def fetch_daily_calendar(previous_result, user_id):
     user = User.objects.get(id=user_id)
@@ -53,7 +59,8 @@ def fetch_daily_calendar(previous_result, user_id):
             "user_email": user.email,
         }
         service = GoogleCalendarService(**google_creds)
-        events = service.get_events_for_today()
+        raw_events = service.get_events_for_today()
+        events = queryset_to_list(raw_events) if hasattr(raw_events, '__queryset__') else raw_events
 
     previous_result["calendar"] = events
     return previous_result
@@ -63,7 +70,20 @@ def fetch_daily_calendar(previous_result, user_id):
 def fetch_daily_todos(previous_result, user_id):
     user = User.objects.get(id=user_id)
     service = TodoService(user=user)
-    previous_result["todos"] = service.get_todos_for_today()
+
+    # CRITICAL: always convert to plain data
+    todos_qs = service.get_todos_for_today()
+    todos = queryset_to_list(todos_qs.values(
+        'id', 'task', 'done', 'created_at', 'updated_at'
+    ))
+
+    # Ensure timezone-aware datetimes (fix the warning)
+    for todo in todos:
+        for field in ['task', 'done', 'created_at', 'updated_at']:
+            if todo[field] and timezone.is_naive(todo[field]):
+                todo[field] = timezone.make_aware(todo[field])
+
+    previous_result["todos"] = todos
     return previous_result
 
 
@@ -71,7 +91,17 @@ def fetch_daily_todos(previous_result, user_id):
 def fetch_daily_reminders(previous_result, user_id):
     user = User.objects.get(id=user_id)
     service = ReminderService(user=user)
-    previous_result["reminders"] = service.get_upcoming_reminders()
+    reminders_qs = service.get_upcoming_reminders()
+
+    reminders = queryset_to_list(reminders_qs.values(
+        'id', 'title', 'remind_at', 'completed'
+    ))
+
+    for r in reminders:
+        if r['remind_at'] and timezone.is_naive(r['remind_at']):
+            r['remind_at'] = timezone.make_aware(r['remind_at'])
+
+    previous_result["reminders"] = reminders
     return previous_result
 
 
@@ -79,43 +109,46 @@ def fetch_daily_reminders(previous_result, user_id):
 def fetch_daily_notes(previous_result, user_id):
     user = User.objects.get(id=user_id)
     service = NoteService(user=user)
-    previous_result["notes"] = service.get_recent_notes()
+    notes_qs = service.get_recent_notes()
+
+    notes = queryset_to_list(notes_qs.values(
+        'id', 'title', 'content', 'created_at', 'updated_at'
+    ))
+
+    previous_result["notes"] = notes
     return previous_result
 
 
 @shared_task
 def generate_summary_and_send(previous_result, user_id):
-    # Remove user_id from the dict if it somehow got in the way (optional)
-    data_for_summary = {k: v for k, v in previous_result.items() if k != "user_id"}
+    # Clean data for OpenAI (remove internal keys if any)
+    clean_data = {k: v for k, v in previous_result.items() if k in {
+        "emails", "calendar", "todos", "reminders", "notes"
+    }}
 
-    summary = generate_daily_summary(data_for_summary)
+    summary = generate_daily_summary(clean_data)
     send_whatsapp_text.delay(user_id, summary, alert_type="daily_summary")
     return summary
 
 
-# Main entry point – run once per day (via celery beat or management command)
 @shared_task
 def run_daily_summary():
-    users = User.objects.filter(is_active=True)  # optionally filter only active users
+    users = User.objects.filter(is_active=True)
 
     if not users.exists():
-        return "No users to process"
+        return "No active users"
 
     chains = []
     for user in users:
-        user_id = user.id
-
-        user_chain = chain(
-            fetch_daily_emails.s(user_id),                   # returns dict + user_id inside
-            fetch_daily_calendar.s(user_id),
-            fetch_daily_todos.s(user_id),
-            fetch_daily_reminders.s(user_id),
-            fetch_daily_notes.s(user_id),
-            generate_summary_and_send.s(user_id),
+        chain_obj = chain(
+            fetch_daily_emails.s(user.id),
+            fetch_daily_calendar.s(user.id),
+            fetch_daily_todos.s(user.id),
+            fetch_daily_reminders.s(user.id),
+            fetch_daily_notes.s(user.id),
+            generate_summary_and_send.s(user.id),
         )
-        chains.append(user_chain)
+        chains.append(chain_obj)
 
-    # Execute all user chains in parallel
     group(chains).apply_async()
-
     return f"Started daily summary for {users.count()} users"
