@@ -40,6 +40,7 @@ def fetch_daily_emails(user_id):
         }
         service = GmailService(**google_creds)
         emails = service.get_emails_last_24h()  # assume this already returns plain data
+        print("Fetched emails:", emails)
 
     return {"emails": emails or []}
 
@@ -61,6 +62,7 @@ def fetch_daily_calendar(previous_result, user_id):
         service = GoogleCalendarService(**google_creds)
         raw_events = service.get_events_for_today()
         events = queryset_to_list(raw_events) if hasattr(raw_events, '__queryset__') else raw_events
+        print("Fetched calendar events:", events)
 
     previous_result["calendar"] = events
     return previous_result
@@ -84,6 +86,7 @@ def fetch_daily_todos(previous_result, user_id):
                 todo[field] = timezone.make_aware(todo[field])
 
     previous_result["todos"] = todos
+    print("Fetched todos:", todos)
     return previous_result
 
 
@@ -102,6 +105,8 @@ def fetch_daily_reminders(previous_result, user_id):
             r['remind_at'] = timezone.make_aware(r['remind_at'])
 
     previous_result["reminders"] = reminders
+    print("Fetched reminders:", reminders)
+    
     return previous_result
 
 
@@ -116,6 +121,9 @@ def fetch_daily_notes(previous_result, user_id):
     ))
 
     previous_result["notes"] = notes
+    print("Fetched notes:", notes)
+
+    print("gettig previous result", previous_result)
     return previous_result
 
 
@@ -127,7 +135,7 @@ def generate_summary_and_send(previous_result, user_id):
     }}
 
     summary = generate_daily_summary(clean_data)
-    send_whatsapp_text.delay(user_id, summary, alert_type="daily_summary")
+    send_whatsapp_text.delay(user_id=user_id, text=summary)
     return summary
 
 

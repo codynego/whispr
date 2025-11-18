@@ -23,7 +23,7 @@ class GmailService:
             token_uri="https://oauth2.googleapis.com/token"
         )
         self.service = build('gmail', 'v1', credentials=self.creds)
-        print("GmailService initialized for user:", self.user_email, "cred", self.creds)
+
 
     # -----------------------------
     # Fetch emails with caching
