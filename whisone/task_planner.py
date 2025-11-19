@@ -4,7 +4,7 @@ import json
 import dateparser
 from django.contrib.auth import get_user_model
 from assistant.models import AssistantMessage
-from datetime import datetime, timedelta
+from datetime import datetime
 
 User = get_user_model()
 
@@ -24,6 +24,9 @@ class TaskPlanner:
     # Public interface
     # -------------------------
     def plan_tasks(self, user: User, user_message: str) -> List[Dict[str, Any]]:
+        """
+        Convert a user message into structured tasks or general queries.
+        """
         conversation_history = self._get_conversation_history(user)
         raw_actions = self._call_llm(user_message, conversation_history)
         return self._normalize_actions(raw_actions)
@@ -55,7 +58,7 @@ class TaskPlanner:
             "3. Break multi-step instructions into separate actions.\n"
             "4. Parse dates/times into ISO8601 format (YYYY-MM-DDTHH:MM).\n"
             "5. Include confidence score (0–1).\n"
-            "6. Return ONLY a valid JSON array of actions; NO explanations.\n"
+            "6. Return ONLY a valid JSON array of actions; NO explanations.\n\n"
             "Action Mapping:\n"
             "- Notes: create_note, delete_note, fetch_notes\n"
             "- Reminders: create_reminder, delete_reminder, fetch_reminders\n"
@@ -63,7 +66,12 @@ class TaskPlanner:
             "- Calendar: create_event, update_event, delete_event, fetch_events\n"
             "- Emails: fetch_emails, mark_email_read, send_email\n"
             "- General Queries: general_query\n\n"
-            "Return JSON array only."
+            "Return JSON array. Examples:\n"
+            "[\n"
+            "  {\"action\": \"create_note\", \"params\": {\"content\": \"Buy milk\"}, \"intent\": \"Create a note to buy milk\", \"confidence\": 0.9},\n"
+            "  {\"action\": \"create_reminder\", \"params\": {\"text\": \"Attend meeting\", \"remind_at\": \"2025-11-17T14:00\"}, \"intent\": \"Set a reminder to attend meeting\", \"confidence\": 0.95},\n"
+            "  {\"action\": \"general_query\", \"params\": {\"entity_type\": \"events\", \"topic\": \"meeting\", \"time_range\": {\"start\": \"2025-11-17T00:00\", \"end\": \"2025-11-23T23:59\"}}, \"intent\": \"Who did I meet this week?\", \"confidence\": 0.95}\n"
+            "]"
         )
 
         try:
@@ -109,6 +117,7 @@ Return ONLY a valid JSON array of tasks or queries.
             ],
             temperature=0
         )
+
         try:
             return json.loads(response.choices[0].message.content)
         except:
@@ -139,7 +148,7 @@ Return ONLY a valid JSON array of tasks or queries.
             confidence = float(task.get("confidence", 0.90))
 
             # Normalize datetime fields
-            for key in ["datetime", "remind_at", "start_time", "end_time"]:
+            for key in ["datetime", "remind_at", "start_time"]:
                 if key in params and params[key]:
                     params[key] = self._normalize_datetime(params[key])
 
@@ -148,12 +157,6 @@ Return ONLY a valid JSON array of tasks or queries.
                 for old_key, new_key in param_mapping[action_name].items():
                     if old_key in params and new_key not in params:
                         params[new_key] = params.pop(old_key)
-
-            # Set default end_time for events if missing
-            if action_name in {"create_event", "update_event"}:
-                if "start_time" in params and "end_time" not in params:
-                    dt_start = datetime.fromisoformat(params["start_time"])
-                    params["end_time"] = (dt_start + timedelta(hours=1)).isoformat()
 
             # Add default service hint
             if "service" not in params:
