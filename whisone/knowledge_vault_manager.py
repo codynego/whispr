@@ -5,6 +5,7 @@ from .models import KnowledgeVaultEntry
 import uuid
 import openai
 import numpy as np
+from celery import shared_task
 
 
 
