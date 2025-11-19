@@ -106,7 +106,7 @@ class KnowledgeVaultManager:
     def query(
         self,
         keyword: Optional[str] = None,
-        entities: Optional[Dict[str, str]] = None,
+        entities: Optional[List[str]] = None,  # List of entity types
         relationships: Optional[List[str]] = None,
         filters: Optional[List[Dict[str, Any]]] = None,
         limit: int = 5
@@ -115,8 +115,8 @@ class KnowledgeVaultManager:
         Universal query engine for the Knowledge Vault.
 
         Args:
-            keyword: Search term in summary.
-            entities: Dict of entity_type -> topic to search in lists (e.g., {"emotions": "angry"}).
+            keyword: Search term in summary or inside entity lists.
+            entities: List of entity types to search keyword in (e.g., ["emotions", "tasks"]).
             relationships: List of relationship strings to match.
             filters: List of dicts with 'key' and 'value' for additional filters (e.g., after/before).
             limit: Maximum number of entries to return.
@@ -125,39 +125,25 @@ class KnowledgeVaultManager:
             List of KnowledgeVaultEntry objects.
         """
         q = Q(user=self.user)
-        print("Querying Knowledge Vault with:", {
-            "keyword": keyword,
-            "entities": entities,
-            "relationships": relationships,}
-        )
 
-        # -------------------
-        # Keyword search
-        # -------------------
+        # Keyword search in summary
         if keyword:
             q &= Q(summary__icontains=keyword)
 
-        # -------------------
-        # Entity search (JSON list contains)
-        # -------------------
-        if entities:
+        # Keyword search inside entity lists
+        if entities and keyword:
             entity_q = Q()
-            for entity_type, topic in entities.items():
-                if topic:
-                    # Check if the topic exists in the list inside the JSONField
-                    entity_q |= Q(**{f"entities__{entity_type}__contains": [topic]})
+            for entity_type in entities:
+                # Check if the keyword exists inside the JSONField list
+                entity_q |= Q(**{f"entities__{entity_type}__contains": [keyword]})
             q &= entity_q
 
-        # -------------------
         # Relationship search
-        # -------------------
         if relationships:
             for r in relationships:
                 q &= Q(relationships__icontains=r)
 
-        # -------------------
-        # Time / custom filters
-        # -------------------
+        # Custom filters (time ranges etc.)
         if filters:
             for f in filters:
                 if isinstance(f, dict) and "key" in f and "value" in f:
@@ -172,9 +158,7 @@ class KnowledgeVaultManager:
                     elif key in ["entities", "relationships", "summary"]:
                         q &= Q(**{f"{key}__icontains": value})
 
-        # -------------------
         # Fetch entries
-        # -------------------
         entries = KnowledgeVaultEntry.objects.filter(q).order_by("-timestamp")[:limit]
 
         # Update last_accessed timestamp
