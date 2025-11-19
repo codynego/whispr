@@ -133,10 +133,11 @@ class KnowledgeVaultManager:
             for r in relationships:
                 q &= Q(relationships__icontains=r)
 
-        # Generic filters from TaskPlanner/Executor
         if filters:
-            for key, value in filters.items():
-                q &= Q(**{f"{key}__icontains": value})
+            for f in filters:
+                if isinstance(f, dict) and "key" in f and "value" in f and f["value"] is not None:
+                    q &= Q(**{f"{f['key']}__icontains": f["value"]})
+
 
         entries = KnowledgeVaultEntry.objects.filter(q).order_by("-timestamp")[:limit]
 
