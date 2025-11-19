@@ -193,7 +193,7 @@ class GmailService:
             return cached
 
         # Always start with Gmail's IMPORTANT system label
-        q_parts = ["label:IMPORTANT"]
+        q_parts = ["label:PRIMARY"]
 
         # Add user's custom query (if any)
         if query.strip():
