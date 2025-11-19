@@ -13,22 +13,20 @@ class MemoryExtractor:
     """
 
     DEFAULT_ENTITIES = {
-        "people": [],          # friends, family, colleagues, landlord
-        "events": [],          # weddings, meetings, appointments, birthdays
-        "tasks": [],           # to-dos, chores, bills
-        "goals": [],           # long-term or short-term goals
-        "preferences": {},     # likes, dislikes, habits, routines
-        "meals": [],           # meals eaten, dietary info
-        "shopping": [],        # shopping items, markets, stores
-        "locations": [],       # places visited or important addresses
-        "habits": [],          # recurring routines
-        "social": [],          # social interactions, groups
-        "financial": [],       # spending, savings, budgeting
-        "health": [],          # exercise, wellness, medical info
-        "learning": [],        # courses, topics, materials
-        "work": [],            # projects, work environment, tasks
+        "people": [],
+        "events": [],
+        "tasks": [],
+        "goals": [],
+        "emotions": [],
+        "actions": [],
+        "preferences": {
+            "likes": [],
+            "dislikes": [],
+            "routines": []
+        },
+        "locations": [],
+        "objects": []
     }
-
 
     def __init__(self, api_key: str = settings.OPENAI_API_KEY, model: str = "gpt-4o-mini"):
         self.client = openai.OpenAI(api_key=api_key)
@@ -40,7 +38,6 @@ class MemoryExtractor:
 
         structured_data = self._call_llm_extract(content)
 
-        # Use extracted entities and relationships; fallback to defaults
         entities = structured_data.get("entities") or self.DEFAULT_ENTITIES
         relationships = structured_data.get("relationships") or []
 
@@ -54,14 +51,46 @@ class MemoryExtractor:
         }
 
     def _call_llm_extract(self, content: str) -> Dict[str, Any]:
-        prompt = (
-            "You are an assistant that extracts important user facts, events, tasks, goals, and preferences.\n\n"
-            "Return JSON strictly with keys: entities, relationships, summary.\n"
-            "- Entities may include people, events, tasks, goals, preferences.\n"
-            "- Relationships should include 'from', 'relation', 'to' connecting entities.\n"
-            "- Summary should be 1-2 concise sentences.\n\n"
-            f"Content:\n\"\"\"{content}\"\"\""
-        )
+
+        prompt = f"""
+Extract structured memory from the user's content.
+
+Return JSON ONLY with keys:
+- entities
+- relationships
+- summary
+
+Entities must use this schema EXACTLY:
+
+{{
+  "people": [],
+  "events": [],
+  "tasks": [],
+  "goals": [],
+  "emotions": [],
+  "actions": [],
+  "preferences": {{
+      "likes": [],
+      "dislikes": [],
+      "routines": []
+  }},
+  "locations": [],
+  "objects": []
+}}
+
+Rules:
+- Events = things that happened.
+- Tasks = future to-dos or pending responsibilities.
+- Actions = things the user actually performed.
+- Emotions = feelings or moods.
+- People = humans mentioned.
+- Relationships MUST be of form: {{"from": "", "relation": "", "to": ""}}
+
+Keep summary to 1–2 sentences.
+
+Content:
+\"\"\"{content}\"\"\"
+"""
 
         response = self.client.chat.completions.create(
             model=self.model,
@@ -74,6 +103,8 @@ class MemoryExtractor:
         )
 
         response_text = response.choices[0].message.content.strip()
+
+        # Strip code fences if present
         if response_text.startswith("```") and response_text.endswith("```"):
             response_text = "\n".join(response_text.splitlines()[1:-1]).strip()
 
@@ -98,25 +129,40 @@ class MemoryExtractor:
     def merge_memories(self, memories: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         Merge multiple memory entries into a single structured object.
-        Deduplicates entities and relationships.
+        Deduplicate entities and relationships.
         """
+
         merged_entities = {
             "people": [],
             "events": [],
             "tasks": [],
             "goals": [],
-            "preferences": {}
+            "emotions": [],
+            "actions": [],
+            "preferences": {
+                "likes": [],
+                "dislikes": [],
+                "routines": []
+            },
+            "locations": [],
+            "objects": []
         }
+
         merged_relationships = []
         merged_summary = []
 
         for mem in memories:
             entities = mem.get("entities", {})
-            merged_entities["people"].extend(entities.get("people", []))
-            merged_entities["events"].extend(entities.get("events", []))
-            merged_entities["tasks"].extend(entities.get("tasks", []))
-            merged_entities["goals"].extend(entities.get("goals", []))
-            merged_entities["preferences"].update(entities.get("preferences", {}))
+
+            # Direct list merges
+            for key in ["people", "events", "tasks", "goals", "emotions", "actions", "locations", "objects"]:
+                merged_entities[key].extend(entities.get(key, []))
+
+            # Preferences merge
+            prefs = entities.get("preferences", {})
+            merged_entities["preferences"]["likes"].extend(prefs.get("likes", []))
+            merged_entities["preferences"]["dislikes"].extend(prefs.get("dislikes", []))
+            merged_entities["preferences"]["routines"].extend(prefs.get("routines", []))
 
             # Merge relationships
             merged_relationships.extend(mem.get("relationships", []))
@@ -124,17 +170,18 @@ class MemoryExtractor:
             # Merge summaries
             merged_summary.append(mem.get("summary", ""))
 
-        # Deduplicate entities
-        for key in ["people", "events", "tasks", "goals"]:
-            merged_entities[key] = list({json.dumps(e, sort_keys=True) for e in merged_entities[key]})
-            merged_entities[key] = [json.loads(e) for e in merged_entities[key]]
+        # Deduplicate all list-based fields
+        for key in ["people", "events", "tasks", "goals", "emotions", "actions", "locations", "objects"]:
+            merged_entities[key] = list(set(merged_entities[key]))
+
+        for pref in ["likes", "dislikes", "routines"]:
+            merged_entities["preferences"][pref] = list(set(merged_entities["preferences"][pref]))
 
         # Deduplicate relationships
-        merged_relationships = list({json.dumps(r, sort_keys=True) for r in merged_relationships})
-        merged_relationships = [json.loads(r) for r in merged_relationships]
+        merged_relationships = [json.loads(r) for r in set(json.dumps(r, sort_keys=True) for r in merged_relationships)]
 
         return {
             "entities": merged_entities,
             "relationships": merged_relationships,
-            "summary": " ".join(merged_summary)
+            "summary": " ".join(merged_summary).strip()
         }
