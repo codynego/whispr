@@ -45,11 +45,12 @@ def process_user_message(user_id: int, message: str):
     # -------------------------------------------------------------------------
     vault = KnowledgeVaultManager(user=user)
     vault.ingest_memory(
-        content=message,
+        source_type="user_message",
         entities=extractor_output.get("entities", []),
-        summary=extractor_output.get("summary", ""),
-        prefs=extractor_output.get("preferences", {})
+        relationships=extractor_output.get("relationships", []),
+        summary=extractor_output.get("summary", "")
     )
+
 
     # -------------------------------------------------------------------------
     # 3️⃣ TASK PLANNER — determine actions
