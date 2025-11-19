@@ -231,8 +231,8 @@ class Executor:
 
             ev_result = self._safe_call(getattr(self.calendar_service, action), {
                 "event_id": params.get("event_id"),
-                "summary": params.get("summary"),
-                "description": params.get("description"),
+                "summary": params.get("summary") or params.get("intent"),
+                "description": params.get("description") or params.get("intent"),
                 "start_time": start_time,
                 "end_time": end_time,
                 "attendees": params.get("attendees", []),
