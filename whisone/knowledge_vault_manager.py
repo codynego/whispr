@@ -169,22 +169,28 @@ class KnowledgeVaultManager:
         limit: int = 5
     ) -> List[Dict[str, Any]]:
 
-        # Base entries
+        # Base queryset
         entries = KnowledgeVaultEntry.objects.filter(user=self.user)
 
-        # ---- ENTITY FILTERS ----
+        # -------------------------
+        # 1. ENTITY FILTERS
+        # -------------------------
         if entities:
             q = Q()
             for e in entities:
                 q |= Q(**{f"entities__{e}__isnull": False})
             entries = entries.filter(q)
 
-        # ---- RELATIONSHIP FILTERS ----
+        # -------------------------
+        # 2. RELATIONSHIP FILTERS
+        # -------------------------
         if relationships:
             for r in relationships:
                 entries = entries.filter(relationships__icontains=r)
 
-        # ---- TIME FILTERS ----
+        # -------------------------
+        # 3. TIME FILTERS
+        # -------------------------
         if filters:
             for f in filters:
                 key, value = f.get("key"), f.get("value")
@@ -193,23 +199,66 @@ class KnowledgeVaultManager:
                 elif key == "before":
                     entries = entries.filter(timestamp__lte=value)
 
-        # ---- KEYWORD FILTER (TEXT SEARCH ONLY) ----
+        # -------------------------
+        # 4. TEXT SEARCH FILTER (Pre-filter BEFORE embeddings)
+        # -------------------------
         if keyword:
             entries = entries.filter(
-                Q(summary__icontains=keyword) |
+                Q(text_search__icontains=keyword) |
                 Q(relationships__icontains=keyword)
             )
 
-        # Limit result count early
-        entries = entries.order_by("-timestamp")[:limit]
+        # Convert to list for embedding ranking
+        entries = list(entries)
+        print("🏛️ Query matched entries:", len(entries))
 
-        # ---- UPDATE LAST ACCESSED ----
+        # -------------------------
+        # 5. EMBEDDING RANKING
+        # -------------------------
+        if keyword and entries:
+            from openai import OpenAI
+            client = OpenAI()
+
+            # Create embedding for query
+            response = client.embeddings.create(
+                model="text-embedding-3-small",
+                input=keyword
+            )
+            query_embedding = response.data[0].embedding
+
+            # Cosine similarity
+            def cosine(a, b):
+                a = np.array(a)
+                b = np.array(b)
+                return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+
+            ranked = []
+            for entry in entries:
+                if entry.embedding:
+                    similarity = cosine(query_embedding, entry.embedding)
+                    ranked.append((similarity, entry))
+
+            # If nothing has embeddings, skip ranking
+            if ranked:
+                ranked.sort(key=lambda x: x[0], reverse=True)
+                entries = [e for _, e in ranked[:limit]]
+            else:
+                entries = entries[:limit]
+        else:
+            # No keyword or empty set → fallback limit
+            entries = entries[:limit]
+
+        # -------------------------
+        # 6. UPDATE last_accessed
+        # -------------------------
         now = timezone.now()
         for e in entries:
             e.last_accessed = now
             e.save(update_fields=["last_accessed"])
 
-        # ---- RETURN DICTS ----
+        # -------------------------
+        # 7. RETURN AS DICT
+        # -------------------------
         results = []
         for e in entries:
             results.append({
@@ -222,8 +271,6 @@ class KnowledgeVaultManager:
             })
 
         return results
-
-
 
     # ---------------------------
     # 4️⃣ Fetch Recent Memories
