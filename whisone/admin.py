@@ -60,40 +60,35 @@ class AutomationRuleAdmin(admin.ModelAdmin):
 
 
 from django.contrib import admin
-from .models import KnowledgeVaultEntry, UserPreference
-import json
-from django.utils.html import format_html
+from .models import KnowledgeVaultEntry
+
 
 @admin.register(KnowledgeVaultEntry)
 class KnowledgeVaultEntryAdmin(admin.ModelAdmin):
-    list_display = ("id", "user", "memory_id", "summary_snippet", "timestamp", "last_accessed")
-    search_fields = ("memory_id", "summary", "user__username", "user__email")
+    list_display = (
+        "memory_id",
+        "user",
+        "summary_snippet",
+        "timestamp",
+        "last_accessed",
+    )
     list_filter = ("timestamp", "last_accessed", "user")
-    readonly_fields = ("timestamp", "last_accessed")
+    search_fields = ("memory_id", "user__username", "summary")
+    readonly_fields = ("memory_id", "timestamp", "last_accessed")
 
     def summary_snippet(self, obj):
-        """Show a short snippet of the summary"""
-        return (obj.summary[:75] + "...") if obj.summary else "-"
+        """Shorten long summaries in list display."""
+        return (obj.summary[:75] + "...") if obj.summary and len(obj.summary) > 75 else obj.summary
     summary_snippet.short_description = "Summary"
 
-    def entities_json(self, obj):
-        """Pretty-print JSON for entities"""
-        return format_html("<pre>{}</pre>", json.dumps(obj.entities, indent=2))
-    entities_json.short_description = "Entities"
+    def has_add_permission(self, request):
+        """Optional: prevent manual creation from admin if desired."""
+        return True  # Set False if you want to prevent manual additions
 
-    def preferences_json(self, obj):
-        """Pretty-print JSON for preferences"""
-        return format_html("<pre>{}</pre>", json.dumps(obj.preferences, indent=2))
-    preferences_json.short_description = "Preferences"
+    def has_change_permission(self, request, obj=None):
+        """Optional: allow edits only if needed."""
+        return True
 
-@admin.register(UserPreference)
-class UserPreferenceAdmin(admin.ModelAdmin):
-    list_display = ("id", "user", "preferences_snippet", "last_updated")
-    search_fields = ("user__username", "user__email")
-    readonly_fields = ("last_updated",)
-
-    def preferences_snippet(self, obj):
-        """Show a short snippet of the preferences JSON"""
-        prefs_str = json.dumps(obj.preferences, indent=2)
-        return format_html("<pre>{}</pre>", prefs_str)
-    preferences_snippet.short_description = "Preferences"
+    def has_delete_permission(self, request, obj=None):
+        """Optional: allow deletions."""
+        return True
