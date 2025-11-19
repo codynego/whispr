@@ -45,7 +45,7 @@ def process_user_message(user_id: int, message: str):
     # -------------------------------------------------------------------------
     vault = KnowledgeVaultManager(user=user)
     vault.ingest_memory(
-        source_type="user_message",
+        content="message",
         entities=extractor_output.get("entities", []),
         relationships=extractor_output.get("relationships", []),
         summary=extractor_output.get("summary", "")
