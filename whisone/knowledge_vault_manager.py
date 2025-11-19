@@ -27,7 +27,6 @@ class KnowledgeVaultManager:
 
     def ingest_memory(
         self,
-        id: str,
         content: str,
         entities: Dict[str, Any],
         relationships: List[Dict[str, str]],
@@ -36,7 +35,7 @@ class KnowledgeVaultManager:
         """
         Add a new memory as a separate entry every time.
         """
-        memory_id = id if id else str(uuid.uuid4())  # unique for each memory
+        memory_id = str(uuid.uuid4())  # unique for each memory
 
         entry = KnowledgeVaultEntry.objects.create(
             user=self.user,
