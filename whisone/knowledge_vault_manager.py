@@ -106,15 +106,16 @@ class KnowledgeVaultManager:
     def query(
         self,
         keyword: Optional[str] = None,
-        entities: Optional[List[str]] = None,
+        entities: Optional[Dict[str, str]] = None,  # e.g., {"emotions": "anger"}
         relationships: Optional[List[str]] = None,
         filters: Optional[List[Dict[str, Any]]] = None,
         limit: int = 5
     ) -> List[KnowledgeVaultEntry]:
         """
-        Universal query engine for the Knowledge Vault.
-        - keyword: search term
-        - entities: list of entity types (e.g., ['emotions', 'tasks'])
+        Smart query engine for the Knowledge Vault.
+        
+        - keyword: search term in summary
+        - entities: dict of entity_type -> topic, e.g., {"emotions": "anger"}
         - relationships: list of relationship types (strings)
         - filters: list of dicts with 'key' and 'value' for additional filters (e.g., after/before)
         """
@@ -129,17 +130,22 @@ class KnowledgeVaultManager:
         # -------------------
         # Entity search
         # -------------------
-        if entities and keyword:
-            for entity_type in entities:
-                # JSONField contains search for lists
-                q &= Q(**{f"entities__{entity_type}__contains": [keyword]})
+        if entities:
+            entity_q = Q()
+            for entity_type, topic in entities.items():
+                if topic:
+                    # JSONField contains search for lists
+                    entity_q |= Q(**{f"entities__{entity_type}__icontains": topic})
+            q &= entity_q
 
         # -------------------
         # Relationship search
         # -------------------
         if relationships:
+            rel_q = Q()
             for r in relationships:
-                q &= Q(relationships__icontains=r)
+                rel_q |= Q(relationships__icontains=r)
+            q &= rel_q
 
         # -------------------
         # Time / custom filters
@@ -151,6 +157,7 @@ class KnowledgeVaultManager:
                     value = f["value"]
                     if value is None:
                         continue
+
                     if key == "after":
                         q &= Q(timestamp__gte=value)
                     elif key == "before":
