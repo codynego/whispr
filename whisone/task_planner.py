@@ -175,8 +175,28 @@ Return ONLY a valid JSON array of tasks or queries.
     # Parse natural datetime
     # -------------------------
     def _normalize_datetime(self, dt_str: str) -> Optional[str]:
-        dt = dateparser.parse(dt_str, settings={"RELATIVE_BASE": datetime.now()})
-        return dt.isoformat() if dt else None
+        """
+        Normalize natural-language datetimes with the following rules:
+        - If user gives a time today that is already past → schedule for tomorrow.
+        - If user gives a date/month/day earlier than today → schedule for next year.
+        - Preserve the user's intended time.
+        """
+        now = datetime.now()
+        dt = dateparser.parse(dt_str, settings={"RELATIVE_BASE": now})
+
+        if not dt:
+            return None
+        
+        # --- Rule 1: If time today has passed → make it tomorrow ---
+        if dt.date() == now.date() and dt < now:
+            dt = dt + timedelta(days=1)
+
+        # --- Rule 2: If date is earlier in the calendar year → move to next year ---
+        # Only apply if user didn't explicitly include a past year
+        if dt.date() < now.date() and dt.year == now.year:
+            dt = dt.replace(year=now.year + 1)
+
+        return dt.isoformat()
 
     # -------------------------
     # Map action → default service
