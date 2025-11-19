@@ -242,6 +242,7 @@ class Executor:
             time_range = params.get("time_range", {})
             filters = params.get("filters", [])
 
+            query_filters = []
 
             if "start" in time_range:
                 start = self._parse_datetime(time_range["start"])
@@ -250,7 +251,7 @@ class Executor:
                 end = self._parse_datetime(time_range["end"])
                 if end: query_filters.append({"key": "before", "value": end})
 
-            query_filters = []
+            
 
             for f in filters:
                 if isinstance(f, dict) and "key" in f and "value" in f and f["value"] is not None:
