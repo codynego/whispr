@@ -106,18 +106,23 @@ class KnowledgeVaultManager:
     def query(
         self,
         keyword: Optional[str] = None,
-        entities: Optional[Dict[str, str]] = None,  # e.g., {"emotions": "anger"}
+        entities: Optional[Dict[str, str]] = None,
         relationships: Optional[List[str]] = None,
         filters: Optional[List[Dict[str, Any]]] = None,
         limit: int = 5
     ) -> List[KnowledgeVaultEntry]:
         """
-        Smart query engine for the Knowledge Vault.
-        
-        - keyword: search term in summary
-        - entities: dict of entity_type -> topic, e.g., {"emotions": "anger"}
-        - relationships: list of relationship types (strings)
-        - filters: list of dicts with 'key' and 'value' for additional filters (e.g., after/before)
+        Universal query engine for the Knowledge Vault.
+
+        Args:
+            keyword: Search term in summary.
+            entities: Dict of entity_type -> topic to search in lists (e.g., {"emotions": "angry"}).
+            relationships: List of relationship strings to match.
+            filters: List of dicts with 'key' and 'value' for additional filters (e.g., after/before).
+            limit: Maximum number of entries to return.
+
+        Returns:
+            List of KnowledgeVaultEntry objects.
         """
         q = Q(user=self.user)
 
@@ -128,24 +133,22 @@ class KnowledgeVaultManager:
             q &= Q(summary__icontains=keyword)
 
         # -------------------
-        # Entity search
+        # Entity search (JSON list contains)
         # -------------------
         if entities:
             entity_q = Q()
             for entity_type, topic in entities.items():
                 if topic:
-                    # JSONField contains search for lists
-                    entity_q |= Q(**{f"entities__{entity_type}__icontains": topic})
+                    # Check if the topic exists in the list inside the JSONField
+                    entity_q |= Q(**{f"entities__{entity_type}__contains": [topic]})
             q &= entity_q
 
         # -------------------
         # Relationship search
         # -------------------
         if relationships:
-            rel_q = Q()
             for r in relationships:
-                rel_q |= Q(relationships__icontains=r)
-            q &= rel_q
+                q &= Q(relationships__icontains=r)
 
         # -------------------
         # Time / custom filters
@@ -157,7 +160,6 @@ class KnowledgeVaultManager:
                     value = f["value"]
                     if value is None:
                         continue
-
                     if key == "after":
                         q &= Q(timestamp__gte=value)
                     elif key == "before":
@@ -177,6 +179,7 @@ class KnowledgeVaultManager:
             entry.save(update_fields=["last_accessed"])
 
         return list(entries)
+
 
     # ---------------------------
     # 4️⃣ Fetch Recent Memories
