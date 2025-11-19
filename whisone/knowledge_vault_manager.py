@@ -135,8 +135,22 @@ class KnowledgeVaultManager:
 
         if filters:
             for f in filters:
-                if isinstance(f, dict) and "key" in f and "value" in f and f["value"] is not None:
-                    q &= Q(**{f"{f['key']}__icontains": f["value"]})
+                if isinstance(f, dict) and "key" in f and "value" in f:
+                    key = f["key"]
+                    value = f["value"]
+                    if value is None:
+                        continue
+
+                    if key == "after":
+                        q &= Q(timestamp__gte=value)
+                    elif key == "before":
+                        q &= Q(timestamp__lte=value)
+                    elif key in ["entities", "relationships", "summary"]:
+                        # JSON/text contains search
+                        q &= Q(**{f"{key}__icontains": value})
+                    else:
+                        # unknown key → skip or log
+                        pass
 
 
         entries = KnowledgeVaultEntry.objects.filter(q).order_by("-timestamp")[:limit]
