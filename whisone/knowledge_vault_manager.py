@@ -106,33 +106,42 @@ class KnowledgeVaultManager:
         keyword: Optional[str] = None,
         entities: Optional[List[str]] = None,
         relationships: Optional[List[str]] = None,
-        filters: Optional[Dict[str, Any]] = None,
+        filters: Optional[List[Dict[str, Any]]] = None,
         limit: int = 5
     ) -> List[KnowledgeVaultEntry]:
         """
-        Smart universal query engine for the Knowledge Vault.
-        Supports:
-        - keyword search
-        - entity matching
-        - relationship matching
-        - custom filters passed by TaskPlanner/Executor
+        Universal query engine for the Knowledge Vault.
+        - keyword: search term
+        - entities: list of entity types (e.g., ['emotions', 'tasks'])
+        - relationships: list of relationship types (strings)
+        - filters: list of dicts with 'key' and 'value' for additional filters (e.g., after/before)
         """
         q = Q(user=self.user)
 
-        # Standard keyword search
+        # -------------------
+        # Keyword search
+        # -------------------
         if keyword:
             q &= Q(summary__icontains=keyword)
 
+        # -------------------
         # Entity search
-        if entities:
-            for e in entities:
-                q &= Q(entities__icontains=e)
+        # -------------------
+        if entities and keyword:
+            for entity_type in entities:
+                # JSONField contains search for lists
+                q &= Q(**{f"entities__{entity_type}__contains": [keyword]})
 
+        # -------------------
         # Relationship search
+        # -------------------
         if relationships:
             for r in relationships:
                 q &= Q(relationships__icontains=r)
 
+        # -------------------
+        # Time / custom filters
+        # -------------------
         if filters:
             for f in filters:
                 if isinstance(f, dict) and "key" in f and "value" in f:
@@ -140,28 +149,25 @@ class KnowledgeVaultManager:
                     value = f["value"]
                     if value is None:
                         continue
-
                     if key == "after":
                         q &= Q(timestamp__gte=value)
                     elif key == "before":
                         q &= Q(timestamp__lte=value)
                     elif key in ["entities", "relationships", "summary"]:
-                        # JSON/text contains search
                         q &= Q(**{f"{key}__icontains": value})
-                    else:
-                        # unknown key → skip or log
-                        pass
 
-
+        # -------------------
+        # Fetch entries
+        # -------------------
         entries = KnowledgeVaultEntry.objects.filter(q).order_by("-timestamp")[:limit]
 
-        # Update access timestamp
+        # Update last_accessed timestamp
+        now = timezone.now()
         for entry in entries:
-            entry.last_accessed = timezone.now()
+            entry.last_accessed = now
             entry.save(update_fields=["last_accessed"])
 
         return list(entries)
-
 
     # ---------------------------
     # 4️⃣ Fetch Recent Memories
