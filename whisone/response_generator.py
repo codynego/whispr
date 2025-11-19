@@ -42,7 +42,7 @@ class ResponseGenerator:
 
         # 3️⃣ Serialize vault context if available
         vault_context_str = json.dumps(vault_context, indent=2, default=str) if vault_context else "None"
-
+        print("🏛️ Vault Context:", vault_context_str)
         # 4️⃣ Handle missing fields
         missing_prompt = ""
         if missing_fields:
