@@ -167,66 +167,49 @@ class KnowledgeVaultManager:
         relationships: Optional[List[str]] = None,
         filters: Optional[List[Dict[str, Any]]] = None,
         limit: int = 5
-    ) -> List[Dict[str, Any]]:  # <-- return dicts instead of objects
+    ) -> List[Dict[str, Any]]:
 
+        # Base entries
         entries = KnowledgeVaultEntry.objects.filter(user=self.user)
 
-        # Entity filters
+        # ---- ENTITY FILTERS ----
         if entities:
             q = Q()
             for e in entities:
                 q |= Q(**{f"entities__{e}__isnull": False})
             entries = entries.filter(q)
 
-        # Relationship filters
+        # ---- RELATIONSHIP FILTERS ----
         if relationships:
             for r in relationships:
                 entries = entries.filter(relationships__icontains=r)
 
-        # Time filters
+        # ---- TIME FILTERS ----
         if filters:
             for f in filters:
-                if "key" in f and "value" in f:
-                    if f["key"] == "after":
-                        entries = entries.filter(timestamp__gte=f["value"])
-                    if f["key"] == "before":
-                        entries = entries.filter(timestamp__lte=f["value"])
+                key, value = f.get("key"), f.get("value")
+                if key == "after":
+                    entries = entries.filter(timestamp__gte=value)
+                elif key == "before":
+                    entries = entries.filter(timestamp__lte=value)
 
-        entries = list(entries)
-
-        # Semantic ranking
+        # ---- KEYWORD FILTER (TEXT SEARCH ONLY) ----
         if keyword:
-            from openai import OpenAI
-            client = OpenAI()
-            response = client.embeddings.create(
-                model="text-embedding-3-small",
-                input=keyword
+            entries = entries.filter(
+                Q(summary__icontains=keyword) |
+                Q(relationships__icontains=keyword)
             )
-            query_embedding = response.data[0].embedding
 
-            def cosine(a, b):
-                a = np.array(a)
-                b = np.array(b)
-                return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+        # Limit result count early
+        entries = entries.order_by("-timestamp")[:limit]
 
-            ranked = []
-            for entry in entries:
-                if entry.embedding:
-                    sim = cosine(query_embedding, entry.embedding)
-                    ranked.append((sim, entry))
-
-            ranked.sort(key=lambda x: x[0], reverse=True)
-            entries = [e for _, e in ranked[:limit]]
-        else:
-            entries = entries[:limit]
-
-        # Update access timestamp
+        # ---- UPDATE LAST ACCESSED ----
         now = timezone.now()
-        for entry in entries:
-            entry.last_accessed = now
-            entry.save(update_fields=["last_accessed"])
+        for e in entries:
+            e.last_accessed = now
+            e.save(update_fields=["last_accessed"])
 
-        # Convert model objects to dict
+        # ---- RETURN DICTS ----
         results = []
         for e in entries:
             results.append({
@@ -239,6 +222,7 @@ class KnowledgeVaultManager:
             })
 
         return results
+
 
 
     # ---------------------------
