@@ -92,11 +92,25 @@ def process_user_message(user_id: int, message: str):
     general_query_results = []
     for frame in ready_tasks:
         if frame.get("action") == "general_query":
-            # Executor already runs it; fetch result from executor_results
-            result = next((r["result"] for r in executor_results if r["action"] == "general_query"), None)
-            if result:
-                general_query_results.append(result)
+
+            # Find the entry for general_query
+            entry = next(
+                (r for r in executor_results if r.get("action") == "general_query"),
+                None
+            )
+
+            if entry:
+                result = entry.get("result")
+                error = entry.get("error")
+
+                if error:
+                    print("❌ General Query Error:", error)
+
+                if result:
+                    general_query_results.append(result)
+
     print("📖 General Query Results:", general_query_results)
+
 
     # -------------------------------------------------------------------------
     # 5️⃣ RESPONSE GENERATOR — craft reply
