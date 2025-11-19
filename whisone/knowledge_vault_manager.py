@@ -5,15 +5,39 @@ from .models import KnowledgeVaultEntry
 import uuid
 import openai
 import numpy as np
-import json
+
+
+
+
+
+@shared_task
+def generate_embedding_task(entry_id: str):
+    entry = KnowledgeVaultEntry.objects.get(id=entry_id)
+    client = openai.OpenAI()
+
+    # Build text for embedding
+    text_search = entry.text_search or entry.summary
+    if not text_search:
+        return
+
+    response = client.embeddings.create(
+        model="text-embedding-3-small",
+        input=text_search
+    )
+    embedding = response.data[0].embedding
+
+    # Save embedding
+    entry.embedding = embedding
+    entry.save(update_fields=["embedding"])
+
+
 
 
 class KnowledgeVaultManager:
     """
-    Knowledge Vault Manager with semantic search using OpenAI embeddings.
+    Knowledge Vault Manager with async embedding ingestion and semantic search.
     Implements:
-    - Ingesting memories with sparsity checks
-    - Optional soft ingestion for borderline data
+    - Sparse checks to avoid ingesting empty/irrelevant memories
     - Updating memories
     - Semantic query
     - Fetch recent memories
@@ -22,22 +46,13 @@ class KnowledgeVaultManager:
 
     def __init__(self, user):
         self.user = user
-        self.client = openai.OpenAI()
-
-    # ---------------------------
-    # Utility: Generate Embedding
-    # ---------------------------
-    def _embed(self, text: str) -> List[float]:
-        response = self.client.embeddings.create(
-            model="text-embedding-3-small",
-            input=text
-        )
-        return response.data[0].embedding
 
     # ---------------------------
     # Utility: Build searchable text
     # ---------------------------
-    def _build_text_search(self, summary: str, entities: Dict[str, Any], relationships: List[Dict[str, str]]) -> str:
+    def _build_text_search(
+        self, summary: str, entities: Dict[str, Any], relationships: List[Dict[str, str]]
+    ) -> str:
         parts = [summary]
         for key, values in entities.items():
             if isinstance(values, list) and values:
@@ -48,19 +63,19 @@ class KnowledgeVaultManager:
         return " ".join(parts)
 
     # ---------------------------
-    # 1️⃣ Ingest Memory
+    # 1️⃣ Ingest Memory (async embedding)
     # ---------------------------
     def ingest_memory(
         self,
         content: str,
         entities: Dict[str, Any],
         relationships: List[Dict[str, str]],
-        summary: str,
-        soft_ingest: bool = True  # if True, flag borderline memories
+        summary: str
     ) -> Optional[KnowledgeVaultEntry]:
         """
-        Add a memory if it passes sparsity checks.
-        soft_ingest=True allows borderline memories to be stored but flagged.
+        Add a memory only if it passes sparsity checks.
+        Embedding is generated asynchronously in the background.
+        Returns None if memory is skipped.
         """
         # ---------------------------
         # 1️⃣ Basic sanity checks
@@ -70,33 +85,23 @@ class KnowledgeVaultManager:
         if not content or len(content.strip()) < 5:
             return None
 
-        # ---------------------------
-        # 2️⃣ Count meaningful entities/relationships
-        # ---------------------------
         meaningful_entities_count = sum(
             len(v) for v in entities.values() if isinstance(v, list) and len(v) > 0
         )
         meaningful_relationships_count = len(relationships) if relationships else 0
-
         total_meaningful = meaningful_entities_count + meaningful_relationships_count
 
         if total_meaningful < 2:
-            if soft_ingest:
-                # Flag as borderline
-                flagged = True
-            else:
-                return None
-        else:
-            flagged = False
+            # Skip sparse memories
+            return None
 
         # ---------------------------
-        # 3️⃣ Build embedding
+        # 2️⃣ Build searchable text
         # ---------------------------
         text_search = self._build_text_search(summary, entities, relationships)
-        embedding = self._embed(text_search)
 
         # ---------------------------
-        # 4️⃣ Save memory
+        # 3️⃣ Save memory without embedding
         # ---------------------------
         memory_id = str(uuid.uuid4())
         entry = KnowledgeVaultEntry.objects.create(
@@ -105,13 +110,19 @@ class KnowledgeVaultManager:
             summary=summary,
             entities=entities,
             relationships=relationships,
-            embedding=embedding,
+            text_search=text_search,
+            timestamp=timezone.now()
         )
+
+        # ---------------------------
+        # 4️⃣ Queue embedding generation asynchronously
+        # ---------------------------
+        generate_embedding_task.delay(str(entry.id))
 
         return entry
 
     # ---------------------------
-    # 2️⃣ Update Memory
+    # 2️⃣ Update Memory (async embedding)
     # ---------------------------
     def update_memory(
         self,
@@ -138,9 +149,8 @@ class KnowledgeVaultManager:
 
         if summary:
             entry.summary = summary
-            text_search = self._build_text_search(summary, entry.entities, entry.relationships)
-            entry.text_search = text_search
-            entry.embedding = self._embed(text_search)
+            entry.text_search = self._build_text_search(summary, entry.entities, entry.relationships)
+            generate_embedding_task.delay(str(entry.id))
 
         entry.last_accessed = timezone.now()
         entry.save()
@@ -155,15 +165,10 @@ class KnowledgeVaultManager:
         entities: Optional[List[str]] = None,
         relationships: Optional[List[str]] = None,
         filters: Optional[List[Dict[str, Any]]] = None,
-        limit: int = 5,
-        include_flagged: bool = False
+        limit: int = 5
     ) -> List[KnowledgeVaultEntry]:
 
         entries = KnowledgeVaultEntry.objects.filter(user=self.user)
-
-        # Exclude flagged memories by default
-        if not include_flagged:
-            entries = entries.filter(flagged=False)
 
         # Entity filters
         if entities:
@@ -190,7 +195,13 @@ class KnowledgeVaultManager:
 
         # Semantic ranking
         if keyword:
-            query_embedding = self._embed(keyword)
+            from openai import OpenAI
+            client = OpenAI()
+            response = client.embeddings.create(
+                model="text-embedding-3-small",
+                input=keyword
+            )
+            query_embedding = response.data[0].embedding
 
             def cosine(a, b):
                 a = np.array(a)
