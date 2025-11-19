@@ -186,7 +186,7 @@ class Executor:
                         elif key == "before": before = self._parse_datetime(value)
 
             query = " ".join(query.split())  # Clean up spaces
-            emails = self._safe_call(self.gmail_service.fetch_important_emails, {
+            emails = self._safe_call(self.gmail_service.fetch_emails, {
                 "query": query,
                 "after": after,
                 "before": before,
