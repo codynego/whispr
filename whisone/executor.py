@@ -219,14 +219,23 @@ class Executor:
 
         # -------- CALENDAR --------
         elif action in {"fetch_events", "create_event", "update_event"} and self.calendar_service:
+            start_time = self._parse_datetime(params.get("start_time"))
+            end_time = self._parse_datetime(params.get("end_time"))
+
+            # Ensure timezone
+            if start_time and start_time.tzinfo is None:
+                start_time = start_time.replace(tzinfo=timezone.utc)
+            if end_time and end_time.tzinfo is None:
+                end_time = end_time.replace(tzinfo=timezone.utc)
+
             ev_result = self._safe_call(getattr(self.calendar_service, action), {
                 "event_id": params.get("event_id"),
                 "summary": params.get("summary"),
                 "description": params.get("description"),
-                "start_time": self._parse_datetime(params.get("start_time")),
-                "end_time": self._parse_datetime(params.get("end_time")),
+                "start_time": start_time,
+                "end_time": end_time,
                 "attendees": params.get("attendees", []),
-                "timezone": params.get("timezone"),
+                "timezone": params.get("timezone") or "UTC",
                 "filters": params.get("filters", []),
                 "max_results": params.get("max_results", 10)
             })
