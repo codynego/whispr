@@ -175,37 +175,29 @@ class KnowledgeVaultManager:
         # -------------------------
         # 1. ENTITY FILTERS
         # -------------------------
-        if entities:
-            q = Q()
-            for e in entities:
-                q |= Q(**{f"entities__{e}__isnull": False})
-            entries = entries.filter(q)
-
-        # -------------------------
-        # 2. RELATIONSHIP FILTERS
-        # -------------------------
-        if relationships:
-            for r in relationships:
-                entries = entries.filter(relationships__icontains=r)
+        # if entities:
+        #     q = Q()
+        #     for e in entities:
+        #         q |= Q(**{f"entities__{e}__isnull": False})
+        #     entries = entries.filter(q)
 
         # -------------------------
         # 3. TIME FILTERS
         # -------------------------
-        if filters:
-            for f in filters:
-                key, value = f.get("key"), f.get("value")
-                if key == "after":
-                    entries = entries.filter(timestamp__gte=value)
-                elif key == "before":
-                    entries = entries.filter(timestamp__lte=value)
+        # if filters:
+        #     for f in filters:
+        #         key, value = f.get("key"), f.get("value")
+        #         if key == "after":
+        #             entries = entries.filter(timestamp__gte=value)
+        #         elif key == "before":
+        #             entries = entries.filter(timestamp__lte=value)
 
         # -------------------------
         # 4. TEXT SEARCH FILTER (Pre-filter BEFORE embeddings)
         # -------------------------
         if keyword:
             entries = entries.filter(
-                Q(text_search__icontains=keyword) |
-                Q(relationships__icontains=keyword)
+                Q(text_search__icontains=keyword)
             )
 
         # Convert to list for embedding ranking
