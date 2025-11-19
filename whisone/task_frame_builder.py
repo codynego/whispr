@@ -2,6 +2,8 @@
 # task_frame_builder.py
 # -------------------------
 from typing import Dict, Any
+from datetime import datetime, timedelta
+
 
 class TaskFrameBuilder:
     """
@@ -70,6 +72,18 @@ class TaskFrameBuilder:
             "fetch_emails": ["from_email", "query", "after", "before", "unread_only", "max_results"]
         }
 
+        # Defaults
+        self.default_timezone = "Africa/Lagos"
+
+        # Mapping from planner → executor params
+        self.param_mapping = {
+            "create_reminder": {"datetime": "remind_at", "title": "text"},
+            "update_reminder": {"datetime": "remind_at", "title": "text"},
+            "create_event": {"datetime": "start_time", "title": "summary"},
+            "update_event": {"datetime": "start_time", "title": "summary"}
+        }
+
+    # -------------------------------------------------------
     def build(self, intent: str, action: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """
         Creates a fully structured task frame including:
@@ -80,13 +94,14 @@ class TaskFrameBuilder:
         - missing_fields
         - ready flag
         """
-        # Ensure parameter keys match TaskFrame naming
         parameters = self._normalize_params(action, parameters)
+        parameters = self._apply_event_defaults(action, parameters)
+        parameters = self.apply_defaults(action, parameters)
 
         required = self.required_fields.get(action, [])
-        missing = [field for field in required if field not in parameters or parameters[field] in (None, "")]
+        missing = [f for f in required if f not in parameters or parameters[f] in (None, "")]
 
-        task_frame = {
+        return {
             "intent": intent,
             "action": action,
             "parameters": parameters,
@@ -95,26 +110,47 @@ class TaskFrameBuilder:
             "ready": len(missing) == 0
         }
 
-        return task_frame
-
+    # -------------------------------------------------------
     def _normalize_params(self, action: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Map TaskPlanner param names to TaskFrame required names
+        Map TaskPlanner param names to TaskFrame required names.
         """
-        mapping = {
-            "create_reminder": {"datetime": "remind_at", "title": "text"},
-            "update_reminder": {"datetime": "remind_at", "title": "text"},
-            "create_event": {"datetime": "start_time"},
-            "update_event": {"datetime": "start_time"}
-        }
-
-        if action in mapping:
-            for old_key, new_key in mapping[action].items():
+        if action in self.param_mapping:
+            mapping = self.param_mapping[action]
+            for old_key, new_key in mapping.items():
                 if old_key in parameters and new_key not in parameters:
                     parameters[new_key] = parameters.pop(old_key)
         return parameters
 
+    # -------------------------------------------------------
+    def _apply_event_defaults(self, action: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Apply default values for calendar events:
+        - default timezone
+        - default end_time (start_time + 1 hour)
+        """
+        if action not in ("create_event", "update_event"):
+            return parameters
+
+        # Default timezone
+        parameters.setdefault("timezone", self.default_timezone)
+
+        # Auto-generate end_time if missing
+        if "start_time" in parameters and "end_time" not in parameters and parameters["start_time"]:
+            try:
+                dt_start = datetime.fromisoformat(parameters["start_time"])
+                parameters["end_time"] = (dt_start + timedelta(hours=1)).isoformat()
+            except Exception:
+                # Fail silently – validation will catch it
+                pass
+
+        return parameters
+
+    # -------------------------------------------------------
     def apply_defaults(self, action: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Add optional fields with None defaults.
+        """
         for field in self.optional_fields.get(action, []):
             parameters.setdefault(field, None)
         return parameters
