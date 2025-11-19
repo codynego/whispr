@@ -65,7 +65,7 @@ class TaskPlanner:
             "- Todos: create_todo, update_todo, delete_todo, fetch_todos\n"
             "- Calendar: create_event, update_event, delete_event, fetch_events\n"
             "- Emails: fetch_emails, mark_email_read, send_email\n"
-            "- General Queries: general_query (for user messages requesting KnowledgeVault info)\n\n"
+            "- General Queries: general_query (for general info not related to email fetching, note fetching, todo fecthing and reminder fetching)\n\n"
             "Return ONLY JSON array. Examples:\n"
             "[\n"
             "  {\"action\": \"create_note\", \"params\": {\"content\": \"Buy milk\"}, \"intent\": \"Create a note to buy milk\", \"confidence\": 0.9},\n"
