@@ -167,7 +167,7 @@ class KnowledgeVaultManager:
         relationships: Optional[List[str]] = None,
         filters: Optional[List[Dict[str, Any]]] = None,
         limit: int = 5
-    ) -> List[KnowledgeVaultEntry]:
+    ) -> List[Dict[str, Any]]:  # <-- return dicts instead of objects
 
         entries = KnowledgeVaultEntry.objects.filter(user=self.user)
 
@@ -216,17 +216,30 @@ class KnowledgeVaultManager:
                     ranked.append((sim, entry))
 
             ranked.sort(key=lambda x: x[0], reverse=True)
-            results = [e for _, e in ranked[:limit]]
+            entries = [e for _, e in ranked[:limit]]
         else:
-            results = entries[:limit]
+            entries = entries[:limit]
 
         # Update access timestamp
         now = timezone.now()
-        for entry in results:
+        for entry in entries:
             entry.last_accessed = now
             entry.save(update_fields=["last_accessed"])
 
+        # Convert model objects to dict
+        results = []
+        for e in entries:
+            results.append({
+                "memory_id": str(e.memory_id),
+                "summary": e.summary,
+                "entities": e.entities,
+                "relationships": e.relationships,
+                "timestamp": e.timestamp.isoformat(),
+                "last_accessed": e.last_accessed.isoformat()
+            })
+
         return results
+
 
     # ---------------------------
     # 4️⃣ Fetch Recent Memories
