@@ -3,6 +3,7 @@ from django.utils import timezone
 from django.db.models import Q
 from .models import KnowledgeVaultEntry
 import hashlib
+import uuid
 
 User = None  # Will be replaced with settings.AUTH_USER_MODEL in real usage
 
@@ -22,30 +23,32 @@ class KnowledgeVaultManager:
     # ---------------------------
     # 1️⃣ Ingest Memory
     # ---------------------------
+
+
     def ingest_memory(
         self,
+        id: str,
         content: str,
         entities: Dict[str, Any],
         relationships: List[Dict[str, str]],
         summary: str
     ) -> KnowledgeVaultEntry:
         """
-        Add a new memory or update existing memory if same memory_id exists.
+        Add a new memory as a separate entry every time.
         """
-        memory_id = self._generate_id(content)
+        memory_id = id if id else str(uuid.uuid4())  # unique for each memory
 
-        entry, created = KnowledgeVaultEntry.objects.update_or_create(
+        entry = KnowledgeVaultEntry.objects.create(
             user=self.user,
             memory_id=memory_id,
-            defaults={
-                "entities": entities,
-                "relationships": relationships,
-                "summary": summary,
-                "timestamp": timezone.now(),
-            }
+            entities=entities,
+            relationships=relationships,
+            summary=summary,
+            timestamp=timezone.now()
         )
 
         return entry
+
 
     # ---------------------------
     # 2️⃣ Update Existing Memory
