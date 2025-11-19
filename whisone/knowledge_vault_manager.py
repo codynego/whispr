@@ -106,9 +106,6 @@ class KnowledgeVaultManager:
             entities=entities,
             relationships=relationships,
             embedding=embedding,
-            text_search=text_search,
-            flagged=flagged,
-            timestamp=timezone.now()
         )
 
         return entry
