@@ -5,6 +5,7 @@ import email.utils
 import logging
 from dateutil.parser import parse as parse_dt
 from django.contrib.auth import get_user_model
+from datetime import timezone
 
 # Services
 from .services.gmail_service import GmailService
