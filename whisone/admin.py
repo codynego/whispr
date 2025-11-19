@@ -59,7 +59,10 @@ class AutomationRuleAdmin(admin.ModelAdmin):
     )
 
 
+
 from django.contrib import admin
+from django.utils.html import format_html
+import json
 from .models import KnowledgeVaultEntry
 
 
@@ -69,26 +72,92 @@ class KnowledgeVaultEntryAdmin(admin.ModelAdmin):
         "memory_id",
         "user",
         "summary_snippet",
+        "formatted_entities",
+        "timestamp",
+    )
+
+    list_filter = (
+        "user",
         "timestamp",
         "last_accessed",
     )
-    list_filter = ("timestamp", "last_accessed", "user")
-    search_fields = ("memory_id", "user__username", "summary")
-    readonly_fields = ("memory_id", "timestamp", "last_accessed")
 
+    search_fields = (
+        "memory_id",
+        "user__username",
+        "user__email",
+        "summary",
+    )
+
+    readonly_fields = (
+        "memory_id",
+        "timestamp",
+        "last_accessed",
+        "pretty_entities",
+        "pretty_relationships",
+        "embedding",
+    )
+
+    fieldsets = (
+        ("Memory Info", {
+            "fields": ("memory_id", "user", "summary", "timestamp", "last_accessed")
+        }),
+        ("Structured Entities", {
+            "fields": ("pretty_entities",)
+        }),
+        ("Relationships", {
+            "fields": ("pretty_relationships",)
+        }),
+        ("Search & Embeddings", {
+            "fields": ("embedding"),
+            "classes": ("collapse",),  # collapsible UI section
+        }),
+    )
+
+    # ------------------------
+    # DISPLAY HELPERS
+    # ------------------------
     def summary_snippet(self, obj):
-        """Shorten long summaries in list display."""
-        return (obj.summary[:75] + "...") if obj.summary and len(obj.summary) > 75 else obj.summary
+        if not obj.summary:
+            return ""
+        return (obj.summary[:50] + "...") if len(obj.summary) > 50 else obj.summary
     summary_snippet.short_description = "Summary"
 
+    def formatted_entities(self, obj):
+        """One-line entity categories for quick overview."""
+        if not obj.entities:
+            return "-"
+        keys = ", ".join(obj.entities.keys())
+        return keys
+    formatted_entities.short_description = "Entity Types"
+
+    def pretty_entities(self, obj):
+        """Pretty-print JSON."""
+        if not obj.entities:
+            return "-"
+        return format_html(
+            "<pre style='white-space:pre-wrap'>{}</pre>",
+            json.dumps(obj.entities, indent=2)
+        )
+    pretty_entities.short_description = "Entities"
+
+    def pretty_relationships(self, obj):
+        if not obj.relationships:
+            return "-"
+        return format_html(
+            "<pre style='white-space:pre-wrap'>{}</pre>",
+            json.dumps(obj.relationships, indent=2)
+        )
+    pretty_relationships.short_description = "Relationships"
+
+    # ------------------------
+    # PERMISSIONS
+    # ------------------------
     def has_add_permission(self, request):
-        """Optional: prevent manual creation from admin if desired."""
-        return True  # Set False if you want to prevent manual additions
+        return True
 
     def has_change_permission(self, request, obj=None):
-        """Optional: allow edits only if needed."""
         return True
 
     def has_delete_permission(self, request, obj=None):
-        """Optional: allow deletions."""
         return True

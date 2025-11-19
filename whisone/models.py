@@ -117,50 +117,57 @@ from django.db import models
 from django.conf import settings
 import uuid
 
+import uuid
+from django.db import models
+from django.conf import settings
+
 class KnowledgeVaultEntry(models.Model):
     """
-    Stores a single knowledge memory extracted from user interactions, events, or facts.
-    Supports structured entities and relationships for reasoning.
+    Stores a single knowledge memory extracted from user interactions.
+    Includes structured entities + embeddings for semantic search.
     """
+
     user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, 
-        on_delete=models.CASCADE, 
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
         related_name="knowledge_entries"
     )
-    
+
     memory_id = models.UUIDField(
-        default=uuid.uuid4, 
-        editable=False, 
-        unique=True
-    )  # unique ID for the memory
-    
-    # Structured entities for this memory
-    entities = models.JSONField(
-        default=dict,
-        help_text="Structured entities. Example: { 'events': {...}, 'people': {...}, 'preferences': {...} }"
+        default=uuid.uuid4,
+        unique=True,
+        editable=False
     )
-    
-    # Relationships between entities
-    relationships = models.JSONField(
-        default=list,
-        help_text="Example: [{ 'from': 'user', 'relation': 'attending', 'to': 'evt_001' }]"
-    )
-    
-    # Optional summary or natural language description
+
+    # ----- CORE MEMORY FIELDS -----
     summary = models.TextField(
         blank=True,
-        null=True
+        null=True,
+        help_text="Natural language summary of this memory."
     )
-    
-    # Timestamp fields
+
+    entities = models.JSONField(
+        default=dict,
+        help_text="Structured entities: { events:[], emotions:[], people:[], ... }"
+    )
+
+    relationships = models.JSONField(
+        default=list,
+        help_text="List of entity relationships."
+    )
+
+    embedding = models.JSONField(
+        blank=True,
+        null=True,
+        help_text="Vector embedding for semantic search."
+    )
+
+    # ----- TIMESTAMPS -----
     timestamp = models.DateTimeField(auto_now_add=True)
     last_accessed = models.DateTimeField(auto_now=True)
-    
+
     class Meta:
-        ordering = ["-timestamp"]
-        verbose_name = "Knowledge Vault Entry"
-        verbose_name_plural = "Knowledge Vault Entries"
+        ordering = ['-timestamp']
 
     def __str__(self):
-        return f"Memory {self.memory_id} for {self.user}"
-
+        return f"Memory {self.memory_id} | {self.user.email}"

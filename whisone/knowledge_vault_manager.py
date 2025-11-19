@@ -2,202 +2,236 @@ from typing import Dict, Any, List, Optional
 from django.utils import timezone
 from django.db.models import Q
 from .models import KnowledgeVaultEntry
-import hashlib
 import uuid
-
-User = None  # Will be replaced with settings.AUTH_USER_MODEL in real usage
+import openai
+import numpy as np
+import json
 
 
 class KnowledgeVaultManager:
     """
-    Knowledge Vault Manager for structured entries:
-    - Ingest user memories (facts, events, tasks, goals, preferences, etc.)
-    - Update memories intelligently
-    - Query by keyword, entities, or relationships
+    Knowledge Vault Manager with semantic search using OpenAI embeddings.
+    Implements:
+    - Ingesting memories with sparsity checks
+    - Optional soft ingestion for borderline data
+    - Updating memories
+    - Semantic query
+    - Fetch recent memories
     - Prune old memories
     """
 
-    def __init__(self, user: User):
+    def __init__(self, user):
         self.user = user
+        self.client = openai.OpenAI()
+
+    # ---------------------------
+    # Utility: Generate Embedding
+    # ---------------------------
+    def _embed(self, text: str) -> List[float]:
+        response = self.client.embeddings.create(
+            model="text-embedding-3-small",
+            input=text
+        )
+        return response.data[0].embedding
+
+    # ---------------------------
+    # Utility: Build searchable text
+    # ---------------------------
+    def _build_text_search(self, summary: str, entities: Dict[str, Any], relationships: List[Dict[str, str]]) -> str:
+        parts = [summary]
+        for key, values in entities.items():
+            if isinstance(values, list) and values:
+                parts.append(" ".join(map(str, values)))
+        for rel in relationships:
+            if isinstance(rel, dict):
+                parts.append(" ".join(rel.values()))
+        return " ".join(parts)
 
     # ---------------------------
     # 1️⃣ Ingest Memory
     # ---------------------------
-
-
     def ingest_memory(
         self,
         content: str,
         entities: Dict[str, Any],
         relationships: List[Dict[str, str]],
-        summary: str
-    ) -> KnowledgeVaultEntry:
+        summary: str,
+        soft_ingest: bool = True  # if True, flag borderline memories
+    ) -> Optional[KnowledgeVaultEntry]:
         """
-        Add a new memory as a separate entry every time.
+        Add a memory if it passes sparsity checks.
+        soft_ingest=True allows borderline memories to be stored but flagged.
         """
-        memory_id = str(uuid.uuid4())  # unique for each memory
+        # ---------------------------
+        # 1️⃣ Basic sanity checks
+        # ---------------------------
+        if not summary or len(summary.strip()) < 10:
+            return None
+        if not content or len(content.strip()) < 5:
+            return None
 
+        # ---------------------------
+        # 2️⃣ Count meaningful entities/relationships
+        # ---------------------------
+        meaningful_entities_count = sum(
+            len(v) for v in entities.values() if isinstance(v, list) and len(v) > 0
+        )
+        meaningful_relationships_count = len(relationships) if relationships else 0
+
+        total_meaningful = meaningful_entities_count + meaningful_relationships_count
+
+        if total_meaningful < 2:
+            if soft_ingest:
+                # Flag as borderline
+                flagged = True
+            else:
+                return None
+        else:
+            flagged = False
+
+        # ---------------------------
+        # 3️⃣ Build embedding
+        # ---------------------------
+        text_search = self._build_text_search(summary, entities, relationships)
+        embedding = self._embed(text_search)
+
+        # ---------------------------
+        # 4️⃣ Save memory
+        # ---------------------------
+        memory_id = str(uuid.uuid4())
         entry = KnowledgeVaultEntry.objects.create(
             user=self.user,
             memory_id=memory_id,
+            summary=summary,
             entities=entities,
             relationships=relationships,
-            summary=summary,
+            embedding=embedding,
+            text_search=text_search,
+            flagged=flagged,
             timestamp=timezone.now()
         )
 
         return entry
 
-
     # ---------------------------
-    # 2️⃣ Update Existing Memory
+    # 2️⃣ Update Memory
     # ---------------------------
     def update_memory(
         self,
         memory_id: str,
         entities: Optional[Dict[str, Any]] = None,
         relationships: Optional[List[Dict[str, str]]] = None,
-        summary: Optional[str] = None,
+        summary: Optional[str] = None
     ) -> Optional[KnowledgeVaultEntry]:
-        """
-        Update an existing memory intelligently. Only updates provided fields.
-        Merges entities and relationships instead of overwriting completely.
-        """
         try:
             entry = KnowledgeVaultEntry.objects.get(user=self.user, memory_id=memory_id)
-            updated = False
-
-            # Merge entities
-            if entities:
-                for key, value in entities.items():
-                    if key in entry.entities and isinstance(entry.entities[key], list):
-                        entry.entities[key].extend(value)
-                        # Deduplicate
-                        entry.entities[key] = list({json.dumps(e, sort_keys=True) for e in entry.entities[key]})
-                        entry.entities[key] = [json.loads(e) for e in entry.entities[key]]
-                    else:
-                        entry.entities[key] = value
-                updated = True
-
-            # Merge relationships
-            if relationships:
-                entry.relationships.extend(relationships)
-                # Deduplicate
-                entry.relationships = list({json.dumps(r, sort_keys=True) for r in entry.relationships})
-                entry.relationships = [json.loads(r) for r in entry.relationships]
-                updated = True
-
-            if summary:
-                entry.summary = summary
-                updated = True
-
-            if updated:
-                entry.last_accessed = timezone.now()
-                entry.save()
-
-            return entry
-
         except KnowledgeVaultEntry.DoesNotExist:
             return None
 
+        if entities:
+            for key, value in entities.items():
+                existing = entry.entities.get(key, [])
+                if isinstance(existing, list) and isinstance(value, list):
+                    entry.entities[key] = list(set(existing + value))
+                else:
+                    entry.entities[key] = value
+
+        if relationships:
+            entry.relationships = list(set(entry.relationships + relationships))
+
+        if summary:
+            entry.summary = summary
+            text_search = self._build_text_search(summary, entry.entities, entry.relationships)
+            entry.text_search = text_search
+            entry.embedding = self._embed(text_search)
+
+        entry.last_accessed = timezone.now()
+        entry.save()
+        return entry
+
     # ---------------------------
-    # 3️⃣ Query Memories
+    # 3️⃣ Query Memory (semantic + filters)
     # ---------------------------
     def query(
         self,
         keyword: Optional[str] = None,
-        entities: Optional[List[str]] = None,  # List of entity types
+        entities: Optional[List[str]] = None,
         relationships: Optional[List[str]] = None,
         filters: Optional[List[Dict[str, Any]]] = None,
-        limit: int = 5
+        limit: int = 5,
+        include_flagged: bool = False
     ) -> List[KnowledgeVaultEntry]:
-        """
-        Universal query engine for the Knowledge Vault.
 
-        Args:
-            keyword: Search term in summary or inside entity lists.
-            entities: List of entity types to search keyword in (e.g., ["emotions", "tasks"]).
-            relationships: List of relationship strings to match.
-            filters: List of dicts with 'key' and 'value' for additional filters (e.g., after/before).
-            limit: Maximum number of entries to return.
+        entries = KnowledgeVaultEntry.objects.filter(user=self.user)
 
-        Returns:
-            List of KnowledgeVaultEntry objects.
-        """
-        q = Q(user=self.user)
+        # Exclude flagged memories by default
+        if not include_flagged:
+            entries = entries.filter(flagged=False)
 
-        # Keyword search in summary
-        if keyword:
-            q &= Q(summary__icontains=keyword)
+        # Entity filters
+        if entities:
+            q = Q()
+            for e in entities:
+                q |= Q(**{f"entities__{e}__isnull": False})
+            entries = entries.filter(q)
 
-        # Keyword search inside entity lists
-        if entities and keyword:
-            entity_q = Q()
-            for entity_type in entities:
-                # Check if the keyword exists inside the JSONField list
-                entity_q |= Q(**{f"entities__{entity_type}__contains": [keyword]})
-            q &= entity_q
-
-        # Relationship search
+        # Relationship filters
         if relationships:
             for r in relationships:
-                q &= Q(relationships__icontains=r)
+                entries = entries.filter(relationships__icontains=r)
 
-        # Custom filters (time ranges etc.)
+        # Time filters
         if filters:
             for f in filters:
-                if isinstance(f, dict) and "key" in f and "value" in f:
-                    key = f["key"]
-                    value = f["value"]
-                    if value is None:
-                        continue
-                    if key == "after":
-                        q &= Q(timestamp__gte=value)
-                    elif key == "before":
-                        q &= Q(timestamp__lte=value)
-                    elif key in ["entities", "relationships", "summary"]:
-                        q &= Q(**{f"{key}__icontains": value})
+                if "key" in f and "value" in f:
+                    if f["key"] == "after":
+                        entries = entries.filter(timestamp__gte=f["value"])
+                    if f["key"] == "before":
+                        entries = entries.filter(timestamp__lte=f["value"])
 
-        print("query", q)
-        # Fetch entries
-        entries = KnowledgeVaultEntry.objects.filter(q).order_by("-timestamp")[:limit]
+        entries = list(entries)
 
-        # Update last_accessed timestamp
+        # Semantic ranking
+        if keyword:
+            query_embedding = self._embed(keyword)
+
+            def cosine(a, b):
+                a = np.array(a)
+                b = np.array(b)
+                return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+
+            ranked = []
+            for entry in entries:
+                if entry.embedding:
+                    sim = cosine(query_embedding, entry.embedding)
+                    ranked.append((sim, entry))
+
+            ranked.sort(key=lambda x: x[0], reverse=True)
+            results = [e for _, e in ranked[:limit]]
+        else:
+            results = entries[:limit]
+
+        # Update access timestamp
         now = timezone.now()
-        for entry in entries:
+        for entry in results:
             entry.last_accessed = now
             entry.save(update_fields=["last_accessed"])
 
-        return list(entries)
-
+        return results
 
     # ---------------------------
     # 4️⃣ Fetch Recent Memories
     # ---------------------------
-    def recent_memories(self, limit: int = 5) -> List[KnowledgeVaultEntry]:
-        """
-        Fetch the most recent memories.
-        """
+    def recent_memories(self, limit: int = 5):
         entries = KnowledgeVaultEntry.objects.filter(user=self.user).order_by("-timestamp")[:limit]
-
         for entry in entries:
             entry.last_accessed = timezone.now()
             entry.save(update_fields=["last_accessed"])
-
         return list(entries)
 
     # ---------------------------
     # 5️⃣ Prune Old Memories
     # ---------------------------
     def prune_old_memory(self, days: int = 90):
-        """
-        Delete memories not accessed in the last `days`.
-        """
         cutoff = timezone.now() - timezone.timedelta(days=days)
         KnowledgeVaultEntry.objects.filter(user=self.user, last_accessed__lt=cutoff).delete()
-
-    # ---------------------------
-    # 6️⃣ Utility: Generate Memory ID
-    # ---------------------------
-    def _generate_id(self, content: str) -> str:
-        return hashlib.md5(content.encode("utf-8")).hexdigest()
