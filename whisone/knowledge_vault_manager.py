@@ -158,6 +158,7 @@ class KnowledgeVaultManager:
                     elif key in ["entities", "relationships", "summary"]:
                         q &= Q(**{f"{key}__icontains": value})
 
+        print("query", q)
         # Fetch entries
         entries = KnowledgeVaultEntry.objects.filter(q).order_by("-timestamp")[:limit]
 
