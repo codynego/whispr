@@ -125,6 +125,11 @@ class KnowledgeVaultManager:
             List of KnowledgeVaultEntry objects.
         """
         q = Q(user=self.user)
+        print("Querying Knowledge Vault with:", {
+            "keyword": keyword,
+            "entities": entities,
+            "relationships": relationships,}
+        )
 
         # -------------------
         # Keyword search
