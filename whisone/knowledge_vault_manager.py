@@ -106,33 +106,47 @@ class KnowledgeVaultManager:
         keyword: Optional[str] = None,
         entities: Optional[List[str]] = None,
         relationships: Optional[List[str]] = None,
+        filters: Optional[Dict[str, Any]] = None,
         limit: int = 5
     ) -> List[KnowledgeVaultEntry]:
         """
-        Query memories by keyword in summary, entity categories, or relationship types.
-        Returns most recent matches first.
+        Smart universal query engine for the Knowledge Vault.
+        Supports:
+        - keyword search
+        - entity matching
+        - relationship matching
+        - custom filters passed by TaskPlanner/Executor
         """
         q = Q(user=self.user)
 
+        # Standard keyword search
         if keyword:
             q &= Q(summary__icontains=keyword)
 
+        # Entity search
         if entities:
             for e in entities:
                 q &= Q(entities__icontains=e)
 
+        # Relationship search
         if relationships:
             for r in relationships:
                 q &= Q(relationships__icontains=r)
 
+        # Generic filters from TaskPlanner/Executor
+        if filters:
+            for key, value in filters.items():
+                q &= Q(**{f"{key}__icontains": value})
+
         entries = KnowledgeVaultEntry.objects.filter(q).order_by("-timestamp")[:limit]
 
-        # Update last_accessed
+        # Update access timestamp
         for entry in entries:
             entry.last_accessed = timezone.now()
             entry.save(update_fields=["last_accessed"])
 
         return list(entries)
+
 
     # ---------------------------
     # 4️⃣ Fetch Recent Memories
