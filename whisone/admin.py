@@ -87,6 +87,7 @@ class KnowledgeVaultEntryAdmin(admin.ModelAdmin):
         "user__username",
         "user__email",
         "summary",
+        "text_search",
     )
 
     readonly_fields = (
@@ -96,6 +97,7 @@ class KnowledgeVaultEntryAdmin(admin.ModelAdmin):
         "pretty_entities",
         "pretty_relationships",
         "embedding",
+        "text_search",
     )
 
     fieldsets = (
@@ -109,7 +111,7 @@ class KnowledgeVaultEntryAdmin(admin.ModelAdmin):
             "fields": ("pretty_relationships",)
         }),
         ("Search & Embeddings", {
-            "fields": ("embedding"),
+            "fields": ("text_search", "embedding"),
             "classes": ("collapse",),  # collapsible UI section
         }),
     )

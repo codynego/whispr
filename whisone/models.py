@@ -156,6 +156,13 @@ class KnowledgeVaultEntry(models.Model):
         help_text="List of entity relationships."
     )
 
+    # ----- SEARCH / SEMANTIC FIELDS -----
+    text_search = models.TextField(
+        blank=True,
+        null=True,
+        help_text="Flattened text used for text-based search."
+    )
+
     embedding = models.JSONField(
         blank=True,
         null=True,
