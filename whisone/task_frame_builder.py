@@ -1,8 +1,8 @@
 from typing import Dict, Any, Optional
 from datetime import datetime, timedelta
 
-from natural_resolver import NaturalResolver
-from calendar_service import GoogleCalendarService
+from whisone.natural_resolver import NaturalResolver
+from whisone.services.calendar_service import GoogleCalendarService
 
 class TaskFrameBuilder:
     """
