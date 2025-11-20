@@ -9,6 +9,7 @@ class TaskFrameBuilder:
     Build task frames for the Task Planner → Executor pipeline.
     Validates parameters, finds missing fields, resolves IDs using NaturalResolver,
     and structures actions in a consistent, machine-processable format.
+    Includes debug prints to trace parameter resolution and ID lookup.
     """
 
 
@@ -63,10 +64,7 @@ class TaskFrameBuilder:
             "fetch_emails": ["from_email", "query", "after", "before", "unread_only", "max_results"]
         }
 
-        # Default timezone
         self.default_timezone = "Africa/Lagos"
-
-        # Param mapping from planner → executor
         self.param_mapping = {
             "create_reminder": {"datetime": "remind_at", "title": "text"},
             "update_reminder": {"datetime": "remind_at", "title": "text"},
@@ -76,95 +74,87 @@ class TaskFrameBuilder:
 
     # -------------------------------------------------------
     def build(self, intent: str, action: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Build a task frame with:
-        - required fields
-        - optional fields
-        - resolved IDs (via NaturalResolver if missing)
-        - ready flag
-        """
         parameters = self._normalize_params(action, parameters)
         parameters = self._apply_event_defaults(action, parameters)
         parameters = self.apply_defaults(action, parameters)
-
-        # Attempt to resolve missing ID fields
         parameters = self._resolve_missing_ids(action, parameters)
 
         required = self.required_fields.get(action, [])
         missing = [f for f in required if f not in parameters or parameters[f] in (None, "")]
+        ready = len(missing) == 0
+
+        print(f"🔹 TaskFrameBuilder.build -> intent: {intent}, action: {action}")
+        print(f"   Parameters after normalization & defaults: {parameters}")
+        print(f"   Required fields: {required}")
+        print(f"   Missing fields: {missing}")
+        print(f"   Ready: {ready}\n")
+
         return {
             "intent": intent,
             "action": action,
             "parameters": parameters,
             "required_fields": required,
             "missing_fields": missing,
-            "ready": len(missing) == 0
+            "ready": ready
         }
 
     # -------------------------------------------------------
     def _normalize_params(self, action: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """Map planner param names to executor param names"""
         if action in self.param_mapping:
             mapping = self.param_mapping[action]
             for old_key, new_key in mapping.items():
                 if old_key in parameters and new_key not in parameters:
                     parameters[new_key] = parameters.pop(old_key)
+                    print(f"   🔄 Normalized param '{old_key}' -> '{new_key}'")
         return parameters
 
     # -------------------------------------------------------
     def _apply_event_defaults(self, action: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """Apply default timezone and auto-generate end_time if missing"""
         if action not in ("create_event", "update_event"):
             return parameters
-
         parameters.setdefault("timezone", self.default_timezone)
-
         if "start_time" in parameters and "end_time" not in parameters and parameters["start_time"]:
             try:
                 dt_start = datetime.fromisoformat(parameters["start_time"])
                 parameters["end_time"] = (dt_start + timedelta(hours=1)).isoformat()
+                print(f"   ⏱️ Auto-generated end_time: {parameters['end_time']}")
             except Exception:
-                pass
+                print("   ⚠️ Failed to parse start_time for end_time default")
         return parameters
 
     # -------------------------------------------------------
     def apply_defaults(self, action: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """Add optional fields with None defaults"""
         for field in self.optional_fields.get(action, []):
             parameters.setdefault(field, None)
         return parameters
 
     # -------------------------------------------------------
     def _resolve_missing_ids(self, action: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """Use NaturalResolver to auto-fill missing IDs for update/delete actions"""
         if not self.resolver:
             return parameters
 
-        id_field = f"{action.split('_')[1]}_id"  # e.g., "note_id", "reminder_id", "todo_id", "event_id"
+        id_field = f"{action.split('_')[1]}_id"
         if id_field in parameters and parameters[id_field]:
-            return parameters  # already present
-
-        # Determine natural query from available text fields
-        query = parameters.get("text") or parameters.get("task") or parameters.get("summary") or parameters.get("title")
-        if not query:
+            print(f"   ✅ ID already present for {id_field}: {parameters[id_field]}")
             return parameters
 
-        # Determine item_type for resolver
-        item_type_map = {
-            "note": "note",
-            "reminder": "reminder",
-            "todo": "todo",
-            "event": "event"
-        }
+        query = parameters.get("text") or parameters.get("task") or parameters.get("summary") or parameters.get("title")
+        if not query:
+            print(f"   ⚠️ No query text found for resolving {id_field}")
+            return parameters
+
+        item_type_map = {"note": "note", "reminder": "reminder", "todo": "todo", "event": "event"}
         base_action = action.split("_")[1] if "_" in action else action
         item_type = item_type_map.get(base_action)
         if not item_type:
+            print(f"   ⚠️ Unknown item type for action '{action}'")
             return parameters
 
-        # Resolve ID
         resolved = self.resolver.resolve(item_type=item_type, natural_query=query)
         if resolved and "object_id" in resolved:
             parameters[id_field] = resolved["object_id"]
+            print(f"   🟢 Resolved {id_field} using NaturalResolver: {parameters[id_field]}")
+        else:
+            print(f"   🔴 Could not resolve {id_field} for query: '{query}'")
 
         return parameters
-
