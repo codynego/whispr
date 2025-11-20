@@ -1,3 +1,6 @@
+
+
+
 from typing import List, Dict, Any, Optional
 import json
 from datetime import datetime, timedelta
@@ -44,46 +47,37 @@ class TaskPlanner:
     def _call_llm(self, user_message: str, conversation_history: str) -> List[Dict]:
         today = datetime.now().strftime("%B %d, %Y")
 
-        prompt = f"""
-You are an extremely precise Task Planner AI. Your only job is to convert the user's message into structured actions.
-
-CURRENT DATE: {today}
-
-RECENT CONVERSATION:
-{conversation_history}
-
-USER MESSAGE:
-\"\"\"{user_message}\"\"\"
-
-RULES — FOLLOW EXACTLY OR FAIL:
-1. Return ONLY a valid JSON array. Nothing else. No explanations.
-2. Use ONLY these exact field names:
-
-   • Todos → "task" (never "text", "title", "todo")
-   • Reminders → "text"
-   • Notes → "content"
-   • Events → "summary"
-   • Mark done → "done": true (for todos) or "completed": true (for reminders)
-
-3. When user says "done", "finished", "completed", "mark as done" → use:
-   - update_todo + "done": true
-   - update_reminder + "completed": true
-
-4. Parse all dates/times into ISO format: "2025-11-20T14:30"
-
-5. Always include "intent" and "confidence" (0.0–1.0)
-
-CORRECT EXAMPLES (copy the format exactly):
-
-[
-  {{"action": "create_todo", "params": {{"task": "Submit Greek assignment"}}, "intent": "Create todo for assignment", "confidence": 0.98}},
-  {{"action": "update_todo", "params": {{"task": "buy drugs", "done": true}}, "intent": "Mark buy drugs as completed", "confidence": 0.99}},
-  {{"action": "create_reminder", "params": {{"text": "Call mom", "remind_at": "2025-11-21T18:00"}}, "intent": "Set reminder", "confidence": 0.95}},
-  {{"action": "update_reminder", "params": {{"text": "Dentist", "completed": true}}, "intent": "Mark reminder done", "confidence": 0.97}}
-]
-
-Now process the user message above and return ONLY valid JSON.
-"""
+        prompt = (
+            "You are an AI Task Planner.\n\n"
+            f"Conversation so far:\n{conversation_history}\n\n"
+            f"Today's date: {today}\n\n"
+            f"User's new message:\n\"\"\"{user_message}\"\"\"\n\n"
+            "Your job:\n"
+            "1. Extract actionable tasks (notes, reminders, todos, calendar events, emails).\n"
+            "2. Identify general queries for knowledge retrieval.\n"
+            "3. Break multi-step instructions into separate actions.\n"
+            "4. Parse dates/times into ISO8601 format (YYYY-MM-DDTHH:MM).\n"
+            "5. Include confidence score (0–1).\n"
+            "6. Return ONLY a valid JSON array of actions; NO explanations.\n\n"
+            "Action Mapping:\n"
+            "- Notes: create_note, update_note, delete_note, fetch_notes\n"
+            "- Reminders: create_reminder, update_reminder, delete_reminder, fetch_reminders\n"
+            "- Todos: create_todo, update_todo, delete_todo, fetch_todos\n"
+            "- Calendar: create_event, update_event, delete_event, fetch_events\n"
+            "- Emails: fetch_emails, mark_email_read, send_email\n"
+            "- General Queries: general_query\n\n"
+            "When marking a todo or reminder as done, use these exact field names:\n"
+            "- For todos: \"done\": true\n"
+            "- For reminders: \"completed\": true\n"
+            "Never use \"status\" or \"complete\".\n"
+            "Return JSON array. Examples:\n"
+            "[\n"
+            '  {"action": "create_todo", "params": {"task": "Submit Greek assignment"}, "intent": "Create todo for assignment", "confidence": 0.98},\n'
+            '  {"action": "update_todo", "params": {"task": "buy drugs", "done": true}, "intent": "Mark buy drugs as completed", "confidence": 0.99},\n'
+            '  {"action": "create_reminder", "params": {"text": "Call mom", "remind_at": "2025-11-21T18:00"}, "intent": "Set reminder", "confidence": 0.95},\n'
+            '  {"action": "update_reminder", "params": {"text": "Dentist", "completed": true}, "intent": "Mark reminder done", "confidence": 0.97}\n'
+            "]\n\n"
+        )
 
         try:
             response = self.client.chat.completions.create(
