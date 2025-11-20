@@ -119,7 +119,7 @@ class Executor:
         # -------- REMINDERS --------
         elif action == "create_reminder":
             reminder = self._safe_call(self.reminder_service.create_reminder, {
-                "text": params.get("text"),
+                "text": params.get("text") or params.get("intent"),
                 "remind_at": self._parse_datetime(params.get("remind_at"))
             })
             return {"id": reminder.id, "text": reminder.text, "remind_at": reminder.remind_at.isoformat()}
@@ -127,7 +127,7 @@ class Executor:
         elif action == "update_reminder":
             reminder = self._safe_call(self.reminder_service.update_reminder, {
                 "reminder_id": params.get("reminder_id"),
-                "text": params.get("text"),
+                "text": params.get("text") or params.get("intent"),
                 "remind_at": self._parse_datetime(params.get("remind_at"))
             })
             return {"id": reminder.id, "text": reminder.text, "remind_at": reminder.remind_at.isoformat()} if reminder else None
@@ -147,7 +147,7 @@ class Executor:
 
         # -------- TODOS --------
         elif action == "create_todo":
-            todo = self._safe_call(self.todo_service.create_todo, {"task": params.get("task")})
+            todo = self._safe_call(self.todo_service.create_todo, {"task": params.get("task") or params.get("intent")})
             return {"id": todo.id, "task": todo.task, "done": todo.done}
 
         elif action == "update_todo":
