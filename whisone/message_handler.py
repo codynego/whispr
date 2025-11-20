@@ -9,12 +9,13 @@ from .response_generator import ResponseGenerator
 from .memory_extractor import MemoryExtractor
 from .knowledge_vault_manager import KnowledgeVaultManager
 from .memory_integrator import MemoryIntegrator
+from .natural_resolver import NaturalResolver
+from .services.calendar_service import GoogleCalendarService
 
 from .models import Integration
 from assistant.models import AssistantMessage
 
 User = get_user_model()
-
 
 @shared_task
 def process_user_message(user_id: int, message: str):
@@ -33,6 +34,16 @@ def process_user_message(user_id: int, message: str):
         "access_token": integration.access_token if integration else None,
     }
 
+    # Initialize calendar service for resolver
+    calendar_service = GoogleCalendarService(user=user, credentials=google_creds)
+
+    # Initialize NaturalResolver
+    resolver = NaturalResolver(
+        user=user,
+        api_key=settings.OPENAI_API_KEY,
+        calendar_service=calendar_service
+    )
+
     # -------------------------------------------------------------------------
     # 1️⃣ MEMORY EXTRACTION — parse user message
     # -------------------------------------------------------------------------
@@ -45,12 +56,11 @@ def process_user_message(user_id: int, message: str):
     # -------------------------------------------------------------------------
     vault = KnowledgeVaultManager(user=user)
     vault.ingest_memory(
-        content="message",
+        content=message,
         entities=extractor_output.get("entities", []),
         relationships=extractor_output.get("relationships", []),
         summary=extractor_output.get("summary", "")
     )
-
 
     # -------------------------------------------------------------------------
     # 3️⃣ TASK PLANNER — determine actions
@@ -62,7 +72,7 @@ def process_user_message(user_id: int, message: str):
     # -------------------------------------------------------------------------
     # 3.1️⃣ TASK FRAME BUILDER — validate & detect missing fields
     # -------------------------------------------------------------------------
-    frame_builder = TaskFrameBuilder()
+    frame_builder = TaskFrameBuilder(user=user, resolver=resolver, calendar_service=calendar_service)
     task_frames = [
         frame_builder.build(
             intent=step.get("intent", ""),
@@ -92,25 +102,19 @@ def process_user_message(user_id: int, message: str):
     general_query_results = []
     for frame in ready_tasks:
         if frame.get("action") == "general_query":
-
-            # Find the entry for general_query
             entry = next(
                 (r for r in executor_results if r.get("action") == "general_query"),
                 None
             )
-
             if entry:
                 result = entry.get("result")
                 error = entry.get("error")
-
                 if error:
                     print("❌ General Query Error:", error)
-
                 if result:
                     general_query_results.append(result)
 
     print("📖 General Query Results:", general_query_results)
-
 
     # -------------------------------------------------------------------------
     # 5️⃣ RESPONSE GENERATOR — craft reply
@@ -128,7 +132,7 @@ def process_user_message(user_id: int, message: str):
     )
     print("📝 Final Response:", response_text)
 
-
+    # -------------------------------------------------------------------------
     # 7️⃣ Save assistant reply
     # -------------------------------------------------------------------------
     AssistantMessage.objects.create(

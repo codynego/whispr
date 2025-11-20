@@ -10,6 +10,7 @@ import json
 from .tasks import process_whatsapp_message, send_whatsapp_message_task
 from django.contrib.auth import get_user_model
 from whisone.message_handler import process_user_message
+from assistant.models import AssistantMessage
 
 User = get_user_model()
 
@@ -128,6 +129,15 @@ def webhook(request):
                 msg_text = msg.get('text', {}).get('body', '')
                 if not msg_text:
                     return HttpResponse('OK', status=200)  # ACK non-text messages for now
+
+                try:
+                    AssistantMessage.objects.create(
+                        user=user,
+                        role='user',
+                        content=msg_text
+                    )
+                except Exception as e:
+                    print(f"Error saving user message: {e}")
 
                 chain(
                     process_user_message.s(user.id, msg_text),

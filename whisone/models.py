@@ -1,11 +1,17 @@
 from django.db import models
 from django.conf import settings
 
+
 # -----------------------------
 # 1. Reminder
 # -----------------------------
 
 class BaseModel(models.Model):
+    embedding = models.JSONField(
+        blank=True,
+        null=True,
+        help_text="Vector embedding for semantic search."
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

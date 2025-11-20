@@ -1,7 +1,8 @@
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 from typing import List, Dict, Optional
+
 
 class GoogleCalendarService:
     def __init__(self, access_token: str, refresh_token: str, client_id: str, client_secret: str):
@@ -15,9 +16,8 @@ class GoogleCalendarService:
         )
         self.service = build('calendar', 'v3', credentials=self.creds)
 
-
     # -----------------------------
-    # Create event
+    # Event CRUD
     # -----------------------------
     def create_event(
         self,
@@ -30,7 +30,6 @@ class GoogleCalendarService:
     ) -> Dict:
         start_time = start_time or datetime.utcnow()
         end_time = end_time or (start_time + timedelta(hours=1))
-
         event = {
             'summary': summary,
             'description': description,
@@ -39,7 +38,6 @@ class GoogleCalendarService:
         }
         if attendees:
             event['attendees'] = [{'email': email} for email in attendees]
-
         created_event = self.service.events().insert(calendarId='primary', body=event).execute()
         return {
             "id": created_event['id'],
@@ -48,9 +46,6 @@ class GoogleCalendarService:
             "end": created_event['end']
         }
 
-    # -----------------------------
-    # Update event
-    # -----------------------------
     def update_event(
         self,
         event_id: str,
@@ -58,49 +53,31 @@ class GoogleCalendarService:
         description: Optional[str] = None,
         start_time: Optional[datetime] = None,
         end_time: Optional[datetime] = None,
-        attendees: Optional[List[str]] = None
+        attendees: Optional[List[str]] = None,
+        status: Optional[str] = None,  # 'confirmed' or 'cancelled'
     ) -> Dict:
         event = self.service.events().get(calendarId='primary', eventId=event_id).execute()
-
-        if summary:
-            event['summary'] = summary
-        if description:
-            event['description'] = description
-        if start_time:
-            event['start']['dateTime'] = start_time.isoformat()
-        if end_time:
-            event['end']['dateTime'] = end_time.isoformat()
-        if attendees:
-            event['attendees'] = [{'email': email} for email in attendees]
-
+        if summary: event['summary'] = summary
+        if description: event['description'] = description
+        if start_time: event['start']['dateTime'] = start_time.isoformat()
+        if end_time: event['end']['dateTime'] = end_time.isoformat()
+        if attendees: event['attendees'] = [{'email': email} for email in attendees]
+        if status: event['status'] = status
         updated_event = self.service.events().update(calendarId='primary', eventId=event_id, body=event).execute()
-        return {
-            "id": updated_event['id'],
-            "summary": updated_event.get('summary'),
-            "start": updated_event['start'],
-            "end": updated_event['end']
-        }
+        return updated_event
 
-    # -----------------------------
-    # Delete event
-    # -----------------------------
     def delete_event(self, event_id: str) -> bool:
         self.service.events().delete(calendarId='primary', eventId=event_id).execute()
         return True
 
-    # -----------------------------
-    # Fetch events
-    # -----------------------------
     def fetch_events(
         self,
         time_min: Optional[datetime] = None,
         time_max: Optional[datetime] = None,
         max_results: int = 10
     ) -> List[Dict]:
-        """Fetch events from Google Calendar within a time range."""
         time_min = time_min or datetime.utcnow()
         time_max = time_max or (time_min + timedelta(days=7))
-
         events_result = self.service.events().list(
             calendarId='primary',
             timeMin=time_min.isoformat() + 'Z',
@@ -109,7 +86,6 @@ class GoogleCalendarService:
             singleEvents=True,
             orderBy='startTime'
         ).execute()
-
         events = []
         for event in events_result.get('items', []):
             events.append({
@@ -118,16 +94,21 @@ class GoogleCalendarService:
                 "description": event.get('description'),
                 "start": event['start'],
                 "end": event['end'],
-                "attendees": [a.get('email') for a in event.get('attendees', [])] if event.get('attendees') else []
+                "attendees": [a.get('email') for a in event.get('attendees', [])] if event.get('attendees') else [],
+                "status": event.get('status')
             })
         return events
 
-    def get_events_for_today(self, max_results: int = 50) -> List[Dict]:
-        """
-        Fetch all events happening today (from 00:00 to 23:59 in UTC).
-        """
-        now = datetime.utcnow()
-        start_of_day = datetime.combine(now.date(), datetime.min.time(), tzinfo=timezone.utc)
-        end_of_day = datetime.combine(now.date(), datetime.max.time(), tzinfo=timezone.utc)
+    # -----------------------------
+    # Convenience / "Mark done"
+    # -----------------------------
+    def mark_event_done(self, event_id: str) -> Dict:
+        """Mark an event as done by setting status to 'cancelled'."""
+        return self.update_event(event_id, status='cancelled')
 
+    def get_events_for_today(self, max_results: int = 50) -> List[Dict]:
+        """Fetch all events happening today (UTC)."""
+        now = datetime.utcnow()
+        start_of_day = datetime.combine(now.date(), datetime.min.time(), tzinfo=dt_timezone.utc)
+        end_of_day = datetime.combine(now.date(), datetime.max.time(), tzinfo=dt_timezone.utc)
         return self.fetch_events(time_min=start_of_day, time_max=end_of_day, max_results=max_results)
