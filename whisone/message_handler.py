@@ -35,7 +35,7 @@ def process_user_message(user_id: int, message: str):
     }
 
     # Initialize calendar service for resolver
-    calendar_service = GoogleCalendarService(user=user, credentials=google_creds)
+    calendar_service = GoogleCalendarService(**google_creds)
 
     # Initialize NaturalResolver
     resolver = NaturalResolver(
