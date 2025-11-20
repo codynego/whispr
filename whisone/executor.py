@@ -151,12 +151,18 @@ class Executor:
             return {"id": todo.id, "task": todo.task, "done": todo.done}
 
         elif action == "update_todo":
+            # ← ADD THIS BLOCK
+            if params.get("status") in ("completed", "done", "yes", True):
+                params["done"] = True
+            elif params.get("status") in ("pending", "incomplete", False):
+                params["done"] = False
+            # ← END
+
             todo = self._safe_call(self.todo_service.update_todo, {
                 "todo_id": params.get("todo_id"),
                 "task": params.get("task"),
                 "done": params.get("done")
             })
-            return {"id": todo.id, "task": todo.task, "done": todo.done} if todo else None
 
         elif action == "delete_todo":
             return self._safe_call(self.todo_service.delete_todo, {"todo_id": params.get("todo_id")})
