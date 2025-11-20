@@ -69,27 +69,68 @@ class Executor:
     # -------------------------
     # MAIN EXECUTION
     # -------------------------
-    def execute_task_frames(self, task_frames: List[Dict[str, Any]]):
+    def execute_task_frames(self, task_frames: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Executes all task frames and returns a consistent result list.
+        Every frame gets a response — success, validation error, or execution error.
+        """
         results = []
 
-        for frame in task_frames:
-            action = frame.get("action")
+        for i, frame in enumerate(task_frames):
+            action = frame.get("action", "unknown_action")
+            intent = frame.get("intent", "No intent provided")
             params = frame.get("parameters", {})
 
+            # === 1. Not ready → validation failure ===
             if not frame.get("ready", False):
+                missing = frame.get("missing_fields", [])
+                error_msg = f"Missing required fields: {', '.join(missing)}" if missing else "Task not ready"
                 results.append({
+                    "index": i,
+                    "intent": intent,
                     "action": action,
                     "ready": False,
-                    "missing_fields": frame.get("missing_fields", [])
+                    "error": error_msg,
+                    "missing_fields": missing,
+                    "parameters": params,
                 })
                 continue
 
+            # === 2. Ready → try to execute ===
             try:
                 result = self._execute_single_action(action, params)
-                results.append({"action": action, "ready": True, "result": result})
+
+                results.append({
+                    "index": i,
+                    "intent": intent,
+                    "action": action,
+                    "ready": True,
+                    "success": True,
+                    "result": result,
+                    "parameters": params,
+                })
+
             except Exception as e:
-                logger.error(f"Error executing action {action}: {e}")
-                results.append({"action": action, "ready": True, "error": str(e)})
+                import traceback
+                error_detail = str(e)
+                tb = traceback.format_exc()
+
+                logger.error(f"Execution failed for action '{action}' (intent: {intent})\n"
+                             f"Params: {params}\n"
+                             f"Error: {error_detail}\n"
+                             f"Traceback: {tb}")
+
+                results.append({
+                    "index": i,
+                    "intent": intent,
+                    "action": action,
+                    "ready": True,
+                    "success": False,
+                    "error": error_detail,
+                    "error_type": type(e).__name__,
+                    "parameters": params,
+                    "traceback": tb.splitlines()[-5:],  # last 5 lines for context
+                })
 
         return results
 
