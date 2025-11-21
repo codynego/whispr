@@ -102,7 +102,8 @@ def webhook(request):
                 sender_number = msg.get('from')
                 
                 # Safely get user (use filter to avoid DoesNotExist exception)
-                welcome_msg = """Hey! 👋 I'm Whisone
+                welcome_msg = """
+                Hey! 👋 I'm Whisone
 
                 Your second brain that makes sure you *never forget anything important again*.
 
