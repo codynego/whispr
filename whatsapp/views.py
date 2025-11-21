@@ -102,15 +102,14 @@ def webhook(request):
                 sender_number = msg.get('from')
                 
                 # Safely get user (use filter to avoid DoesNotExist exception)
-                welcome_msg = """
-                Hey! 👋 I'm Whisone
-                Your second brain that makes sure you *never forget anything important again*.
-                Sign up in 8 seconds to activate unlimited memory:
+                welcome_msg = """Hello! 👋 I’m Whisone — your intelligent second brain, built to ensure you never forget anything important again.
 
+                Sign up in just 8 seconds to activate your unlimited memory:
                 https://whisone.com/signup
 
-                I’ll remember everything you say from now on 🤖🧠"""
+                From now on, I’ll help you stay organized and remember everything you share with me. 🤖🧠"""
                 users = User.objects.filter(whatsapp=sender_number)
+
                 print("Fetched users for number:", sender_number, "Count:", users.count())
                 if not users.exists():
                     print("Unknown user number:", sender_number)
