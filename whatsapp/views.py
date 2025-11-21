@@ -102,16 +102,19 @@ def webhook(request):
                 sender_number = msg.get('from')
                 
                 # Safely get user (use filter to avoid DoesNotExist exception)
-                welcome_msg = """Hi there, I'm Whisone, your AI-powered personal assistant for reminders, to-dos, and notes right here on WhatsApp.
-                                    
-                I see you've started chatting without signing up yet. Whisone helps you capture ideas, set smart reminders, and manage tasks effortlessly—no app downloads needed.
-                                    
-                To get started and unlock unlimited features, sign up here: https://whisone.com/signup
-                                    
-                In the meantime, try me out:
-                • "Remind me tomorrow at 9 to pay the rent"
-                • "Create a to-do list: send report, call Marc, etc."
-                • "Remind me every Monday at 8 to take out the trash" """
+                welcome_msg = """Hey! 👋 I'm Whisone — your second brain on WhatsApp
+
+                I make sure you *never forget or miss anything important again* by automatically saving and organizing everything you send me.
+
+                But first — you need to sign up to activate your second brain.
+
+                It takes literally 8 seconds and unlocks unlimited memory forever:
+
+                → https://whisone.com/signup
+
+                Once you’re in, just talk to me normally and I’ll remember everything 🤖🧠
+
+                See you on the other side!"""
                 users = User.objects.filter(whatsapp=sender_number)
                 print("Fetched users for number:", sender_number, "Count:", users.count())
                 if not users.exists():
