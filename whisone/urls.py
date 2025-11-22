@@ -23,13 +23,15 @@ from .views import (
     IntegrationListView,
     IntegrationDeleteView,
     IntegrationDeactivateView,
-    OverviewView
+    OverviewView,
+    UnifiedSearchView,
 )
 
 urlpatterns = [
 
 
     path("overview/", OverviewView.as_view(), name="overview"),
+    path("search/", UnifiedSearchView.as_view(), name="unified-search"),
     # ======================
     # Notes
     # ======================

@@ -385,3 +385,38 @@ class OverviewView(APIView):
         }
 
         return Response(data)
+
+
+
+
+class UnifiedSearchView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        query = request.query_params.get("q", "").strip()
+        if not query:
+            return Response({"results": []})
+
+        user = request.user
+
+        # Search across Notes, Reminders, Todos
+        notes = Note.objects.filter(
+            Q(user=user) & Q(content__icontains=query)
+        ).order_by('-created_at')[:10]
+
+        reminders = Reminder.objects.filter(
+            Q(user=user) & Q(text__icontains=query)
+        ).order_by('-remind_at')[:10]
+
+        todos = Todo.objects.filter(
+            Q(user=user) & Q(task__icontains=query)
+        ).order_by('-created_at')[:10]
+
+        results = {
+            "notes": NoteSerializer(notes, many=True).data,
+            "reminders": ReminderSerializer(reminders, many=True).data,
+            "todos": TodoSerializer(todos, many=True).data,
+            "query": query,
+        }
+
+        return Response(results)
