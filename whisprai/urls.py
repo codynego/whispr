@@ -44,12 +44,12 @@ urlpatterns = [
     
     # API endpoints
     path('api/users/', include('users.urls')),
-    path('api/emails/', include('emails.urls')),
+    # path('api/emails/', include('emails.urls')),
     path('api/whatsapp/', include('whatsapp.urls')),
     path('api/assistant/', include('assistant.urls')),
     path('api/billing/', include('billing.urls')),
     path('api/notifications/', include('notifications.urls')),
-    path('api/unified/', include('unified.urls')),
+    # path('api/unified/', include('unified.urls')),
     path('api/whisone/', include('whisone.urls')),
 ]
 

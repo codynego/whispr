@@ -8,6 +8,17 @@ import logging
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
+import re
+
+def clean_stars(text: str) -> str:
+    """
+    Strips all double asterisks (**) and leaves single stars (*) intact.
+    """
+    # Replace **...** with *...* by removing extra stars
+    text = re.sub(r"\*\*(.*?)\*\*", r"*\1*", text)
+    return text
+
+
 
 class ResponseGenerator:
     """
@@ -98,6 +109,7 @@ Based on all the information above, craft a concise and natural response.
         )
 
         content = response.choices[0].message.content
+        content = clean_stars(content)
 
         # 7️⃣ Save assistant reply
         try:
