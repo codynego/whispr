@@ -360,7 +360,6 @@ class OverviewView(APIView):
             "recent_notes": [
                 {
                     "id": note.id,
-                    "title": note.title,
                     "content": note.content,
                     "created_at": note.created_at,
                 }
