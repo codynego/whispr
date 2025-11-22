@@ -1,5 +1,12 @@
 from django.contrib import admin
-from .models import Note, Reminder, Todo, Integration, AutomationRule
+from .models import Note, Reminder, Todo, Integration, AutomationRule, DailySummary
+
+
+@admin.register(DailySummary)
+class DailySummaryAdmin(admin.ModelAdmin):
+    list_display = ('id', 'user', 'summary_date', 'created_at')
+    search_fields = ('user__username', 'summary_text')
+    readonly_fields = ('created_at', 'updated_at', 'raw_data')
 
 @admin.register(Note)
 class NoteAdmin(admin.ModelAdmin):
