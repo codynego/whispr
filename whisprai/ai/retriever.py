@@ -1,6 +1,6 @@
 from sentence_transformers import SentenceTransformer, util
 import numpy as np
-from unified.models import Message  # unified message model
+# from unified.models import Message  
 from datetime import datetime, timedelta
 import re
 from typing import List, Optional
@@ -30,7 +30,7 @@ def retrieve_relevant_messages(user, data=None, query_text: str = None, channel:
 
     # 3️⃣ Apply channel filter if specified
     if channel:
-        messages = messages.filter(channel=channel)
+        messages = None
 
     # 4️⃣ Apply temporal filter if detected (assume Message has 'date' field as datetime)
     if date_filter:
