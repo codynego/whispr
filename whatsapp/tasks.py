@@ -11,7 +11,7 @@ import json
 logger = logging.getLogger(__name__)
 
 
-from whisprai.ai.gemini_client import get_ai_response
+# from whisprai.ai.gemini_client import get_ai_response
 from .models import WhatsAppMessage
 from assistant.ai_core.message_handler import MessageHandler
 from assistant.models import AssistantMessage
