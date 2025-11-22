@@ -25,33 +25,6 @@ class WhatsAppMessageListView(generics.ListAPIView):
         return WhatsAppMessage.objects.filter(user=self.request.user)
 
 
-# @api_view(['POST'])
-# @permission_classes([permissions.IsAuthenticated])
-# def send_message(request):
-#     """Send a WhatsApp message"""
-#     serializer = SendWhatsAppMessageSerializer(data=request.data)
-#     serializer.is_valid(raise_exception=True)
-    
-#     to_number = serializer.validated_data['to_number']
-#     message = serializer.validated_data['message']
-#     alert_type = serializer.validated_data.get('alert_type', '')
-    
-#     # Create message record
-#     whatsapp_message = WhatsAppMessage.objects.create(
-#         user=request.user,
-#         to_number=to_number,
-#         message=message,
-#         alert_type=alert_type
-#     )
-    
-#     # Trigger async task to send message
-#     task = send_whatsapp_message_task.delay(whatsapp_message.id)
-    
-#     return Response({
-#         'message': 'WhatsApp message queued for sending',
-#         'message_id': whatsapp_message.id,
-#         'task_id': task.id
-#     }, status=status.HTTP_202_ACCEPTED)
 
 
 import json
