@@ -344,7 +344,7 @@ class OverviewView(APIView):
         except DailySummary.DoesNotExist:
             summary_data = {
                 "id": None,
-                "content": "",  # ← always a string, never null
+                "summary_text": "",  # ← always a string, never null
                 "summary_date": str(today),
             }
 
