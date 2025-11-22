@@ -7,7 +7,7 @@ from django.conf import settings
 from .models import WhatsAppMessage, WhatsAppWebhook
 from .serializers import WhatsAppMessageSerializer, SendWhatsAppMessageSerializer
 import json
-from .tasks import process_whatsapp_message, send_whatsapp_message_task
+from .tasks import send_whatsapp_message_task
 from django.contrib.auth import get_user_model
 from whisone.message_handler import process_user_message
 from assistant.models import AssistantMessage
