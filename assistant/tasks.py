@@ -159,33 +159,33 @@ def execute_ai_action(user, ai_response, sender_number="2349033814065"):
 
 # assistant/tasks.py
 from celery import shared_task
-from assistant.automation_service import AutomationService
+# from assistant.automation_service import AutomationService
 from django.utils import timezone
 from assistant.models import Automation
 
 
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def execute_automation(self, automation_id: int):
-    """
-    Celery task to trigger an automation.
-    Called by django-celery-beat for schedules.
-    """
-    try:
-        automation = Automation.objects.select_related('user').get(id=automation_id)
-        if not automation.is_active:
-            return f"Automation {automation_id} is inactive."
+# @shared_task(bind=True, max_retries=3, default_retry_delay=60)
+# def execute_automation(self, automation_id: int):
+#     """
+#     Celery task to trigger an automation.
+#     Called by django-celery-beat for schedules.
+#     """
+#     try:
+#         automation = Automation.objects.select_related('user').get(id=automation_id)
+#         if not automation.is_active:
+#             return f"Automation {automation_id} is inactive."
 
-        service = AutomationService(user=automation.user)
-        success = service.trigger_automation(automation_id, context={})  # Empty context for schedules; pass data if needed
+#         service = AutomationService(user=automation.user)
+#         success = service.trigger_automation(automation_id, context={})  # Empty context for schedules; pass data if needed
 
-        if success:
-            return f"Automation {automation_id} executed successfully at {timezone.now()}."
-        else:
-            raise ValueError("Trigger conditions not met.")
-    except Automation.DoesNotExist:
-        return f"Automation {automation_id} not found."
-    except Exception as exc:
-        # Log and retry logic
-        self.retry(exc=exc)
+#         if success:
+#             return f"Automation {automation_id} executed successfully at {timezone.now()}."
+#         else:
+#             raise ValueError("Trigger conditions not met.")
+#     except Automation.DoesNotExist:
+#         return f"Automation {automation_id} not found."
+#     except Exception as exc:
+#         # Log and retry logic
+#         self.retry(exc=exc)
