@@ -330,7 +330,6 @@ class IntegrationDeactivateView(generics.GenericAPIView):
 
 
 
-
 class OverviewView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -338,21 +337,24 @@ class OverviewView(APIView):
         user = request.user
         today = date.today()
 
-        # Fetch today's summary if it exists
+        # Fetch today's summary
         try:
             summary = DailySummary.objects.get(user=user, summary_date=today)
+            summary_data = DailySummarySerializer(summary).data
         except DailySummary.DoesNotExist:
-            summary = None
+            summary_data = {
+                "id": None,
+                "content": "",  # ← always a string, never null
+                "summary_date": str(today),
+            }
 
-        # Basic counts
         total_reminders = Reminder.objects.filter(user=user).count()
         completed_todos = Todo.objects.filter(user=user, done=True).count()
-        recent_notes = Note.objects.filter(user=user).order_by('-created_at')[:5]
+        recent_notes = Note.objects.filter(user=user).order_by('-created_at')[:6]
 
-        # Structured response
         data = {
-            "has_summary": summary is not None,
-            "daily_summary": DailySummarySerializer(summary).data if summary else None,
+            "has_summary": summary_data["id"] is not None,
+            "daily_summary": summary_data,  # ← always an object with .content
             "stats": {
                 "total_reminders": total_reminders,
                 "completed_todos": completed_todos,
@@ -360,8 +362,8 @@ class OverviewView(APIView):
             "recent_notes": [
                 {
                     "id": note.id,
-                    "content": note.content,
-                    "created_at": note.created_at,
+                    "content": note.content or "",
+                    "created_at": note.created_at.isoformat(),
                 }
                 for note in recent_notes
             ]
