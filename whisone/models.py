@@ -184,3 +184,13 @@ class KnowledgeVaultEntry(models.Model):
 
     def __str__(self):
         return f"Memory {self.memory_id} | {self.user.email}"
+
+
+
+# whisone/models.py
+class DailySummary(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    summary_date = models.DateField()
+    summary_text = models.TextField()
+    raw_data = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)

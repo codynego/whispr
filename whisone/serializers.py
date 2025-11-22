@@ -34,3 +34,18 @@ class IntegrationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Integration
         fields = "__all__"
+
+
+from whisone.models import DailySummary
+
+
+class DailySummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DailySummary
+        fields = [
+            "id",
+            "summary_date",
+            "summary_text",
+            "raw_data",
+            "created_at",
+        ]

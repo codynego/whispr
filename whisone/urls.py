@@ -23,9 +23,13 @@ from .views import (
     IntegrationListView,
     IntegrationDeleteView,
     IntegrationDeactivateView,
+    OverviewView
 )
 
 urlpatterns = [
+
+
+    path("overview/", OverviewView.as_view(), name="overview"),
     # ======================
     # Notes
     # ======================
@@ -62,4 +66,5 @@ urlpatterns = [
     # Manage specific integration
     path("integrations/<int:pk>/delete/", IntegrationDeleteView.as_view(), name="integration-delete"),
     path("integrations/<int:pk>/deactivate/", IntegrationDeactivateView.as_view(), name="integration-deactivate"),
+    
 ]

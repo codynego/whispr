@@ -5,7 +5,8 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 import json
 import logging
-
+from whisone.models import DailySummary
+from datetime import date
 from whisone.services.gmail_service import GmailService
 from whisone.services.calendar_service import GoogleCalendarService
 from whisone.services.todo_service import TodoService
@@ -209,8 +210,14 @@ def fetch_daily_notes(previous_result, user_id):
 
 @shared_task
 def generate_summary_and_send(previous_result, user_id):
+    """
+    Generate the daily summary, save it to the database,
+    then send to WhatsApp.
+    """
     try:
-        # Ensure all keys exist (defensive)
+        user = User.objects.get(id=user_id)
+
+        # Defensive structure
         data = {
             "emails": previous_result.get("emails", []),
             "calendar": previous_result.get("calendar", []),
@@ -220,15 +227,42 @@ def generate_summary_and_send(previous_result, user_id):
         }
 
         logger.info(f"User {user_id}: Generating summary with data keys: {list(data.keys())}")
-        summary = generate_daily_summary(data)
-        summary = clean_for_whatsapp(summary)
 
-        send_whatsapp_text.delay(user_id=user_id, text=summary)
+        # 1️⃣ Generate AI summary
+        summary_text = generate_daily_summary(data)
+        clean_text = clean_for_whatsapp(summary_text)
+
+        # 2️⃣ Save to database (create or update today's summary)
+        today = date.today()
+
+        summary_obj, created = DailySummary.objects.update_or_create(
+            user=user,
+            summary_date=today,
+            defaults={
+                "summary_text": clean_text,
+                "raw_data": data,
+            }
+        )
+
+        logger.info(
+            f"User {user_id}: Summary saved to DB "
+            f"({'created' if created else 'updated'}) — Summary ID {summary_obj.id}"
+        )
+
+        # 3️⃣ Send to WhatsApp
+        send_whatsapp_text.delay(user_id=user_id, text=clean_text)
         logger.info(f"User {user_id}: Summary sent via WhatsApp")
-        return {"status": "success", "summary_length": len(summary)}
+
+        return {
+            "status": "success",
+            "summary_length": len(clean_text),
+            "summary_id": summary_obj.id
+        }
+
     except Exception as exc:
         logger.error(f"generate_summary_and_send failed for {user_id}: {exc}")
         return {"status": "failed", "error": str(exc)}
+
 
 
 @shared_task
