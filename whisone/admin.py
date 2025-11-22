@@ -6,7 +6,7 @@ from .models import Note, Reminder, Todo, Integration, AutomationRule, DailySumm
 class DailySummaryAdmin(admin.ModelAdmin):
     list_display = ('id', 'user', 'summary_date', 'created_at')
     search_fields = ('user__username', 'summary_text')
-    readonly_fields = ('created_at', 'updated_at', 'raw_data')
+    readonly_fields = ('created_at', 'raw_data')
 
 @admin.register(Note)
 class NoteAdmin(admin.ModelAdmin):
