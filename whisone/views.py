@@ -346,7 +346,7 @@ class OverviewView(APIView):
 
         # Basic counts
         total_reminders = Reminder.objects.filter(user=user).count()
-        completed_todos = Todo.objects.filter(user=user, completed=True).count()
+        completed_todos = Todo.objects.filter(user=user, done=True).count()
         recent_notes = Note.objects.filter(user=user).order_by('-created_at')[:5]
 
         # Structured response
