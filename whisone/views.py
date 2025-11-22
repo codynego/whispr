@@ -328,7 +328,8 @@ class IntegrationDeactivateView(generics.GenericAPIView):
 
         return Response({"message": "Integration deactivated"}, status=200)
 
-
+import re
+from datetime import date
 
 class OverviewView(APIView):
     permission_classes = [IsAuthenticated]
@@ -340,21 +341,35 @@ class OverviewView(APIView):
         # Fetch today's summary
         try:
             summary = DailySummary.objects.get(user=user, summary_date=today)
-            summary_data = DailySummarySerializer(summary).data
+            summary_text = summary.summary_text or ""
         except DailySummary.DoesNotExist:
-            summary_data = {
-                "id": None,
-                "summary_text": "",  # ← always a string, never null
-                "summary_date": str(today),
-            }
+            summary_text = ""
 
+        # --- Remove the morning greeting line ---
+        # Matches "*Morning Briefing* Good morning!" at the start
+        summary_text = re.sub(r"^\*?Morning Briefing\*?\s*Good morning[^\n]*\n?", "", summary_text, flags=re.IGNORECASE)
+
+        # --- Strip all other * and ** ---
+        clean_text = re.sub(r"\*\*|\*", "", summary_text)
+        clean_text = re.sub(r"\n{2,}", "\n", clean_text).strip()  # remove extra blank lines
+
+        # --- Short summary ---
+        summary_lines = clean_text.split("\n")
+        short_summary = "\n".join(summary_lines[:5])
+        if len(short_summary) > 250:
+            short_summary = short_summary[:247] + "..."
+
+        # Stats
         total_reminders = Reminder.objects.filter(user=user).count()
         completed_todos = Todo.objects.filter(user=user, done=True).count()
         recent_notes = Note.objects.filter(user=user).order_by('-created_at')[:6]
 
         data = {
-            "has_summary": summary_data["id"] is not None,
-            "daily_summary": summary_data,  # ← always an object with .content
+            "has_summary": bool(clean_text),
+            "daily_summary": {
+                "summary_date": str(today),
+                "summary_text": short_summary,
+            },
             "stats": {
                 "total_reminders": total_reminders,
                 "completed_todos": completed_todos,
