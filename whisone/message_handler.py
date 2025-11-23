@@ -50,7 +50,7 @@ def process_user_message(user_id: int, message: str):
     # 1️⃣ MEMORY EXTRACTION — parse user message
     # -------------------------------------------------------------------------
     extractor = MemoryExtractor(api_key=settings.OPENAI_API_KEY)
-    extractor_output = extractor.extract(content=message, source_type="user_message")
+    extractor_output = extractor.extract(user=user, content=message, source_type="user_message")
     print("🧠 Memory Extractor Output:", extractor_output)
 
     # -------------------------------------------------------------------------
