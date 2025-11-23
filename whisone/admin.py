@@ -170,3 +170,121 @@ class KnowledgeVaultEntryAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return True
+
+
+
+# admin.py
+import uuid
+from django.contrib import admin
+from django.utils.html import format_html
+from .models import Entity, Fact, Relationship
+
+
+def short_uuid(value: uuid.UUID) -> str:
+    """Return first 8 characters of UUID for cleaner display."""
+    return str(value)[:8]
+
+
+@admin.register(Entity)
+class EntityAdmin(admin.ModelAdmin):
+    list_display = ('short_id', 'user', 'type', 'name', 'created_at')
+    list_filter = ('type', 'created_at', 'user')
+    search_fields = ('id', 'name', 'type', 'user__username', 'user__email')
+    readonly_fields = ('id', 'created_at', 'updated_at')
+    ordering = ('-created_at',)
+    inlines = []  # We'll add FactInline below
+
+    def short_id(self, obj):
+        return short_uuid(obj.id)
+    short_id.short_description = 'ID'
+    short_id.admin_order_field = 'id'
+
+
+class FactInline(admin.TabularInline):
+    model = Fact
+    extra = 1
+    fields = ('key', 'value', 'confidence', 'created_at')
+    readonly_fields = ('created_at', 'updated_at')
+    can_delete = True
+    show_change_link = True
+
+
+# Add the inline to EntityAdmin
+EntityAdmin.inlines = [FactInline]
+
+
+@admin.register(Fact)
+class FactAdmin(admin.ModelAdmin):
+    list_display = ('short_id', 'entity_link', 'key', 'truncated_value', 'confidence', 'created_at')
+    list_filter = ('key', 'confidence', 'created_at')
+    search_fields = ('key', 'value', 'entity__name', 'entity__id')
+    readonly_fields = ('id', 'created_at', 'updated_at')
+    ordering = ('-created_at',)
+
+    def short_id(self, obj):
+        return short_uuid(obj.id)
+    short_id.short_description = 'ID'
+
+    def entity_link(self, obj):
+        if not obj.entity:
+            return "-"
+        url = f"/admin/yourappname/entity/{obj.entity.id}/change/"
+        return format_html('<a href="{}">{}</a>', url, obj.entity)
+    entity_link.short_description = 'Entity'
+    entity_link.admin_order_field = 'entity__name'
+
+    def truncated_value(self, obj):
+        max_length = 80
+        value = obj.value or ""
+        return value[:max_length] + ("..." if len(value) > max_length else "")
+    truncated_value.short_description = 'Value'
+
+
+@admin.register(Relationship)
+class RelationshipAdmin(admin.ModelAdmin):
+    list_display = (
+        'short_id',
+        'user',
+        'source_entity',
+        'relation_type',
+        'arrow',
+        'target_entity',
+        'created_at'
+    )
+    list_filter = ('relation_type', 'created_at', 'user')
+    search_fields = (
+        'source__name',
+        'source__id',
+        'target__name',
+        'target__id',
+        'relation_type',
+        'user__username'
+    )
+    readonly_fields = ('id', 'created_at')
+    ordering = ('-created_at',)
+
+    def short_id(self, obj):
+        return short_uuid(obj.id)
+    short_id.short_description = 'ID'
+
+    def source_entity(self, obj):
+        return format_html(
+            '<strong>{}</strong> <small style="color:#666">({})</small>',
+            obj.source.name or f"[{obj.source.type}]",
+            obj.source.type
+        ) if obj.source else "-"
+    source_entity.short_description = 'From'
+    source_entity.admin_order_field = 'source__name'
+
+    def target_entity(self, obj):
+        return format_html(
+            '<strong>{}</strong> <small style="color:#666">({})</small>',
+            obj.target.name or f"[{obj.target.type}]",
+            obj.target.type
+        ) if obj.target else "-"
+    target_entity.short_description = 'To'
+    target_entity.admin_order_field = 'target__name'
+
+    def arrow(self, obj):
+        return "→"
+    arrow.short_description = ''

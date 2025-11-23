@@ -2,18 +2,19 @@ from typing import Dict, Any, List, Optional
 from django.db import transaction
 from django.utils import timezone
 from .models import Entity, Fact, Relationship
-import uuid
 import numpy as np
 
 class MemoryIngestor:
     """
-    Ingests structured memory from MemoryExtractor into the Entity-Fact-Relationship KV.
+    Ingests structured memory dicts into Entity-Fact-Relationship KV.
     Supports:
     - Auto-update of existing entities/facts
     - Fact merging based on confidence
     - Relationship creation without duplicates
     - temp_id resolution
     """
+
+    EMBEDDING_SIM_THRESHOLD = 0.85
 
     def __init__(self, user):
         self.user = user
@@ -27,7 +28,6 @@ class MemoryIngestor:
         }
         """
         temp_id_map = {}  # Maps temp_id to actual Entity instance
-
         entities_data = memory.get("entities", [])
         relationships_data = memory.get("relationships", [])
         summary = memory.get("summary", "")
@@ -118,7 +118,7 @@ class MemoryIngestor:
             for e in all_entities:
                 if e.embedding:
                     sim = self._cosine_similarity(e.embedding, embedding)
-                    if sim > 0.85:  # similarity threshold
+                    if sim > self.EMBEDDING_SIM_THRESHOLD:
                         e.embedding = embedding
                         e.save(update_fields=["embedding", "updated_at"])
                         return e
@@ -138,4 +138,3 @@ class MemoryIngestor:
         if np.linalg.norm(a) == 0 or np.linalg.norm(b) == 0:
             return 0.0
         return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
-
