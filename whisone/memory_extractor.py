@@ -5,8 +5,7 @@ import uuid
 from django.conf import settings
 from .models import Entity, Fact, Relationship
 from django.db import transaction
-from django.contrib.auth import get_user_model
-import numpy as np
+import json
 
 class MemoryExtractor:
     """
@@ -32,17 +31,24 @@ class MemoryExtractor:
 
         entities_data = structured_data.get("entities", [])
         relationships_data = structured_data.get("relationships", [])
-        summary = structured_data.get("summary", "")
+        summary = structured_data.get("summary", "").strip()
+
+        if not summary:
+            summary = "No summary could be extracted from the content."
 
         created_entities = []
         created_facts = []
         created_relationships = []
+
+        # In-memory temp_id mapping
+        temp_id_map = {}
 
         with transaction.atomic():
             # Process entities
             for ent in entities_data:
                 entity_obj = self._get_or_create_entity(user, ent)
                 created_entities.append(entity_obj)
+                temp_id_map[ent.get("temp_id")] = entity_obj
 
                 # Process facts for this entity
                 for key, value_conf in ent.get("facts", {}).items():
@@ -53,8 +59,8 @@ class MemoryExtractor:
 
             # Process relationships
             for rel in relationships_data:
-                source_ent = self._find_entity_by_temp_id(created_entities, rel.get("from"))
-                target_ent = self._find_entity_by_temp_id(created_entities, rel.get("to"))
+                source_ent = temp_id_map.get(rel.get("from"))
+                target_ent = temp_id_map.get(rel.get("to"))
                 if source_ent and target_ent:
                     rel_obj = self._create_relationship(user, source_ent, target_ent, rel.get("relation_type"))
                     created_relationships.append(rel_obj)
@@ -72,11 +78,19 @@ class MemoryExtractor:
 
     def _call_llm_extract(self, content: str) -> Dict[str, Any]:
         prompt = (
+            "You are Whisone, an intelligent memory assistant.\n"
             "Extract structured memory from the user's content.\n\n"
-            "Return JSON ONLY with keys:\n"
-            "* entities\n"
-            "* relationships\n"
-            "* summary\n\n"
+            "Instructions:\n"
+            "1. ALWAYS produce at least one entity, even if the content has no obvious entities. Use type 'unknown'.\n"
+            "2. Assign a unique 'temp_id' to each entity (e.g., e1, e2, ...).\n"
+            "3. Extract facts for each entity if possible; if no facts, return an empty object '{}'.\n"
+            "4. Extract relationships between entities; if none, return an empty list '[]'.\n"
+            "5. Provide a 1-2 sentence summary.\n"
+            "6. Return JSON ONLY. DO NOT include explanations.\n\n"
+            "Return JSON with keys:\n"
+            " - entities\n"
+            " - relationships\n"
+            " - summary\n\n"
             "Entities schema example:\n"
             "[\n"
             "  {\n"
@@ -97,17 +111,17 @@ class MemoryExtractor:
             '    "to": "e2"\n'
             "  }\n"
             "]\n\n"
-            "Summary: 1-2 sentences describing the content.\n\n"
             f"Content:\n{content}\n"
         )
+
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[
-                {"role": "system", "content": "You are Whisone, a helpful assistant."},
+                {"role": "system", "content": "You are a helpful assistant that extracts structured memories."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.2,
-            max_tokens=600
+            max_tokens=800
         )
 
         response_text = response.choices[0].message.content.strip()
@@ -118,36 +132,33 @@ class MemoryExtractor:
             response_text = "\n".join(response_text.splitlines()[1:-1]).strip()
 
         try:
-            return json.loads(response_text)
-        except Exception:
-            return {"entities": [], "relationships": [], "summary": ""}
+            data = json.loads(response_text)
+            # Ensure keys exist
+            data.setdefault("entities", [])
+            data.setdefault("relationships", [])
+            data.setdefault("summary", "")
+            for ent in data["entities"]:
+                ent.setdefault("facts", {})
+            return data
+        except Exception as e:
+            print("⚠️ LLM JSON parse error:", e)
+            return {"entities": [{"temp_id": "e1", "type": "unknown", "name": "Unknown", "facts": {}}], "relationships": [], "summary": summary}
 
     def _get_or_create_entity(self, user, entity_data: Dict[str, Any]) -> Entity:
-        """
-        Check Knowledge Vault for existing entity by embedding similarity or name.
-        If found, return existing entity. Otherwise create a new one.
-        """
         name = entity_data.get("name")
         ent_type = entity_data.get("type", "unknown")
-        embedding = entity_data.get("embedding")  # optional embedding from LLM
+        embedding = entity_data.get("embedding")
 
-        # Search by name first
+        # Search by name
         existing = Entity.objects.filter(user=user, type=ent_type, name=name).first()
         if existing:
             return existing
-
-        # Optional: implement embedding similarity check if embedding is provided
-        # (for now, we skip, but could add vector similarity here)
 
         # Create new entity
         new_entity = Entity.objects.create(user=user, type=ent_type, name=name, embedding=embedding)
         return new_entity
 
     def _create_or_update_fact(self, entity_obj: Entity, key: str, value: str, confidence: float = 1.0) -> Fact:
-        """
-        Create or update a fact for an entity.
-        If the fact already exists and new confidence is higher, update it.
-        """
         existing_fact = Fact.objects.filter(entity=entity_obj, key=key).first()
         if existing_fact:
             if confidence >= existing_fact.confidence:
@@ -159,21 +170,8 @@ class MemoryExtractor:
         return Fact.objects.create(entity=entity_obj, key=key, value=value, confidence=confidence)
 
     def _create_relationship(self, user, source: Entity, target: Entity, relation_type: str) -> Relationship:
-        """
-        Create a relationship if it does not already exist.
-        """
         existing = Relationship.objects.filter(user=user, source=source, target=target, relation_type=relation_type).first()
         if existing:
             return existing
 
         return Relationship.objects.create(user=user, source=source, target=target, relation_type=relation_type)
-
-    def _find_entity_by_temp_id(self, entities: List[Entity], temp_id: str) -> Optional[Entity]:
-        """
-        Map the temporary LLM-generated ID to the actual Entity object
-        """
-        for ent in entities:
-            if getattr(ent, "temp_id", None) == temp_id:
-                return ent
-        return None
-
