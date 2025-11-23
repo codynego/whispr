@@ -111,6 +111,7 @@ class MemoryExtractor:
         )
 
         response_text = response.choices[0].message.content.strip()
+        print("LLM Extraction Response:", response_text)
 
         # Remove code fences if present
         if response_text.startswith("```") and response_text.endswith("```"):

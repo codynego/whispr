@@ -14,7 +14,8 @@ from .services.note_service import NoteService
 from .services.reminder_service import ReminderService
 from .services.todo_service import TodoService
 from .task_frame_builder import TaskFrameBuilder
-from .knowledge_vault_manager import KnowledgeVaultManager
+# from .knowledge_vault_manager import KnowledgeVaultManager
+from .memory_querier import KVQueryManager
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -41,7 +42,7 @@ class Executor:
         self.calendar_service = GoogleCalendarService(**calendar_creds) if calendar_creds else None
 
         # Knowledge Vault
-        self.vault_manager = KnowledgeVaultManager(user=user)
+        self.vault_manager = KVQueryManager(user)
 
     # -------------------------
     # UTILITY FUNCTIONS
@@ -314,10 +315,10 @@ class Executor:
                 if isinstance(f, dict) and "key" in f and "value" in f and f["value"] is not None:
                     query_filters.append(f)
 
+
             vault_results = self.vault_manager.query(
                 keyword=topic,
-                entities=[entity_type] if entity_type else [],
-                filters=query_filters
+                limit=5
             )
             return {"results": vault_results}
 
