@@ -1,97 +1,105 @@
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import openai
 from datetime import datetime
-import hashlib
-import json
+import uuid
 from django.conf import settings
-
+from .models import Entity, Fact, Relationship
+from django.db import transaction
+from django.contrib.auth import get_user_model
+import numpy as np
 
 class MemoryExtractor:
     """
-    Extracts structured knowledge from user interactions, messages, or events.
-    Produces entities and relationships suitable for the graph/tree knowledge vault.
+    Extract structured memory from user content.
+    Produces Entity, Fact, and Relationship objects ready for Knowledge Vault.
     """
 
-    DEFAULT_ENTITIES = {
-        "people": [],
-        "events": [],
-        "tasks": [],
-        "goals": [],
-        "emotions": [],
-        "actions": [],
-        "preferences": {
-            "likes": [],
-            "dislikes": [],
-            "routines": []
-        },
-        "locations": [],
-        "objects": []
-    }
+    DEFAULT_ENTITY_TYPES = ["person", "event", "location", "preference", "object", "goal", "task", "emotion", "action"]
 
     def __init__(self, api_key: str = settings.OPENAI_API_KEY, model: str = "gpt-4o-mini"):
         self.client = openai.OpenAI(api_key=api_key)
         self.model = model
 
-    def extract(self, content: str, source_type: str, timestamp: datetime = None) -> Dict[str, Any]:
+    def extract(self, user, content: str, source_type: str = "message", timestamp: Optional[datetime] = None) -> Dict[str, Any]:
+        """
+        Extract entities, facts, and relationships from content.
+        Automatically checks Knowledge Vault for existing entities to merge/update.
+        """
         timestamp = timestamp or datetime.now()
-        memory_id = self._generate_id(content, source_type, timestamp)
 
+        # Call LLM to parse content
         structured_data = self._call_llm_extract(content)
 
-        entities = structured_data.get("entities") or self.DEFAULT_ENTITIES
-        relationships = structured_data.get("relationships") or []
+        entities_data = structured_data.get("entities", [])
+        relationships_data = structured_data.get("relationships", [])
+        summary = structured_data.get("summary", "")
+
+        created_entities = []
+        created_facts = []
+        created_relationships = []
+
+        with transaction.atomic():
+            # Process entities
+            for ent in entities_data:
+                entity_obj = self._get_or_create_entity(user, ent)
+                created_entities.append(entity_obj)
+
+                # Process facts for this entity
+                for key, value_conf in ent.get("facts", {}).items():
+                    value = value_conf.get("value")
+                    confidence = value_conf.get("confidence", 1.0)
+                    fact_obj = self._create_or_update_fact(entity_obj, key, value, confidence)
+                    created_facts.append(fact_obj)
+
+            # Process relationships
+            for rel in relationships_data:
+                source_ent = self._find_entity_by_temp_id(created_entities, rel.get("from"))
+                target_ent = self._find_entity_by_temp_id(created_entities, rel.get("to"))
+                if source_ent and target_ent:
+                    rel_obj = self._create_relationship(user, source_ent, target_ent, rel.get("relation_type"))
+                    created_relationships.append(rel_obj)
 
         return {
-            "id": memory_id,
-            "source_type": source_type or "unknown",
-            "timestamp": timestamp.isoformat(),
-            "entities": entities,
-            "relationships": relationships,
-            "summary": structured_data.get("summary") or "No summary available"
+            "entities": created_entities,
+            "facts": created_facts,
+            "relationships": created_relationships,
+            "summary": summary
         }
 
+    # ------------------------
+    # Internal helper methods
+    # ------------------------
+
     def _call_llm_extract(self, content: str) -> Dict[str, Any]:
-
-        prompt = f"""
-Extract structured memory from the user's content.
-
-Return JSON ONLY with keys:
-- entities
-- relationships
-- summary
-
-Entities must use this schema EXACTLY:
-
-{{
-  "people": [],
-  "events": [],
-  "tasks": [],
-  "goals": [],
-  "emotions": [],
-  "actions": [],
-  "preferences": {{
-      "likes": [],
-      "dislikes": [],
-      "routines": []
-  }},
-  "locations": [],
-  "objects": []
-}}
-
-Rules:
-- Events = things that happened.
-- Tasks = future to-dos or pending responsibilities.
-- Actions = things the user actually performed.
-- Emotions = feelings or moods.
-- People = humans mentioned.
-- Relationships MUST be of form: {{"from": "", "relation": "", "to": ""}}
-
-Keep summary to 1–2 sentences.
-
-Content:
-\"\"\"{content}\"\"\"
-"""
-
+        prompt = (
+            "Extract structured memory from the user's content.\n\n"
+            "Return JSON ONLY with keys:\n"
+            "* entities\n"
+            "* relationships\n"
+            "* summary\n\n"
+            "Entities schema example:\n"
+            "[\n"
+            "  {\n"
+            '    "temp_id": "e1",\n'
+            '    "type": "person",\n'
+            '    "name": "Sandra",\n'
+            '    "facts": {\n'
+            '      "role": {"value": "maid of honor", "confidence": 0.95},\n'
+            '      "reminder_time": {"value": "2025-11-19T09:00:00", "confidence": 0.9}\n'
+            "    }\n"
+            "  }\n"
+            "]\n\n"
+            "Relationships schema example:\n"
+            "[\n"
+            "  {\n"
+            '    "from": "e1",\n'
+            '    "relation_type": "attending",\n'
+            '    "to": "e2"\n'
+            "  }\n"
+            "]\n\n"
+            "Summary: 1-2 sentences describing the content.\n\n"
+            f"Content:\n{content}\n"
+        )
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[
@@ -99,89 +107,72 @@ Content:
                 {"role": "user", "content": prompt}
             ],
             temperature=0.2,
-            max_tokens=500
+            max_tokens=600
         )
 
         response_text = response.choices[0].message.content.strip()
 
-        # Strip code fences if present
+        # Remove code fences if present
         if response_text.startswith("```") and response_text.endswith("```"):
             response_text = "\n".join(response_text.splitlines()[1:-1]).strip()
 
         try:
-            data = json.loads(response_text)
-            return {
-                "entities": data.get("entities") or self.DEFAULT_ENTITIES,
-                "relationships": data.get("relationships") or [],
-                "summary": data.get("summary") or "No summary available"
-            }
-        except json.JSONDecodeError:
-            return {
-                "entities": self.DEFAULT_ENTITIES,
-                "relationships": [],
-                "summary": "No summary available"
-            }
+            return json.loads(response_text)
+        except Exception:
+            return {"entities": [], "relationships": [], "summary": ""}
 
-    def _generate_id(self, content: str, source_type: str, timestamp: datetime) -> str:
-        raw = f"{source_type}|{timestamp.isoformat()}|{content}"
-        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
-    def merge_memories(self, memories: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def _get_or_create_entity(self, user, entity_data: Dict[str, Any]) -> Entity:
         """
-        Merge multiple memory entries into a single structured object.
-        Deduplicate entities and relationships.
+        Check Knowledge Vault for existing entity by embedding similarity or name.
+        If found, return existing entity. Otherwise create a new one.
         """
+        name = entity_data.get("name")
+        ent_type = entity_data.get("type", "unknown")
+        embedding = entity_data.get("embedding")  # optional embedding from LLM
 
-        merged_entities = {
-            "people": [],
-            "events": [],
-            "tasks": [],
-            "goals": [],
-            "emotions": [],
-            "actions": [],
-            "preferences": {
-                "likes": [],
-                "dislikes": [],
-                "routines": []
-            },
-            "locations": [],
-            "objects": []
-        }
+        # Search by name first
+        existing = Entity.objects.filter(user=user, type=ent_type, name=name).first()
+        if existing:
+            return existing
 
-        merged_relationships = []
-        merged_summary = []
+        # Optional: implement embedding similarity check if embedding is provided
+        # (for now, we skip, but could add vector similarity here)
 
-        for mem in memories:
-            entities = mem.get("entities", {})
+        # Create new entity
+        new_entity = Entity.objects.create(user=user, type=ent_type, name=name, embedding=embedding)
+        return new_entity
 
-            # Direct list merges
-            for key in ["people", "events", "tasks", "goals", "emotions", "actions", "locations", "objects"]:
-                merged_entities[key].extend(entities.get(key, []))
+    def _create_or_update_fact(self, entity_obj: Entity, key: str, value: str, confidence: float = 1.0) -> Fact:
+        """
+        Create or update a fact for an entity.
+        If the fact already exists and new confidence is higher, update it.
+        """
+        existing_fact = Fact.objects.filter(entity=entity_obj, key=key).first()
+        if existing_fact:
+            if confidence >= existing_fact.confidence:
+                existing_fact.value = value
+                existing_fact.confidence = confidence
+                existing_fact.save()
+            return existing_fact
 
-            # Preferences merge
-            prefs = entities.get("preferences", {})
-            merged_entities["preferences"]["likes"].extend(prefs.get("likes", []))
-            merged_entities["preferences"]["dislikes"].extend(prefs.get("dislikes", []))
-            merged_entities["preferences"]["routines"].extend(prefs.get("routines", []))
+        return Fact.objects.create(entity=entity_obj, key=key, value=value, confidence=confidence)
 
-            # Merge relationships
-            merged_relationships.extend(mem.get("relationships", []))
+    def _create_relationship(self, user, source: Entity, target: Entity, relation_type: str) -> Relationship:
+        """
+        Create a relationship if it does not already exist.
+        """
+        existing = Relationship.objects.filter(user=user, source=source, target=target, relation_type=relation_type).first()
+        if existing:
+            return existing
 
-            # Merge summaries
-            merged_summary.append(mem.get("summary", ""))
+        return Relationship.objects.create(user=user, source=source, target=target, relation_type=relation_type)
 
-        # Deduplicate all list-based fields
-        for key in ["people", "events", "tasks", "goals", "emotions", "actions", "locations", "objects"]:
-            merged_entities[key] = list(set(merged_entities[key]))
+    def _find_entity_by_temp_id(self, entities: List[Entity], temp_id: str) -> Optional[Entity]:
+        """
+        Map the temporary LLM-generated ID to the actual Entity object
+        """
+        for ent in entities:
+            if getattr(ent, "temp_id", None) == temp_id:
+                return ent
+        return None
 
-        for pref in ["likes", "dislikes", "routines"]:
-            merged_entities["preferences"][pref] = list(set(merged_entities["preferences"][pref]))
-
-        # Deduplicate relationships
-        merged_relationships = [json.loads(r) for r in set(json.dumps(r, sort_keys=True) for r in merged_relationships)]
-
-        return {
-            "entities": merged_entities,
-            "relationships": merged_relationships,
-            "summary": " ".join(merged_summary).strip()
-        }

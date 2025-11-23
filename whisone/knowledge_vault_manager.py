@@ -7,16 +7,12 @@ import openai
 import numpy as np
 from celery import shared_task
 
-
-
-
-
 @shared_task
 def generate_embedding_task(entry_id: str):
     entry = KnowledgeVaultEntry.objects.get(id=entry_id)
     client = openai.OpenAI()
 
-    # Build text for embedding
+
     text_search = entry.text_search or entry.summary
     if not text_search:
         return
@@ -25,24 +21,17 @@ def generate_embedding_task(entry_id: str):
         model="text-embedding-3-small",
         input=text_search
     )
-    embedding = response.data[0].embedding
-
-    # Save embedding
-    entry.embedding = embedding
+    entry.embedding = response.data[0].embedding
     entry.save(update_fields=["embedding"])
-
-
 
 
 class KnowledgeVaultManager:
     """
-    Knowledge Vault Manager with async embedding ingestion and semantic search.
-    Implements:
-    - Sparse checks to avoid ingesting empty/irrelevant memories
-    - Updating memories
-    - Semantic query
-    - Fetch recent memories
-    - Prune old memories
+    Knowledge Vault Manager supporting:
+    - Structured KV queries (entities, relationships, timestamps)
+    - Semantic search via embeddings
+    - Async embedding generation
+    - Memory ingestion, update, retrieval, pruning
     """
 
     def __init__(self, user):
@@ -73,38 +62,22 @@ class KnowledgeVaultManager:
         relationships: List[Dict[str, str]],
         summary: str
     ) -> Optional[KnowledgeVaultEntry]:
-        """
-        Add a memory only if it passes sparsity checks.
-        Embedding is generated asynchronously in the background.
-        Returns None if memory is skipped.
-        """
-        # ---------------------------
-        # 1️⃣ Basic sanity checks
-        # ---------------------------
+
+        # Basic checks
         if not summary or len(summary.strip()) < 10:
             return None
         if not content or len(content.strip()) < 5:
             return None
-
         meaningful_entities_count = sum(
             len(v) for v in entities.values() if isinstance(v, list) and len(v) > 0
         )
         meaningful_relationships_count = len(relationships) if relationships else 0
-        total_meaningful = meaningful_entities_count + meaningful_relationships_count
-
-        if total_meaningful < 2:
-            # Skip sparse memories
+        if meaningful_entities_count + meaningful_relationships_count < 2:
             return None
 
-        # ---------------------------
-        # 2️⃣ Build searchable text
-        # ---------------------------
         text_search = self._build_text_search(summary, entities, relationships)
-
-        # ---------------------------
-        # 3️⃣ Save memory without embedding
-        # ---------------------------
         memory_id = str(uuid.uuid4())
+
         entry = KnowledgeVaultEntry.objects.create(
             user=self.user,
             memory_id=memory_id,
@@ -115,15 +88,12 @@ class KnowledgeVaultManager:
             timestamp=timezone.now()
         )
 
-        # ---------------------------
-        # 4️⃣ Queue embedding generation asynchronously
-        # ---------------------------
+        # Queue async embedding generation
         generate_embedding_task.delay(str(entry.id))
-
         return entry
 
     # ---------------------------
-    # 2️⃣ Update Memory (async embedding)
+    # 2️⃣ Update Memory
     # ---------------------------
     def update_memory(
         self,
@@ -132,6 +102,7 @@ class KnowledgeVaultManager:
         relationships: Optional[List[Dict[str, str]]] = None,
         summary: Optional[str] = None
     ) -> Optional[KnowledgeVaultEntry]:
+
         try:
             entry = KnowledgeVaultEntry.objects.get(user=self.user, memory_id=memory_id)
         except KnowledgeVaultEntry.DoesNotExist:
@@ -146,7 +117,8 @@ class KnowledgeVaultManager:
                     entry.entities[key] = value
 
         if relationships:
-            entry.relationships = list(set(entry.relationships + relationships))
+            entry.relationships = list({json.dumps(r, sort_keys=True) for r in entry.relationships + relationships})
+            entry.relationships = [json.loads(r) for r in entry.relationships]
 
         if summary:
             entry.summary = summary
@@ -154,36 +126,38 @@ class KnowledgeVaultManager:
             generate_embedding_task.delay(str(entry.id))
 
         entry.last_accessed = timezone.now()
-        entry.save()
+        entry.save(update_fields=["entities", "relationships", "summary", "text_search", "last_accessed"])
         return entry
 
     # ---------------------------
-    # 3️⃣ Query Memory (semantic + filters)
+    # 3️⃣ Query Memory (semantic + structured)
     # ---------------------------
     def query(
         self,
         keyword: Optional[str] = None,
-        entities: Optional[List[str]] = None,
-        relationships: Optional[List[str]] = None,
+        entities_filter: Optional[List[str]] = None,
+        relationships_filter: Optional[List[str]] = None,
         filters: Optional[List[Dict[str, Any]]] = None,
         limit: int = 5
     ) -> List[Dict[str, Any]]:
 
-        # Base queryset
         entries = KnowledgeVaultEntry.objects.filter(user=self.user)
 
         # -------------------------
-        # 1. ENTITY FILTERS
+        # 1. Structured KV filters
         # -------------------------
-        # if entities:
-        #     q = Q()
-        #     for e in entities:
-        #         q |= Q(**{f"entities__{e}__isnull": False})
-        #     entries = entries.filter(q)
+        if entities_filter:
+            q = Q()
+            for e in entities_filter:
+                q |= Q(**{f"entities__{e}__isnull": False})
+            entries = entries.filter(q)
 
-        # -------------------------
-        # 3. TIME FILTERS
-        # -------------------------
+        if relationships_filter:
+            entries = entries.filter(
+                Q(relationships__icontains=','.join(relationships_filter))
+            )
+
+        # Time filters
         if filters:
             for f in filters:
                 key, value = f.get("key"), f.get("value")
@@ -192,64 +166,43 @@ class KnowledgeVaultManager:
                 elif key == "before":
                     entries = entries.filter(timestamp__lte=value)
 
-        # -------------------------
-        # 4. TEXT SEARCH FILTER (Pre-filter BEFORE embeddings)
-        # -------------------------
-        # if keyword:
-        #     entries = entries.filter(
-        #         Q(text_search__icontains=keyword)
-        #     )
-
-        # Convert to list for embedding ranking
         entries = list(entries)
-        print("🏛️ Query matched entries:", len(entries))
-
         # -------------------------
-        # 5. EMBEDDING RANKING
+        # 2. Semantic embedding ranking
         # -------------------------
         if keyword and entries:
-            from openai import OpenAI
-            client = OpenAI()
-
-            # Create embedding for query
+            client = openai.OpenAI()
             response = client.embeddings.create(
                 model="text-embedding-3-small",
                 input=keyword
             )
             query_embedding = response.data[0].embedding
 
-            # Cosine similarity
             def cosine(a, b):
-                a = np.array(a)
-                b = np.array(b)
+                a, b = np.array(a), np.array(b)
                 return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
 
             ranked = []
             for entry in entries:
                 if entry.embedding:
-                    similarity = cosine(query_embedding, entry.embedding)
-                    ranked.append((similarity, entry))
-
-            # If nothing has embeddings, skip ranking
+                    sim = cosine(query_embedding, entry.embedding)
+                    ranked.append((sim, entry))
             if ranked:
                 ranked.sort(key=lambda x: x[0], reverse=True)
                 entries = [e for _, e in ranked[:limit]]
             else:
                 entries = entries[:limit]
         else:
-            # No keyword or empty set → fallback limit
             entries = entries[:limit]
 
-        # -------------------------
-        # 6. UPDATE last_accessed
-        # -------------------------
+        # Update last accessed
         now = timezone.now()
         for e in entries:
             e.last_accessed = now
             e.save(update_fields=["last_accessed"])
 
         # -------------------------
-        # 7. RETURN AS DICT
+        # 3. Return structured dict
         # -------------------------
         results = []
         for e in entries:
@@ -269,8 +222,9 @@ class KnowledgeVaultManager:
     # ---------------------------
     def recent_memories(self, limit: int = 5):
         entries = KnowledgeVaultEntry.objects.filter(user=self.user).order_by("-timestamp")[:limit]
+        now = timezone.now()
         for entry in entries:
-            entry.last_accessed = timezone.now()
+            entry.last_accessed = now
             entry.save(update_fields=["last_accessed"])
         return list(entries)
 

@@ -7,10 +7,11 @@ from .task_planner import TaskPlanner
 from .task_frame_builder import TaskFrameBuilder
 from .response_generator import ResponseGenerator
 from .memory_extractor import MemoryExtractor
-from .knowledge_vault_manager import KnowledgeVaultManager
 from .memory_integrator import MemoryIntegrator
 from .natural_resolver import NaturalResolver
 from .services.calendar_service import GoogleCalendarService
+from .memory_ingestor import MemoryIngestor
+from .memory_querier import KVQueryManager
 
 from .models import Integration
 from assistant.models import AssistantMessage
@@ -20,6 +21,7 @@ User = get_user_model()
 @shared_task
 def process_user_message(user_id: int, message: str):
     print(f"📩 Processing message for user {user_id}: {message}")
+
 
     # -------------------------------------------------------------------------
     # 0️⃣ Load user + integrations
@@ -52,15 +54,11 @@ def process_user_message(user_id: int, message: str):
     print("🧠 Memory Extractor Output:", extractor_output)
 
     # -------------------------------------------------------------------------
-    # 2️⃣ KNOWLEDGE VAULT — ingest memory
+    # 2️⃣ MEMORY INGESTION — store/update memory in Entity-Fact KV
     # -------------------------------------------------------------------------
-    vault = KnowledgeVaultManager(user=user)
-    vault.ingest_memory(
-        content=message,
-        entities=extractor_output.get("entities", []),
-        relationships=extractor_output.get("relationships", []),
-        summary=extractor_output.get("summary", "")
-    )
+    ingestor = MemoryIngestor(user=user)
+    ingestor.ingest(extractor_output)
+    print("✅ Memory ingested into KV.")
 
     # -------------------------------------------------------------------------
     # 3️⃣ TASK PLANNER — determine actions
@@ -81,8 +79,6 @@ def process_user_message(user_id: int, message: str):
         )
         for step in raw_task_plan
     ]
-    print("🗂️ Task Frames:", task_frames)
-
     ready_tasks = [tf for tf in task_frames if tf["ready"]]
     skipped_tasks = [tf for tf in task_frames if not tf["ready"]]
     if skipped_tasks:
@@ -97,7 +93,7 @@ def process_user_message(user_id: int, message: str):
     print("✔️ Executor Results:", executor_results)
 
     # -------------------------------------------------------------------------
-    # 4.1️⃣ Collect general_query results
+    # 4.1️⃣ Collect general_query results from executor
     # -------------------------------------------------------------------------
     general_query_results = []
     for frame in ready_tasks:
@@ -114,20 +110,25 @@ def process_user_message(user_id: int, message: str):
                 if result:
                     general_query_results.append(result)
 
-    print("📖 General Query Results:", general_query_results)
+    # -------------------------------------------------------------------------
+    # 5️⃣ QUERY MEMORY — structured + semantic search
+    # -------------------------------------------------------------------------
+    querier = KVQueryManager(user=user)
+    kv_context = querier.query(
+        keyword=message,
+        limit=5
+    )
+    print("📖 KV Query Context:", kv_context)
 
     # -------------------------------------------------------------------------
-    # 5️⃣ RESPONSE GENERATOR — craft reply
+    # 6️⃣ RESPONSE GENERATOR — craft reply
     # -------------------------------------------------------------------------
     response_gen = ResponseGenerator(api_key=settings.OPENAI_API_KEY)
     response_text = response_gen.generate_response(
         user=user,
         user_message=message,
         executor_results=executor_results,
-        vault_context=general_query_results or vault.query(
-            keyword=message,
-            entities=extractor_output.get("entities", [])
-        ),
+        vault_context=general_query_results or kv_context,
         missing_fields=[tf["missing_fields"] for tf in skipped_tasks if tf["missing_fields"]]
     )
     print("📝 Final Response:", response_text)
@@ -143,3 +144,4 @@ def process_user_message(user_id: int, message: str):
     print("🎉 Done processing message.")
 
     return response_text
+

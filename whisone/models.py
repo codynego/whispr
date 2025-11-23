@@ -194,3 +194,35 @@ class DailySummary(models.Model):
     summary_text = models.TextField()
     raw_data = models.JSONField(default=dict)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+
+class Entity(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    type = models.CharField(max_length=50)  # event, person, location, preference, bill, etc.
+    name = models.CharField(max_length=255, null=True, blank=True)
+    embedding = models.JSONField(null=True, blank=True)  # used to identify matching entities
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class Fact(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    entity = models.ForeignKey(Entity, on_delete=models.CASCADE, related_name="facts")
+    key = models.CharField(max_length=100)   # "date", "time", "amount", "preference", etc.
+    value = models.TextField()               # actual value
+    confidence = models.FloatField(default=1.0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+class Relationship(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    source = models.ForeignKey(Entity, on_delete=models.CASCADE, related_name="source_rels")
+    target = models.ForeignKey(Entity, on_delete=models.CASCADE, related_name="target_rels")
+    relation_type = models.CharField(max_length=100)  # "attending", "located_at", etc.
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+
