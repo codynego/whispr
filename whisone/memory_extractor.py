@@ -60,6 +60,7 @@ class MemoryExtractor:
             "4. Extract relationships between entities; if none, return an empty list '[]'.\n"
             "5. Provide a 1-2 sentence summary.\n"
             "6. Return JSON ONLY. DO NOT include explanations.\n\n"
+            "7. for entities, use types from: person, event, location, preference, object, goal, task, emotion, action, etc, do not compute unknown\n\n"
             "Return JSON with keys:\n"
             " - entities\n"
             " - relationships\n"
