@@ -133,14 +133,6 @@ def process_user_message(user_id: int, message: str):
     )
     print("📝 Final Response:", response_text)
 
-    # -------------------------------------------------------------------------
-    # 7️⃣ Save assistant reply
-    # -------------------------------------------------------------------------
-    AssistantMessage.objects.create(
-        user=user,
-        role="assistant",
-        content=response_text
-    )
     print("🎉 Done processing message.")
 
     return response_text
