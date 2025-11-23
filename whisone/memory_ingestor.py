@@ -18,7 +18,7 @@ class MemoryIngestor:
 
 
     EMBEDDING_SIM_THRESHOLD = 0.85  
-    NAME_SIM_THRESHOLD = 0.7  # similarity ratio for merging  
+    NAME_SIM_THRESHOLD = 0.7 
 
     def __init__(self, user):  
         self.user = user  
