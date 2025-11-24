@@ -117,11 +117,9 @@ def webhook(request):
                     headers = {"Authorization": f"Bearer {settings.WHATSAPP_ACCESS_TOKEN}"}
                     response = requests.get(media_url, headers=headers)
                     if response.status_code == 200:
-                        uploaded_file = UploadedFile.objects.create(
-                            user=user,
-                            original_filename=filename,
-                            content=response.content
-                        )
+                        uploaded_file = UploadedFile(user=user, original_filename=filename)
+                        uploaded_file.file.save(filename, ContentFile(response.content))
+                        uploaded_file.save()
                         send_whatsapp_message_task.delay(
                             to_number=sender_number,
                             message=f"File '{filename}' uploaded successfully."
