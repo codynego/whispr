@@ -429,6 +429,8 @@ from django.shortcuts import get_object_or_404
 from .models import UploadedFile
 from .serializers import UploadedFileSerializer
 from whisone.tasks.process_file_upload import process_uploaded_file  # Celery task
+from .tasks.chat_with_file import chat_with_file
+from .serializers import FileChatSerializer
 
 # -----------------------------
 # List & Create Files
@@ -487,9 +489,11 @@ class FileChatView(APIView):
 
     def post(self, request, pk):
         file = get_object_or_404(UploadedFile, pk=pk, user=request.user)
-        query = request.data.get("query")
-        if not query:
-            return Response({"error": "Query is required"}, status=status.HTTP_400_BAD_REQUEST)
 
-        answer = chat_with_file(file, query)
-        return Response({"answer": answer})
+        serializer = FileChatSerializer(data=request.data)
+        if serializer.is_valid():
+            query = serializer.validated_data["query"]
+            answer = chat_with_file(file, query)
+            return Response({"answer": answer})
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

@@ -68,3 +68,10 @@ class UploadedFileSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "original_filename", "file_type", "size", "uploaded_at", "processed", "content"]
 
+
+class FileChatSerializer(serializers.Serializer):
+    query = serializers.CharField(
+        max_length=2000,
+        required=True,
+        help_text="The question or message to ask about this file."
+    )
