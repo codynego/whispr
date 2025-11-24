@@ -2,6 +2,7 @@ import openai
 import numpy as np
 from django.conf import settings
 from whisone.models import UploadedFile
+from whisone.utils.embedding_utils import generate_embedding
 
 # Helper: cosine similarity
 def cosine_similarity(vec1, vec2):
@@ -19,11 +20,8 @@ def chat_with_file(file: UploadedFile, user_query: str, top_k: int = 5) -> str:
         return "No content available to answer from this file."
 
     # 2. Get query embedding
-    query_embedding_resp = openai.Embeddings.create(
-        model="text-embedding-3-small",
-        input=user_query
-    )
-    query_embedding = query_embedding_resp.data[0].embedding
+
+    query_embedding = generate_embedding(user_query)
 
     # 3. Rank chunks by cosine similarity
     for chunk in chunks:
