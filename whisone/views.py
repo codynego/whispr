@@ -428,7 +428,7 @@ from rest_framework import status, permissions
 from django.shortcuts import get_object_or_404
 from .models import UploadedFile
 from .serializers import UploadedFileSerializer
-from tasks.process_file_upload import process_uploaded_file  # Celery task
+from whisone.tasks.process_file_upload import process_uploaded_file  # Celery task
 
 # -----------------------------
 # List & Create Files
