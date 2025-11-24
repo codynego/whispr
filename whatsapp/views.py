@@ -130,11 +130,8 @@ def webhook(request):
                         file_content = file_resp.content
 
                         # Step 3: Save file using Django FileField
-                        uploaded_file = UploadedFile.objects.create(
-                            user=user,
-                            original_filename=filename
-                        )
-                        uploaded_file.file.save(filename, ContentFile(file_content))
+                        uploaded_file = UploadedFile(user=user, original_filename=filename)
+                        uploaded_file.file = ContentFile(file_content, name=filename)
                         uploaded_file.save()
 
                         send_whatsapp_message_task.delay(
