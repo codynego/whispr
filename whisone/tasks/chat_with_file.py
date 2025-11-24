@@ -1,4 +1,4 @@
-import openai
+from openai import OpenAI
 import numpy as np
 from django.conf import settings
 from whisone.models import UploadedFile
@@ -67,13 +67,12 @@ If the file does not contain enough information to answer the question accuratel
 'I could not find sufficient information in the file to answer this.'
 Answer concisely and clearly.
 """
-
+    client = OpenAI(api_key=settings.OPENAI_API_KEY)
     # Call OpenAI LLM
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0
         )
         answer = response.choices[0].message.content.strip()
         print(f"Context used for answering:\n{context_text}\n")  # Debug print
