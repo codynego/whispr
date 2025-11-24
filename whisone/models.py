@@ -249,6 +249,7 @@ class UploadedFile(models.Model):
         on_delete=models.CASCADE,
         related_name='uploaded_files'
     )
+
     file = models.FileField(upload_to=user_upload_path)
     file_type = models.CharField(max_length=20, choices=FILE_TYPES, default='other')
     original_filename = models.CharField(max_length=255)

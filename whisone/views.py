@@ -480,3 +480,16 @@ class UploadedFileReprocessView(APIView):
         file = get_object_or_404(UploadedFile, pk=pk, user=request.user)
         process_uploaded_file.delay(file.id)
         return Response({"status": "reprocessing started"})
+
+
+class FileChatView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        file = get_object_or_404(UploadedFile, pk=pk, user=request.user)
+        query = request.data.get("query")
+        if not query:
+            return Response({"error": "Query is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        answer = chat_with_file(file, query)
+        return Response({"answer": answer})
