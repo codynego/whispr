@@ -420,3 +420,63 @@ class UnifiedSearchView(APIView):
         }
 
         return Response(results)
+
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status, permissions
+from django.shortcuts import get_object_or_404
+from .models import UploadedFile
+from .serializers import UploadedFileSerializer
+from tasks.process_file_upload import process_uploaded_file  # Celery task
+
+# -----------------------------
+# List & Create Files
+# -----------------------------
+class UploadedFileListCreateView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        files = UploadedFile.objects.filter(user=request.user).order_by('-uploaded_at')
+        serializer = UploadedFileSerializer(files, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        serializer = UploadedFileSerializer(data=request.data)
+        if serializer.is_valid():
+            uploaded_file = serializer.save(user=request.user)
+            # Trigger background processing
+            process_uploaded_file.delay(uploaded_file.id)
+            return Response(UploadedFileSerializer(uploaded_file).data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# -----------------------------
+# Retrieve, Delete, Reprocess
+# -----------------------------
+class UploadedFileDetailView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self, pk, user):
+        return get_object_or_404(UploadedFile, pk=pk, user=user)
+
+    def get(self, request, pk):
+        file = self.get_object(pk, request.user)
+        serializer = UploadedFileSerializer(file)
+        return Response(serializer.data)
+
+    def delete(self, request, pk):
+        file = self.get_object(pk, request.user)
+        file.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+# -----------------------------
+# Reprocess File (optional)
+# -----------------------------
+class UploadedFileReprocessView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        file = get_object_or_404(UploadedFile, pk=pk, user=request.user)
+        process_uploaded_file.delay(file.id)
+        return Response({"status": "reprocessing started"})

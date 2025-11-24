@@ -49,3 +49,22 @@ class DailySummarySerializer(serializers.ModelSerializer):
             "raw_data",
             "created_at",
         ]
+
+
+from .models import UploadedFile
+
+class UploadedFileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UploadedFile
+        fields = [
+            "id",
+            "file",
+            "original_filename",
+            "file_type",
+            "size",
+            "uploaded_at",
+            "processed",
+            "content",
+        ]
+        read_only_fields = ["id", "original_filename", "file_type", "size", "uploaded_at", "processed", "content"]
+

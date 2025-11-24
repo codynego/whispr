@@ -25,6 +25,7 @@ from .views import (
     IntegrationDeactivateView,
     OverviewView,
     UnifiedSearchView,
+    UploadedFileListCreateView, UploadedFileDetailView, UploadedFileReprocessView
 )
 
 urlpatterns = [
@@ -32,6 +33,12 @@ urlpatterns = [
 
     path("overview/", OverviewView.as_view(), name="overview"),
     path("search/", UnifiedSearchView.as_view(), name="unified-search"),
+
+    path('files/', UploadedFileListCreateView.as_view(), name='uploadedfile-list-create'),
+    path('files/<int:pk>/', UploadedFileDetailView.as_view(), name='uploadedfile-detail'),
+    path('files/<int:pk>/reprocess/', UploadedFileReprocessView.as_view(), name='uploadedfile-reprocess'),
+
+
     # ======================
     # Notes
     # ======================
