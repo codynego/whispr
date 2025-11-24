@@ -35,6 +35,7 @@ def chat_with_file(file: UploadedFile, user_query: str, top_k: int = 5) -> str:
 
     # Generate embedding for user query
     query_embedding = generate_embedding(user_query)
+    print("Query embedding generated.")  # Debug print
 
     # Rank chunks by similarity
     ranked_chunks = []
@@ -45,6 +46,7 @@ def chat_with_file(file: UploadedFile, user_query: str, top_k: int = 5) -> str:
             continue
         score = cosine_similarity(query_embedding, emb)
         ranked_chunks.append({"chunk": text, "score": score})
+    print(f"Ranked {len(ranked_chunks)} chunks based on similarity.")  # Debug print
 
     if not ranked_chunks:
         return "No valid content available to answer from this file."
@@ -52,6 +54,7 @@ def chat_with_file(file: UploadedFile, user_query: str, top_k: int = 5) -> str:
     # Select top-k relevant chunks
     top_chunks = sorted(ranked_chunks, key=lambda x: x["score"], reverse=True)[:top_k]
     context_text = "\n\n".join([c["chunk"] for c in top_chunks])
+    print("Top chunks selected for context:\n", context_text)  # Debug print
 
     prompt = f"""
 You are an AI assistant. Use the following file content to answer the user's question:
