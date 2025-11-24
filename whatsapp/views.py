@@ -32,114 +32,120 @@ import hmac
 import hashlib
 from celery import chain
 
+import json
+from django.conf import settings
+from django.http import HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+from celery import chain
+from .tasks import process_user_message, send_whatsapp_message_task
+from django.contrib.auth import get_user_model
+from .models import WhatsAppWebhook
+from whisone.models import UploadedFile
+import requests
+
+User = get_user_model()
 
 @csrf_exempt
 def webhook(request):
     """
-    WhatsApp webhook endpoint for receiving messages and status updates.
-    Returns 200 for all valid events to acknowledge and stop retries.
+    WhatsApp webhook for messages, status updates, and file uploads.
     """
     if request.method == 'GET':
-        # Webhook verification (unchanged)
         mode = request.GET.get('hub.mode')
         token = request.GET.get('hub.verify_token')
         challenge = request.GET.get('hub.challenge')
         if mode == 'subscribe' and token == settings.WHATSAPP_VERIFY_TOKEN:
             return HttpResponse(challenge, content_type='text/plain')
         return HttpResponse('Forbidden', status=403)
-    
+
+
     elif request.method == 'POST':
         try:
-            # Optional: Verify signature (add settings.WHATSAPP_APP_SECRET)
-            # if not verify_signature(request.body, request.META.get('HTTP_X_HUB_SIGNATURE_256'), settings.WHATSAPP_APP_SECRET):
-            #     return HttpResponse('Invalid signature', status=403)
-            
             data = json.loads(request.body)
- 
-            # Extract common fields safely
             entry = data.get('entry', [{}])[0]
             change = entry.get('changes', [{}])[0]
             value = change.get('value', {})
-            field = change.get('field')  # Should be 'messages' for WhatsApp
-            
+            field = change.get('field')
+
             if field != 'messages':
-                return HttpResponse('OK', status=200)  # ACK unknown events
-            
-            # Determine event type: messages or statuses
+                return HttpResponse('OK', status=200)
+
             messages = value.get('messages')
             statuses = value.get('statuses')
-            
+
             if messages:
-                # Incoming message: Process and reply
-                msg = messages[0]  # Assume single message
+                msg = messages[0]
                 sender_number = msg.get('from')
-                
-                # Safely get user (use filter to avoid DoesNotExist exception)
-                welcome_msg = """Hello! 👋 I’m Whisone — your intelligent second brain, designed to help you stay organized and never miss anything important.\n\nHere’s how I assist you:\n• Set and manage reminders\n• Save notes, ideas, and important details\n• Track todos and tasks\n• Provide Gmail summaries and insights\n• Retrieve past information whenever you need it\n\nSign up in just 8 seconds to activate your unlimited memory:\nhttps://whisone.com/signup\nFrom now on, I’ll help you remember and manage everything efficiently. 🤖🧠"""
                 normalized_number = sender_number.replace("+", "").lstrip("0")
                 users = User.objects.filter(whatsapp__icontains=normalized_number)
 
-
-
-                print("Fetched users for number:", sender_number, "Count:", users.count())
                 if not users.exists():
-                    print("Unknown user number:", sender_number)
-                    send_whatsapp_message_task.delay(to_number=sender_number, message=welcome_msg)
-                    return HttpResponse('OK', status=200)  # Still ACK to stop retries; handle offline later
-                
-                user = users.first()
-                print("Known user number:", sender_number)
-                
-                # Log event (now works for messages too)
-                event_type = 'message_received'  # Or derive from msg type
-                WhatsAppWebhook.objects.create(event_type=event_type, payload=data)
-
-                msg_text = msg.get('text', {}).get('body', '')
-                if not msg_text:
-                    return HttpResponse('OK', status=200)  # ACK non-text messages for now
-
-                try:
-                    AssistantMessage.objects.create(
-                        user=user,
-                        role='user',
-                        content=msg_text
+                    welcome_msg = (
+                        "Hello! 👋 I’m Whisone — your intelligent second brain..."
                     )
-                except Exception as e:
-                    print(f"Error saving user message: {e}")
+                    send_whatsapp_message_task.delay(to_number=sender_number, message=welcome_msg)
+                    return HttpResponse('OK', status=200)
 
-                chain(
-                    process_user_message.s(user.id, msg_text),
-                    send_whatsapp_message_task.s(user_id=user.id, message_id=None, message=None, to_number=sender_number)
-                ).apply_async()
-                
+                user = users.first()
+                WhatsAppWebhook.objects.create(event_type='message_received', payload=data)
+
+                # Handle text messages
+                msg_text = msg.get('text', {}).get('body')
+                if msg_text:
+                    try:
+                        from assistant.models import AssistantMessage
+                        AssistantMessage.objects.create(user=user, role='user', content=msg_text)
+                    except Exception as e:
+                        print(f"Error saving user message: {e}")
+
+                    chain(
+                        process_user_message.s(user.id, msg_text),
+                        send_whatsapp_message_task.s(user_id=user.id, message_id=None, message=None, to_number=sender_number)
+                    ).apply_async()
+
+                # Handle file attachments
+                if 'document' in msg:
+                    doc = msg['document']
+                    file_id = doc.get('id')
+                    filename = doc.get('filename', 'uploaded_file')
+                    mime_type = doc.get('mime_type', '')
+
+                    # Download the file from WhatsApp server
+                    media_url = f"https://graph.facebook.com/v17.0/{file_id}"
+                    headers = {"Authorization": f"Bearer {settings.WHATSAPP_ACCESS_TOKEN}"}
+                    response = requests.get(media_url, headers=headers)
+                    if response.status_code == 200:
+                        uploaded_file = UploadedFile.objects.create(
+                            user=user,
+                            original_filename=filename,
+                            content=response.content
+                        )
+                        send_whatsapp_message_task.delay(
+                            to_number=sender_number,
+                            message=f"File '{filename}' uploaded successfully."
+                        )
+                    else:
+                        send_whatsapp_message_task.delay(
+                            to_number=sender_number,
+                            message=f"Failed to download file '{filename}'."
+                        )
+
             elif statuses:
-                # Status update: Just log and ACK (no reply)
-                status = statuses[0]  # Assume single status
-                status_id = status.get('id')
-                status_value = status.get('status')  # e.g., 'sent', 'delivered'
-                recipient = status.get('recipient_id')  # Or 'id' for outbound
-                
-                # Log event
-                event_type = status_value or 'unknown_status'
-                WhatsAppWebhook.objects.create(event_type=event_type, payload=data)
-                
-            else:
-                print("No messages or statuses in payload")
-                # Still ACK unknown sub-events
-            
-            return HttpResponse('OK', status=200)  # Always ACK successes
-            
+                status = statuses[0]
+                WhatsAppWebhook.objects.create(event_type=status.get('status', 'unknown_status'), payload=data)
+
+            return HttpResponse('OK', status=200)
+
         except json.JSONDecodeError as e:
             print(f"JSON decode error: {e}")
             return HttpResponse('Invalid JSON', status=400)
-        except KeyError as e:
-            print(f"Missing key in payload: {e}")
-            return HttpResponse('OK', status=200)  # ACK malformed but don't retry forever
         except Exception as e:
-            print(f"Unexpected error: {e}")  # Use logger.error(traceback.format_exc()) in prod
-            return HttpResponse('OK', status=200)  # ACK to stop retries; investigate logs
-            
+            print(f"Unexpected error: {e}")
+            return HttpResponse('OK', status=200)
+
     return HttpResponse('Method not allowed', status=405)
+
+
 
 # Helper function for signature verification (uncomment and add to views.py or utils)
 def verify_signature(payload, signature, app_secret):
