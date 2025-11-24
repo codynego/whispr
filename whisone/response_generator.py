@@ -1,120 +1,128 @@
-from typing import List, Dict, Any
-import openai
-import json
-from assistant.models import AssistantMessage
-from django.contrib.auth import get_user_model
-import logging
-
-logger = logging.getLogger(__name__)
-User = get_user_model()
-
-import re
-
-def clean_stars(text: str) -> str:
-    """
-    Strips all double asterisks (**) and leaves single stars (*) intact.
-    """
-    # Replace **...** with *...* by removing extra stars
-    text = re.sub(r"\*\*(.*?)\*\*", r"*\1*", text)
-    return text
-
-
-
 class ResponseGenerator:
     """
-    Generates human-like responses based on conversation history,
-    executor results, optional vault context, and missing task parameters.
+    Generates responses based on the structured user message:
+    - intent
+    - entities
+    - memory relevance
+    - conversation context
     """
 
-    def __init__(self, api_key: str, model: str = "gpt-4o-mini", history_limit: int = 3):
-        self.client = openai.OpenAI(api_key=api_key)
-        self.model = model
-        self.history_limit = history_limit
+    def __init__(self, memory_store, llm):
+        self.memory_store = memory_store   # e.g., KnowledgeVault instance
+        self.llm = llm                     # wrapper for OpenAI calls
 
-    def generate_response(
-        self,
-        user: User,
-        user_message: str,
-        executor_results: List[Dict[str, Any]],
-        vault_context: Dict[str, Any] = None,
-        missing_fields: List[List[str]] = None
-    ) -> str:
-        # 1️⃣ Fetch recent conversation history
-        history_qs = AssistantMessage.objects.filter(user=user).order_by("-created_at")[:self.history_limit]
-        history = reversed(history_qs)  # Oldest first
+    def generate(self, structured):
+        """
+        structured = {
+            "intent": str,
+            "entities": {...},
+            "should_write_memory": bool,
+            "should_query_memory": bool,
+            "memory_matches": [...],
+            "user_message": str
+        }
+        """
+        intent = structured["intent"]
+        entities = structured.get("entities", {})
+        memory_matches = structured.get("memory_matches", [])
+        user_message = structured["user_message"]
 
-        conversation_history = ""
-        for msg in history:
-            role = "User" if msg.role == "user" else "Assistant"
-            conversation_history += f"{role}: {msg.content}\n"
+        # 1. If question AND memory exists → answer using memory
+        if intent == "ask_question" and memory_matches:
+            return self._answer_with_memory(user_message, memory_matches)
 
-        # 2️⃣ Serialize executor results
-        executor_results_str = json.dumps(executor_results, indent=2, default=str)
+        # 2. If journaling → generate reflective response
+        if intent == "journal_entry":
+            return self._journal_response(user_message)
 
-        # 3️⃣ Serialize vault context if available
-        vault_context_str = json.dumps(vault_context, indent=2, default=str) if vault_context else "None"
-        print("🏛️ Vault Context:", vault_context_str)
-        # 4️⃣ Handle missing fields
-        missing_prompt = ""
-        if missing_fields:
-            flat_missing = [field for sublist in missing_fields for field in sublist if field]
-            if flat_missing:
-                missing_prompt = (
-                    "Some information is missing to complete certain tasks: "
-                    f"{', '.join(flat_missing)}. "
-                    "Ask the user politely to provide these values so the tasks can be completed."
-                )
+        # 3. If casual chat → casual response
+        if intent == "casual":
+            return self._casual_response(user_message)
 
-        # 5️⃣ Construct prompt
+        # 4. If shopping related
+        if intent == "shopping_note":
+            return self._shopping_response(user_message, entities, memory_matches)
+
+        # 5. Default fallback
+        return self._generic_response(user_message)
+
+    # --------------------------------------------------------------------
+    # HANDLERS
+    # --------------------------------------------------------------------
+
+    def _answer_with_memory(self, question, memory_matches):
+        """Use memory to answer a user’s question."""
+        context_text = "\n".join([m["content"] for m in memory_matches])
+
         prompt = f"""
-You are Whisone — a friendly, human-like personal assistant. Your job is to help the user stay organized, remember important things, manage tasks, notes, reminders, and understand their daily patterns. You respond like a supportive friend: warm, clear, conversational, and human. Use contractions and light emojis only when appropriate.
+You are Whisone.
+The user asked a question:
 
-Conversation so far:
-{conversation_history}
+Question:
+{question}
 
-User message:
-\"\"\"{user_message}\"\"\"
+Relevant memory:
+{context_text}
 
-
-System actions/results:
-{executor_results_str}
-
-Knowledge Vault context:
-{vault_context_str}
-
-{missing_prompt}
-
-Based on all the information above, craft a concise and natural response.  
-• Answer the user’s question directly  
-• Clearly mention actions you took (e.g., reminders, notes, tasks, searches)  
-• Ask for missing details if needed  
-• Keep it conversational—no JSON, no code  
-• Use a friendly tone, like a close friend
+Answer using ONLY the relevant memory, keep it simple and helpful.
 """
+        return self.llm.chat(prompt)
 
-        # 6️⃣ Call OpenAI API
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a warm, relatable assistant who talks like a close friend—casual, supportive, and helpful. "
-                        "Be concise and friendly."
-                    )
-                },
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.7
-        )
+    def _journal_response(self, text):
+        """Respond to journaling entries with reflective, supportive tone."""
+        prompt = f"""
+User wrote a journal entry:
 
-        content = response.choices[0].message.content
-        content = clean_stars(content)
+\"\"\"{text}\"\"\"
 
-        # 7️⃣ Save assistant reply
-        try:
-            AssistantMessage.objects.create(user=user, role="assistant", content=content)
-        except Exception as e:
-            logger.error(f"Error saving assistant message: {str(e)}")
+Your job:
+- Acknowledge their reflections
+- Highlight key themes
+- Offer optional insights
+- Do NOT give advice unless it's natural
+- Keep tone warm, neutral, and human-like
 
-        return content
+Write 3–5 sentences.
+"""
+        return self.llm.chat(prompt)
+
+    def _casual_response(self, text):
+        prompt = f"""
+User said: {text}
+
+Respond casually, friendly, without overthinking.
+"""
+        return self.llm.chat(prompt)
+
+    def _shopping_response(self, msg, entities, matches):
+        items = entities.get("items", [])
+        stores = entities.get("stores", [])
+
+        previous_notes = "\n".join([m["content"] for m in matches]) if matches else "None"
+
+        prompt = f"""
+The user left a shopping-related message:
+
+Message:
+{msg}
+
+Extracted items: {items}
+Stores: {stores}
+
+Previous related memory:
+{previous_notes}
+
+Respond by:
+- Acknowledging the shopping list or observation
+- Mentioning if memory contains past related items
+- Keeping it simple and practical
+"""
+        return self.llm.chat(prompt)
+
+    def _generic_response(self, text):
+        prompt = f"""
+User said: {text}
+
+Respond helpfully and naturally.
+"""
+        return self.llm.chat(prompt)
