@@ -128,7 +128,7 @@ def process_user_message(user_id: int, message: str):
         user=user,
         user_message=message,
         executor_results=executor_results,
-        vault_context=general_query_results or kv_context,
+        vault_context=kv_context,
         missing_fields=[tf["missing_fields"] for tf in skipped_tasks if tf["missing_fields"]]
     )
     print("📝 Final Response:", response_text)

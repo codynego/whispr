@@ -200,9 +200,9 @@ class DailySummary(models.Model):
 class Entity(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
-    type = models.CharField(max_length=50)  # event, person, location, preference, bill, etc.
+    type = models.CharField(max_length=50)  
     name = models.CharField(max_length=255, null=True, blank=True)
-    embedding = models.JSONField(null=True, blank=True)  # used to identify matching entities
+    embedding = models.JSONField(null=True, blank=True) 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
