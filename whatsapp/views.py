@@ -32,14 +32,16 @@ import hmac
 import hashlib
 from celery import chain
 
+
+import json
+import hmac
+import hashlib
+from celery import chain
+
 import json
 from django.conf import settings
 from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
-from celery import chain
-from .tasks import process_user_message, send_whatsapp_message_task
-from django.contrib.auth import get_user_model
-from .models import WhatsAppWebhook
 from whisone.models import UploadedFile
 import requests
 
@@ -155,3 +157,4 @@ def verify_signature(payload, signature, app_secret):
         app_secret.encode(), payload, hashlib.sha256
     ).hexdigest()
     return hmac.compare_digest(signature, expected_sig)
+
