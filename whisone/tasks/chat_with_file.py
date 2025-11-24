@@ -27,11 +27,11 @@ def chat_with_file(file: UploadedFile, user_query: str, top_k: int = 5) -> str:
     if not chunks:
         return "No content available to answer from this file."
 
-    # Handle single embedding case
+    # Handle single embedding case (old format)
     if isinstance(chunks, list) and all(isinstance(x, float) for x in chunks):
         chunks = [{"chunk": getattr(file, "content", ""), "embedding": chunks}]
 
-    # Handle chunked embedding case safely
+    # Validate chunked embeddings
     if not isinstance(chunks, list):
         return "Invalid file embeddings format."
 
@@ -56,6 +56,7 @@ def chat_with_file(file: UploadedFile, user_query: str, top_k: int = 5) -> str:
 
     # 5. Construct prompt for LLM
     context_text = "\n\n".join([c["chunk"] for c in top_chunks])
+    print(f"Context used for answering:\n{context_text}\n")  # Debug print
     prompt = f"""
 You are an AI assistant. Answer the user question using ONLY the following file content:
 
