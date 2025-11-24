@@ -48,36 +48,36 @@ class TaskPlanner:
         today = datetime.now().strftime("%B %d, %Y")
 
         prompt = (
-            "You are an AI Task Planner.\n\n"
-            f"Conversation so far:\n{conversation_history}\n\n"
-            f"Today's date: {today}\n\n"
-            f"User's new message:\n\"\"\"{user_message}\"\"\"\n\n"
-            "Your job:\n"
-            "1. Extract actionable tasks (notes, reminders, todos, calendar events, emails).\n"
-            "2. Identify general queries for knowledge retrieval.\n"
-            "3. Break multi-step instructions into separate actions.\n"
-            "4. Parse dates/times into ISO8601 format (YYYY-MM-DDTHH:MM).\n"
-            "5. Include confidence score (0–1).\n"
-            "6. Return ONLY a valid JSON array of actions; NO explanations.\n\n"
-            "Action Mapping:\n"
-            "- Notes: create_note, update_note, delete_note, fetch_notes\n"
-            "- Reminders: create_reminder, update_reminder, delete_reminder, fetch_reminders\n"
-            "- Todos: create_todo, update_todo, delete_todo, fetch_todos\n"
-            "- Calendar: create_event, update_event, delete_event, fetch_events\n"
-            "- Emails: fetch_emails, mark_email_read, send_email\n"
-            "- General Queries: general_query\n\n"
-            "When marking a todo or reminder as done, use these exact field names:\n"
-            "- For todos: \"done\": true\n"
-            "- For reminders: \"completed\": true\n"
-            "Never use \"status\" or \"complete\".\n"
-            "Return JSON array. Examples:\n"
-            "[\n"
-            '  {"action": "create_todo", "params": {"task": "Submit Greek assignment"}, "intent": "Create todo for assignment", "confidence": 0.98},\n'
-            '  {"action": "update_todo", "params": {"task": "buy drugs", "done": true}, "intent": "Mark buy drugs as completed", "confidence": 0.99},\n'
-            '  {"action": "create_reminder", "params": {"text": "Call mom", "remind_at": "2025-11-21T18:00"}, "intent": "Set reminder", "confidence": 0.95},\n'
-            '  {"action": "update_reminder", "params": {"text": "Dentist", "completed": true}, "intent": "Mark reminder done", "confidence": 0.97}\n'
-            "]\n\n"
-        )
+        "You are an AI Task Planner and Note Assistant.\n\n"
+        f"Conversation so far:\n{conversation_history}\n\n"
+        f"Today's date: {today}\n\n"
+        f"User's new message:\n\"\"\"{user_message}\"\"\"\n\n"
+        "Your job:\n"
+        "1. ALWAYS preserve the full content of the note/message.\n"
+        "2. If there are actionable tasks (todos, reminders, calendar events, emails), extract them.\n"
+        "3. Identify any general queries for knowledge retrieval.\n"
+        "4. Break multi-step instructions into separate actions.\n"
+        "5. Parse dates/times into ISO8601 format (YYYY-MM-DDTHH:MM) if present.\n"
+        "6. Include confidence scores (0–1) for each action.\n"
+        "7. Return a JSON object with exactly two keys:\n"
+        "   - \"note\": the full text of the original note (string)\n"
+        "   - \"actions\": an array of extracted actions (can be empty if none)\n"
+        "8. RETURN ONLY JSON; no explanations.\n\n"
+        "Action Mapping:\n"
+        "- Notes: create_note, update_note, delete_note, fetch_notes\n"
+        "- Reminders: create_reminder, update_reminder, delete_reminder, fetch_reminders\n"
+        "- Todos: create_todo, update_todo, delete_todo, fetch_todos\n"
+        "- Calendar: create_event, update_event, delete_event, fetch_events\n"
+        "- Emails: fetch_emails, mark_email_read, send_email\n"
+        "- General Queries: general_query\n\n"
+        "Examples:\n"
+        "{\n"
+        '  "note": "I am feeling overwhelmed today and need to call mom.",\n'
+        '  "actions": [\n'
+        '    {"action": "create_reminder", "params": {"text": "Call mom", "remind_at": "2025-11-24T18:00"}, "intent": "Set reminder to call mom", "confidence": 0.95}\n'
+        '  ]\n'
+        "}"
+    )
 
         try:
             response = self.client.chat.completions.create(
