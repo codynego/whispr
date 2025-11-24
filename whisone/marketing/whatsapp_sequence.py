@@ -12,7 +12,7 @@ from whatsapp.tasks import send_whatsapp_text
 def send_welcome_message(user_id):
     user = User.objects.get(id=user_id)
     message = (
-        f"Hi {user.name}! 👋\n"
+        f"Hi {user.first_name}! 👋\n"
         "Welcome to Whisone — your AI memory and assistant on WhatsApp.\n"
         "You can send me tasks, notes, reminders, or emails — and I’ll remember them for you.\n\n"
         "Try sending your first note or reminder now!\n"
