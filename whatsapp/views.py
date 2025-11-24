@@ -46,105 +46,132 @@ import requests
 
 
 User = get_user_model()
-
 @csrf_exempt
 def webhook(request):
     """
-    WhatsApp webhook for messages, status updates, and file uploads.
+    WhatsApp webhook — handles verification, messages, and file uploads reliably.
     """
     if request.method == 'GET':
+        # Verification challenge
         mode = request.GET.get('hub.mode')
         token = request.GET.get('hub.verify_token')
         challenge = request.GET.get('hub.challenge')
+
         if mode == 'subscribe' and token == settings.WHATSAPP_VERIFY_TOKEN:
             return HttpResponse(challenge, content_type='text/plain')
         return HttpResponse('Forbidden', status=403)
-
 
     elif request.method == 'POST':
         try:
             data = json.loads(request.body)
             entry = data.get('entry', [{}])[0]
-            change = entry.get('changes', [{}])[0]
+            changes = entry.get('changes', [{}])
+            
+            if not changes:
+                return HttpResponse('OK', status=200)
+                
+            change = changes[0]
             value = change.get('value', {})
             field = change.get('field')
 
+            # We only care about message events
             if field != 'messages':
                 return HttpResponse('OK', status=200)
 
             messages = value.get('messages')
             statuses = value.get('statuses')
 
-            if messages:
-                msg = messages[0]
-                sender_number = msg.get('from')
-                normalized_number = sender_number.replace("+", "").lstrip("0")
-                users = User.objects.filter(whatsapp__icontains=normalized_number)
+            if not messages:
+                if statuses:
+                    WhatsAppWebhook.objects.create(event_type='status_update', payload=data)
+                return HttpResponse('OK', status=200)
 
-                if not users.exists():
-                    welcome_msg = (
-                        "Hello! 👋 I’m Whisone — your intelligent second brain..."
+            msg = messages[0]
+            sender_number = msg.get('from')
+            msg_type = msg.get('type')
+
+            # Normalize phone number (remove + and leading zeros)
+            normalized_number = sender_number.lstrip('+').lstrip('0')
+            users = User.objects.filter(whatsapp__icontains=normalized_number)
+
+            if not users.exists():
+                welcome_msg = (
+                    "Hello! I’m Whisone — your intelligent second brain...\n\n"
+                    "Send me anything: notes, PDFs, images, voice messages — I remember everything for you."
+                )
+                send_whatsapp_message_task.delay(to_number=sender_number, message=welcome_msg)
+                return HttpResponse('OK', status=200)
+
+            user = users.first()
+            WhatsAppWebhook.objects.create(event_type='message_received', payload=data)
+
+            # ————— Handle Text Messages —————
+            if msg_type == 'text':
+                msg_text = msg['text']['body']
+                try:
+                    AssistantMessage.objects.create(user=user, role='user', content=msg_text)
+                except Exception as e:
+                    print(f"[Webhook] Failed to save AssistantMessage: {e}")
+
+                chain(
+                    process_user_message.s(user.id, msg_text),
+                    send_whatsapp_message_task.s(user_id=user.id, to_number=sender_number)
+                ).apply_async()
+
+            # ————— Handle Document / File Attachments —————
+            elif msg_type == 'document':
+                doc = msg['document']
+                file_id = doc['id']
+                filename = doc.get('filename', 'document')
+                mime_type = doc.get('mime_type', 'application/octet-stream')
+
+                # Download file from WhatsApp
+                media_url = f"https://graph.facebook.com/v20.0/{file_id}"
+                headers = {"Authorization": f"Bearer {settings.WHATSAPP_ACCESS_TOKEN}"}
+
+                try:
+                    response = requests.get(media_url, headers=headers, timeout=60)
+                    response.raise_for_status()
+                except Exception as e:
+                    print(f"[Webhook] Failed to download media {file_id}: {e}")
+                    send_whatsapp_message_task.delay(
+                        to_number=sender_number,
+                        message="Sorry, I couldn't download your file. Please try sending it again."
                     )
-                    send_whatsapp_message_task.delay(to_number=sender_number, message=welcome_msg)
                     return HttpResponse('OK', status=200)
 
-                user = users.first()
-                WhatsAppWebhook.objects.create(event_type='message_received', payload=data)
+                file_content = response.content
+                file_size = len(file_content)
 
-                # Handle text messages
-                msg_text = msg.get('text', {}).get('body')
-                if msg_text:
-                    try:
-                        from assistant.models import AssistantMessage
-                        AssistantMessage.objects.create(user=user, role='user', content=msg_text)
-                    except Exception as e:
-                        print(f"Error saving user message: {e}")
+                # Create UploadedFile — let your existing save() override do its job
+                uploaded_file = UploadedFile(user=user)
+                
+                # This triggers your model.save() → sets original_filename, size, file_type
+                uploaded_file.file.save(filename, ContentFile(file_content), save=True)
 
-                    chain(
-                        process_user_message.s(user.id, msg_text),
-                        send_whatsapp_message_task.s(user_id=user.id, message_id=None, message=None, to_number=sender_number)
-                    ).apply_async()
+                # Success message with nice formatting
+                size_str = humanize.naturalsize(file_size) if file_size > 0 else "unknown size"
+                success_msg = f"Received your file:\n• {filename}\n• Size: {size_str}\n\nI’ll process it shortly!"
 
-                # Handle file attachments
-                if 'document' in msg:
-                    doc = msg['document']
-                    file_id = doc.get('id')
-                    filename = doc.get('filename', 'uploaded_file')
-                    mime_type = doc.get('mime_type', '')
+                send_whatsapp_message_task.delay(
+                    to_number=sender_number,
+                    message=success_msg
+                )
 
-                    # Download the file from WhatsApp server
-                    media_url = f"https://graph.facebook.com/v17.0/{file_id}"
-                    headers = {"Authorization": f"Bearer {settings.WHATSAPP_ACCESS_TOKEN}"}
-                    response = requests.get(media_url, headers=headers)
-                    if response.status_code == 200:
-                        uploaded_file = UploadedFile(user=user, original_filename=filename)
-                        uploaded_file.file.save(filename, ContentFile(response.content))
-                        uploaded_file.save()
-                        send_whatsapp_message_task.delay(
-                            to_number=sender_number,
-                            message=f"File '{filename}' uploaded successfully."
-                        )
-                    else:
-                        send_whatsapp_message_task.delay(
-                            to_number=sender_number,
-                            message=f"Failed to download file '{filename}'."
-                        )
-
-            elif statuses:
-                status = statuses[0]
-                WhatsAppWebhook.objects.create(event_type=status.get('status', 'unknown_status'), payload=data)
+            # ————— Handle Images, Audio, Video, etc. (optional future) —————
+            # elif msg_type in ['image', 'audio', 'video']:
+            #     ... similar logic ...
 
             return HttpResponse('OK', status=200)
 
         except json.JSONDecodeError as e:
-            print(f"JSON decode error: {e}")
+            print(f"[Webhook] JSON decode error: {e}")
             return HttpResponse('Invalid JSON', status=400)
         except Exception as e:
-            print(f"Unexpected error: {e}")
+            print(f"[Webhook] Unexpected error: {e}")
             return HttpResponse('OK', status=200)
 
-    return HttpResponse('Method not allowed', status=405)
-
+    return HttpResponse('Method Not Allowed', status=405)
 
 
 # Helper function for signature verification (uncomment and add to views.py or utils)
