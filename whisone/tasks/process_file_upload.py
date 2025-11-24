@@ -1,7 +1,7 @@
 # tasks.py
 from celery import shared_task
 from django.utils import timezone
-from users.models import UploadedFile
+from .models import UploadedFile
 from whisone.utils.embedding_utils import generate_embedding
 
 import os
