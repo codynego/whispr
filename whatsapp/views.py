@@ -150,8 +150,8 @@ def webhook(request):
                 uploaded_file.file.save(filename, ContentFile(file_content), save=True)
 
                 # Success message with nice formatting
-                size_str = humanize.naturalsize(file_size) if file_size > 0 else "unknown size"
-                success_msg = f"Received your file:\n• {filename}\n• Size: {size_str}\n\nI’ll process it shortly!"
+                # size_str = humanize.naturalsize(file_size) if file_size > 0 else "unknown size"
+                success_msg = f"Received your file:\n• {filename}\n• \n\nI’ll process it shortly!"
 
                 send_whatsapp_message_task.delay(
                     to_number=sender_number,
