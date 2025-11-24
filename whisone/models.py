@@ -226,3 +226,59 @@ class Relationship(models.Model):
 
 
 
+
+from django.db import models
+from django.conf import settings
+
+def user_upload_path(instance, filename):
+    # Files will be uploaded to MEDIA_ROOT/user_<id>/<filename>
+    return f"user_{instance.user.id}/{filename}"
+
+class UploadedFile(models.Model):
+    FILE_TYPES = (
+        ('pdf', 'PDF'),
+        ('docx', 'Word Document'),
+        ('txt', 'Text File'),
+        ('csv', 'CSV File'),
+        ('image', 'Image File'),
+        ('other', 'Other'),
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='uploaded_files'
+    )
+    file = models.FileField(upload_to=user_upload_path)
+    file_type = models.CharField(max_length=20, choices=FILE_TYPES, default='other')
+    original_filename = models.CharField(max_length=255)
+    size = models.BigIntegerField(null=True, blank=True)  # bytes
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    processed = models.BooleanField(default=False)  # whether text has been extracted
+    content = models.TextField(blank=True, null=True)  # extracted text from the file
+    embedding = models.JSONField(blank=True, null=True)  # AI embedding of the content
+
+    def save(self, *args, **kwargs):
+        # Capture original filename and size
+        self.original_filename = self.file.name
+        self.size = self.file.size
+
+        # Auto-detect file type
+        ext = self.file.name.lower()
+        if ext.endswith('.pdf'):
+            self.file_type = 'pdf'
+        elif ext.endswith('.docx'):
+            self.file_type = 'docx'
+        elif ext.endswith('.txt'):
+            self.file_type = 'txt'
+        elif ext.endswith('.csv'):
+            self.file_type = 'csv'
+        elif ext.endswith(('.png', '.jpg', '.jpeg')):
+            self.file_type = 'image'
+        else:
+            self.file_type = 'other'
+
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.user.email} - {self.original_filename}"
