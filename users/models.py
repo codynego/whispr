@@ -44,6 +44,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     
     first_name = models.CharField(max_length=150, blank=True)
     last_name = models.CharField(max_length=150, blank=True)
+
+    first_interaction_time = models.DateTimeField(blank=True, null=True)
     
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
@@ -51,8 +53,6 @@ class User(AbstractBaseUser, PermissionsMixin):
     date_joined = models.DateTimeField(default=timezone.now)
     
     # Email provider tokens
-    gmail_refresh_token = models.TextField(blank=True, null=True)
-    outlook_refresh_token = models.TextField(blank=True, null=True)
     
     objects = UserManager()
     
@@ -72,4 +72,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     
     def get_short_name(self):
         return self.first_name or self.email
+    
+    @property
+    def phone(self):
+        return self.whatsapp
 
