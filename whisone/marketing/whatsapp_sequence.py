@@ -20,7 +20,9 @@ def send_welcome_message(user_id):
     )
     send_whatsapp_text(user_id=user.id, text=message)
     # Schedule Day 1 follow-up
-    schedule_day1_followup.delay(user_id)
+    # Schedule Day 1 follow-up 6 hours after welcome
+    schedule_day1_followup.apply_async((user_id,), eta=timezone.now() + timedelta(hours=6))
+
 
 # -----------------------
 # Day 1: Follow-Up
