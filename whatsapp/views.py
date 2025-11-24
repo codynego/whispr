@@ -31,19 +31,19 @@ import json
 import hmac
 import hashlib
 from celery import chain
-
-
 import json
 import hmac
 import hashlib
 from celery import chain
-
 import json
 from django.conf import settings
 from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from whisone.models import UploadedFile
+from django.core.files.base import ContentFile
 import requests
+
+
 
 User = get_user_model()
 
