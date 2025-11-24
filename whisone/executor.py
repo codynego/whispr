@@ -141,13 +141,13 @@ class Executor:
     def _execute_single_action(self, action: str, params: Dict[str, Any]):
         # -------- NOTES --------
         if action == "create_note":
-            note = self._safe_call(self.note_service.create_note, {"content": params.get("content")})
+            note = self._safe_call(self.note_service.create_note, {"content": params.get("text") or params.get("intent")})
             return {"id": note.id, "content": note.content, "created_at": note.created_at.isoformat()}
 
         elif action == "update_note":
             note = self._safe_call(self.note_service.update_note, {
                 "note_id": params.get("note_id"),
-                "new_content": params.get("content")
+                "new_content": params.get("text") or params.get("intent")
             })
             return {"id": note.id, "content": note.content, "created_at": note.created_at.isoformat()} if note else None
 
