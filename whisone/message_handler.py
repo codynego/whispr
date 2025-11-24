@@ -39,6 +39,11 @@ def process_user_message(user_id: int, message: str):
                 # Placeholder: you can implement handle_note_command etc.
                 response_text = f"Command {command} received. (Handler not implemented yet.)"
             print(f"⚡ Slash command response: {response_text}")
+            AssistantMessage.objects.create(
+                user=user,
+                role="assistant",
+                content=response_text
+            )
             return response_text
 
     # -------------------------------------------------------------------------
