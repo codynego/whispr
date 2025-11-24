@@ -346,7 +346,7 @@ INSTALLED_APPS = [
     "billing",
     "notifications",
     'whisone',
-    "unified",
+    # "unified",
     "emails"    
 ]
 
