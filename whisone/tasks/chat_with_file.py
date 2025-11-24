@@ -21,24 +21,22 @@ def chat_with_file(file: UploadedFile, user_query: str, top_k: int = 5) -> str:
     Given a file and a user query, find the most relevant chunks (or the whole file)
     and generate an answer using OpenAI.
     """
-    # 1. Get embeddings from file
     chunks = file.embedding
 
     if not chunks:
         return "No content available to answer from this file."
 
-    # Handle single embedding case (old format)
+    # Handle single embedding case
     if isinstance(chunks, list) and all(isinstance(x, float) for x in chunks):
         chunks = [{"chunk": getattr(file, "content", ""), "embedding": chunks}]
 
-    # Validate chunked embeddings
     if not isinstance(chunks, list):
         return "Invalid file embeddings format."
 
-    # 2. Generate embedding for user query
+    # Generate embedding for user query
     query_embedding = generate_embedding(user_query)
 
-    # 3. Rank chunks by cosine similarity
+    # Rank chunks by similarity
     ranked_chunks = []
     for chunk in chunks:
         emb = chunk.get("embedding")
@@ -51,22 +49,23 @@ def chat_with_file(file: UploadedFile, user_query: str, top_k: int = 5) -> str:
     if not ranked_chunks:
         return "No valid content available to answer from this file."
 
-    # 4. Pick top-k chunks
+    # Select top-k relevant chunks
     top_chunks = sorted(ranked_chunks, key=lambda x: x["score"], reverse=True)[:top_k]
-
-    # 5. Construct prompt for LLM
     context_text = "\n\n".join([c["chunk"] for c in top_chunks])
-    print(f"Context used for answering:\n{context_text}\n")  # Debug print
+
     prompt = f"""
-You are an AI assistant. Answer the user question using ONLY the following file content:
+You are an AI assistant. Use the following file content to answer the user's question:
 
 {context_text}
 
 Question: {user_query}
-Answer concisely, clearly, and accurately.
+
+If the file does not contain enough information to answer the question accurately, respond:
+'I could not find sufficient information in the file to answer this.'
+Answer concisely and clearly.
 """
 
-    # 6. Call OpenAI
+    # Call OpenAI LLM
     try:
         response = openai.ChatCompletion.create(
             model="gpt-4o-mini",
@@ -74,6 +73,8 @@ Answer concisely, clearly, and accurately.
             temperature=0
         )
         answer = response.choices[0].message.content.strip()
+        print(f"Context used for answering:\n{context_text}\n")  # Debug print
+        print(f"Answer generated:\n{answer}\n")  # Debug print
         return answer
     except Exception as e:
         return f"Error generating answer: {e}"

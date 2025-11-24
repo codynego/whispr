@@ -216,3 +216,31 @@ class RelationshipAdmin(admin.ModelAdmin):
     list_display = ("source", "relation_type", "target", "user", "created_at")
     search_fields = ("source__name", "target__name", "relation_type", "user__email")
     list_filter = ("relation_type", "created_at")
+
+
+
+from django.contrib import admin
+from .models import UploadedFile
+
+@admin.register(UploadedFile)
+class UploadedFileAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "user",
+        "original_filename",
+        "file_type",
+        "size",
+        "processed",
+        "uploaded_at",
+    )
+    list_filter = ("file_type", "processed", "uploaded_at")
+    search_fields = ("original_filename", "user__email", "content")
+    readonly_fields = ("uploaded_at", "size", "file_type", "original_filename")
+    ordering = ("-uploaded_at",)
+
+    # Optional: display a preview of content in admin
+    def short_content(self, obj):
+        if obj.content:
+            return obj.content[:75] + "..." if len(obj.content) > 75 else obj.content
+        return "-"
+    short_content.short_description = "Content Preview"
