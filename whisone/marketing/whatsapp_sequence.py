@@ -35,7 +35,7 @@ def schedule_day1_followup(user_id):
         return
 
     message = (
-        f"Hey {user.name}! 👋 Have you tried sending your first task or note to Whisone yet?\n"
+        f"Hey {user.first_name}! 👋 Have you tried sending your first task or note to Whisone yet?\n"
         "Example: 'Remind me to call John tomorrow at 10am'."
     )
     send_whatsapp_text(user_id=user.id, text=message)
@@ -73,7 +73,7 @@ def schedule_day3_invite(user_id):
         return
 
     message = (
-        f"Congratulations {user.name}! 🎉\n"
+        f"Congratulations {user.first_name}! 🎉\n"
         "You’ve sent your first task/note and experienced your first win with Whisone.\n"
         "I’m inviting you to our exclusive Founders Circle — a private group where you’ll:\n"
         "✔️ Influence features\n"
