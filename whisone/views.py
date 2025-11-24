@@ -190,7 +190,7 @@ class WhisoneMessageView(APIView):
 
 # === CONFIG ===
 REDIRECT_URI = "https://www.whisone.app/dashboard/settings/integrations/callbacks"
-CLIENT_SECRET_FILE = "unified/credentials/client_secret.json"
+CLIENT_SECRET_FILE = "whisone/credentials/client_secret.json"
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.send",
