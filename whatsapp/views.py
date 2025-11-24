@@ -10,6 +10,7 @@ import json
 from .tasks import send_whatsapp_message_task
 from django.contrib.auth import get_user_model
 from whisone.message_handler import process_user_message
+from whisone.tasks.process_file_upload import process_uploaded_file
 from assistant.models import AssistantMessage
 
 User = get_user_model()
@@ -133,6 +134,8 @@ def webhook(request):
                         uploaded_file = UploadedFile(user=user, original_filename=filename)
                         uploaded_file.file = ContentFile(file_content, name=filename)
                         uploaded_file.save()
+                        process_uploaded_file.delay(uploaded_file.id)
+
 
                         send_whatsapp_message_task.delay(
                             to_number=sender_number,
