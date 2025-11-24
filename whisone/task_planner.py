@@ -61,7 +61,7 @@ class TaskPlanner:
             "6. Return ONLY a valid JSON array of actions; NO explanations.\n\n"
             "7. ALWAYS preserve the full content of the note/message.\n"
             "Action Mapping:\n"
-            "- Notes: create_note, update_note, delete_note, fetch_notes\n"
+            "- Notes: create_note, delete_note, fetch_notes\n"
             "- Reminders: create_reminder, update_reminder, delete_reminder, fetch_reminders\n"
             "- Todos: create_todo, update_todo, delete_todo, fetch_todos\n"
             "- Calendar: create_event, update_event, delete_event, fetch_events\n"
