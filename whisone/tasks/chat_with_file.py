@@ -13,7 +13,7 @@ def chat_with_file(file: UploadedFile, user_query: str, top_k: int = 5) -> str:
     """
     # 1. Split file content into chunks if not already done
     # (Assume you store embeddings per chunk as list of dicts: [{"chunk": "...", "embedding": [...]}, ...])
-    chunks = file.embeddings  # list of dicts with 'chunk' and 'embedding'
+    chunks = file.embedding  # list of dicts with 'chunk' and 'embedding'
 
     if not chunks:
         return "No content available to answer from this file."
