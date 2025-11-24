@@ -15,8 +15,7 @@ class UserAdmin(BaseUserAdmin):
         ('Personal Info', {'fields': ('first_name', 'last_name', 'whatsapp')}),
         ('Subscription', {'fields': ('plan',)}),
         ('Permissions', {'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
-        ('Important dates', {'fields': ('last_login', 'date_joined')}),
-        ('Email Tokens', {'fields': ('gmail_refresh_token', 'outlook_refresh_token')}),
+        ('Important dates', {'fields': ('last_login', 'date_joined', 'first_interaction_time')}),
     )
     
     add_fieldsets = (
