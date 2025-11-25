@@ -6,8 +6,8 @@ from rest_framework.exceptions import PermissionDenied, NotFound
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
-from .models import Avatar, AvatarConversation, AvatarTrainingJob
-from .serializers import (
+from avatars.models import Avatar, AvatarConversation, AvatarTrainingJob
+from avatars.serializers import (
     AvatarListSerializer,
     AvatarDetailSerializer,
     AvatarCreateSerializer,
@@ -16,7 +16,7 @@ from .serializers import (
     AvatarConversationSerializer,
     AvatarTrainingJobSerializer,
 )
-from .tasks.training import run_avatar_training  # ← your final training task
+from avatars.tasks.training import run_avatar_training  # ← your final training task
 
 
 # ===================================================================

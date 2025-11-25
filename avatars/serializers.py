@@ -1,6 +1,6 @@
 # avatars/serializers/avatar.py
 from rest_framework import serializers
-from ..models import Avatar
+from avatars.models import Avatar
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
@@ -105,7 +105,7 @@ class AvatarConversationSerializer(serializers.ModelSerializer):
 
 
 # avatars/serializers/training.py
-from ..models import AvatarTrainingJob
+from avatars.models import AvatarTrainingJob
 
 
 class AvatarTrainingJobSerializer(serializers.ModelSerializer):
