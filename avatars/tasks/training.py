@@ -5,7 +5,7 @@ from openai import OpenAI
 from avatars.models import Avatar, AvatarTrainingJob, AvatarMemoryChunk
 import textwrap
 
-client = OpenAI()
+client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
 CHUNK_SIZE = 800  # tokens ≈ characters / 4 → safe for embedding
 
