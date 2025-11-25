@@ -29,12 +29,12 @@ INSTALLED_APPS = [
 
     # Local apps
     'users',
-    'emails',
+
     'whatsapp',
     'assistant',
     'billing',
     'notifications',
-    'unified',
+
     'whisone',
 ]
 

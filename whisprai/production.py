@@ -330,24 +330,21 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-
-    # Third-party
     "rest_framework",
     "rest_framework_simplejwt",
     "corsheaders",
     "drf_yasg",
     "django_celery_beat",
     "django_celery_results",
-
-    # Local apps
     "users",
     "whatsapp",
     "assistant",
     "billing",
     "notifications",
     'whisone',
-    "unified",
-    "emails"    
+    "daphne",           # ← ASGI server
+    "channels",
+    "avatars",
 ]
 
 # --- Middleware ---
@@ -362,6 +359,18 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+
+ASGI_APPLICATION = "whisprai.asgi.application"
+
+# Redis for Channels (local or production)
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [("127.0.0.1", 6379)],  # ← change for production
+        },
+    },
+}
 
 ROOT_URLCONF = "whisprai.urls"
 
