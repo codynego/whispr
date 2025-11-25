@@ -324,6 +324,8 @@ CORS_ALLOW_HEADERS = [
 
 # --- Installed Apps ---
 INSTALLED_APPS = [
+    "daphne",           # ← ASGI server
+    "channels",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -342,8 +344,6 @@ INSTALLED_APPS = [
     "billing",
     "notifications",
     'whisone',
-    "daphne",           # ← ASGI server
-    "channels",
     "avatars",
 ]
 
