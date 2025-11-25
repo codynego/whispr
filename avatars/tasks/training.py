@@ -4,6 +4,7 @@ from django.utils import timezone
 from openai import OpenAI
 from avatars.models import Avatar, AvatarTrainingJob, AvatarMemoryChunk
 import textwrap
+from django.conf import settings
 
 client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
