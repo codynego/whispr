@@ -72,7 +72,7 @@ class AvatarUpdateSerializer(serializers.ModelSerializer):
 
 
 # avatars/serializers/conversation.py
-from ..models import AvatarConversation, AvatarMessage
+from avatars.models import AvatarConversation, AvatarMessage
 from rest_framework import serializers
 
 
