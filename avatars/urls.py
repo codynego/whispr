@@ -13,5 +13,5 @@ urlpatterns = [
     # Conversations & training
     path("api/avatars/<uuid:avatar_id>/conversations/", views.AvatarConversationListView.as_view()),
     path("api/avatars/<uuid:avatar_id>/training/", views.AvatarTrainingJobListView.as_view()),
-    path("api/avatars/<uuid:avatar_id>/retrain/", views.TriggerRetrainView.as_view()),
+    # path("api/avatars/<uuid:avatar_id>/retrain/", views.TriggerRetrainView.as_view()),
 ]
