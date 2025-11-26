@@ -1,11 +1,10 @@
-# avatars/consumers.py
 import uuid
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.utils import timezone
 from .models import Avatar, AvatarConversation, AvatarMessage
 from .serializers import AvatarMessageSerializer
-from avatars.services.chat_engine import generate_streaming_response  # RAG + streaming
+  # RAG + streaming
 
 
 class AvatarChatConsumer(AsyncJsonWebsocketConsumer):
@@ -50,6 +49,7 @@ class AvatarChatConsumer(AsyncJsonWebsocketConsumer):
     # Incoming messages from visitor
     # ──────────────────────────────────────────────────────────────────────
     async def receive_json(self, content, **kwargs):
+        from avatars.services.chat_engine import generate_streaming_response
         msg_type = content.get("type")
 
         if msg_type == "chat.message":
