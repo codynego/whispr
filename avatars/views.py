@@ -23,12 +23,20 @@ from avatars.tasks.training import run_avatar_training  # ← your final trainin
 # OWNER-FACING VIEWS
 # ===================================================================
 
-class AvatarListCreateView(generics.ListCreateAPIView):
+class AvatarListCreateView(generics.ListAPIView):
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = AvatarListSerializer
 
     def get_queryset(self):
         return Avatar.objects.filter(owner=self.request.user, is_deleted=False)
+
+    def perform_create(self, serializer):
+        serializer.save(owner=self.request.user)
+
+
+class AvatarCreateView(generics.CreateAPIView):
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = AvatarCreateSerializer
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)

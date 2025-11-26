@@ -5,6 +5,7 @@ from avatars import views
 urlpatterns = [
     # Dashboard
     path("", views.AvatarListCreateView.as_view(), name="avatar-list"),
+    path("create/", views.AvatarCreateView.as_view(), name="avatar-create"),
     path("<uuid:id>/", views.AvatarDetailView.as_view(), name="avatar-detail"),
 
     # Public page
