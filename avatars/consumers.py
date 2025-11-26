@@ -2,9 +2,15 @@ import uuid
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.utils import timezone
-from .models import Avatar, AvatarConversation, AvatarMessage
-from .serializers import AvatarMessageSerializer
-  # RAG + streaming
+from .serializers import AvatarMessageSerializer 
+# NOTE: Model imports (Avatar, AvatarConversation, AvatarMessage) 
+# have been removed from here to prevent AppRegistryNotReady errors, 
+# and moved into the @database_sync_to_async methods where they are safe.
+
+# RAG + streaming
+# NOTE: The Celery task import (generate_streaming_response) is correctly 
+# inside receive_json, but needs to be in a try/except block just in case 
+# the underlying module still causes issues during the load.
 
 
 class AvatarChatConsumer(AsyncJsonWebsocketConsumer):
@@ -49,7 +55,10 @@ class AvatarChatConsumer(AsyncJsonWebsocketConsumer):
     # Incoming messages from visitor
     # ──────────────────────────────────────────────────────────────────────
     async def receive_json(self, content, **kwargs):
+        # Model and task imports are safe here because this function is only called 
+        # *after* the connection is established and Django is fully initialized.
         from avatars.services.chat_engine import generate_streaming_response
+        
         msg_type = content.get("type")
 
         if msg_type == "chat.message":
@@ -106,6 +115,8 @@ class AvatarChatConsumer(AsyncJsonWebsocketConsumer):
     # ──────────────────────────────────────────────────────────────────────
     @database_sync_to_async
     def get_avatar(self):
+        # Model import is safe here
+        from .models import Avatar
         try:
             return Avatar.objects.get(handle=self.handle, is_deleted=False)
         except Avatar.DoesNotExist:
@@ -113,6 +124,8 @@ class AvatarChatConsumer(AsyncJsonWebsocketConsumer):
 
     @database_sync_to_async
     def get_or_create_conversation(self):
+        # Model import is safe here
+        from .models import AvatarConversation 
         convo, created = AvatarConversation.objects.get_or_create(
             avatar=self.avatar,
             visitor_id=self.visitor_id,
@@ -128,6 +141,8 @@ class AvatarChatConsumer(AsyncJsonWebsocketConsumer):
 
     @database_sync_to_async
     def save_message(self, role: str, content: str, model_used: str = None):
+        # Model import is safe here
+        from .models import AvatarMessage
         return AvatarMessage.objects.create(
             conversation=self.conversation,
             role=role,
@@ -179,6 +194,8 @@ class AvatarChatConsumer(AsyncJsonWebsocketConsumer):
 
     @database_sync_to_async
     def get_history(self):
+        # Model import is safe here
+        from .models import AvatarMessage
         return list(
             AvatarMessage.objects.filter(conversation=self.conversation)
             .order_by("created_at")
