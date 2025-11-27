@@ -117,43 +117,30 @@ class AvatarMessageSerializer(serializers.ModelSerializer):
 # Optional / Advanced Models
 # ----------------------------
 
-from rest_framework import serializers
-from rest_framework.exceptions import ValidationError
-from .models import AvatarSource # Assuming AvatarSource is the model
-
 class AvatarSourceSerializer(serializers.ModelSerializer):
     """
-    Handles serialization for AvatarSource (data sources for training).
+    Serializer used for saving the list of sources.
     
-    NOTE: The POST/PATCH view should be written to handle a list of these
-    serializers to update the entire set of sources for an avatar.
+    avatar is excluded from fields/validation since it's supplied by the view from the URL.
     """
-    
-    # 1. Use a BooleanField for enabled, which should be calculated from 
-    # the incoming tone/knowledge flags to simplify the logic
-    enabled = serializers.BooleanField(read_only=True) # Will be calculated by the view logic
+    # 1. Use a separate field for metadata validation/input
+    # Set to required=False to allow {} or null
+    metadata = serializers.JSONField(required=False) 
 
+    # 2. Exclude 'avatar' from fields to allow the view to inject it.
     class Meta:
         model = AvatarSource
         fields = [
-            "id", "avatar", "source_type", "metadata", "include_for_tone", 
-            "include_for_knowledge", "enabled", "created_at",
+            "id", "source_type", "metadata", "include_for_tone", 
+            "include_for_knowledge", "created_at",
         ]
-        read_only_fields = ["id", "avatar", "enabled", "created_at"]
-        
-    def validate_metadata(self, value):
-        """
-        Validate that if metadata is provided, it's a valid JSON structure 
-        (e.g., contains 'ids' for item-selectable sources).
-        """
-        # Example validation: If source_type requires specific items (e.g., notes, uploads),
-        # the metadata must contain the 'ids' key.
-        
-        # NOTE: The actual source_type is not available here, so you must rely on the view 
-        # for complex validation across fields. However, we ensure the structure is an object.
-        if value is not None and not isinstance(value, dict):
-             raise ValidationError("Metadata must be a JSON object.")
+        read_only_fields = ["id", "created_at"]
 
+    def validate_source_type(self, value):
+        # Ensure the source type is one of the allowed types (optional, but good practice)
+        allowed_types = ["notes", "reminders", "todos", "uploads", "gmail", "website"]
+        if value not in allowed_types:
+            raise serializers.ValidationError("Invalid source type provided.")
         return value
 
 
