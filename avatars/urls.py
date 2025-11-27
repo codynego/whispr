@@ -4,10 +4,16 @@ from . import views
 
 urlpatterns = [
     # ----------------------------
-    # HANDLE-BASED CONVENIENCE ROUTES (For UI components - MUST be first)
+    # PUBLIC ACCESS ROUTE (MUST be first to catch unauthenticated, public traffic)
+    # ----------------------------
+    path("<slug:handle>/public/", views.AvatarRetrievePublicView.as_view(), name="avatar-retrieve-public"),
+    
+    # ----------------------------
+    # HANDLE-BASED CONVENIENCE ROUTES (For UI components - Owner/Authenticated traffic)
     # ----------------------------
     
     # Avatar Detail, Settings, Analytics by Handle
+    # This route is now implicitly for authenticated users only (AvatarRetrieveByHandleView)
     path("<slug:handle>/", views.AvatarRetrieveByHandleView.as_view(), name="avatar-retrieve-by-handle"),
     path("<slug:handle>/settings/", views.AvatarSettingsByHandleView.as_view(), name="avatar-settings-by-handle"),
     path("<slug:handle>/analytics/", views.AvatarAnalyticsByHandleView.as_view(), name="avatar-analytics-by-handle"),
