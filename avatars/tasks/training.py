@@ -3,7 +3,7 @@ from .models import Avatar, AvatarSource, AvatarMemoryChunk, AvatarTrainingJob
 from django.utils import timezone
 
 
-@shared_task
+
 def train_avatar(avatar: Avatar, job: AvatarTrainingJob):
     """
     Processes all enabled sources for the Avatar and updates memory chunks & persona.
