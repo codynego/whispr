@@ -1,8 +1,6 @@
 # avatars/admin.py
+
 from django.contrib import admin
-from django.utils.html import format_html
-from django.urls import reverse
-from django.utils import timezone
 from .models import (
     Avatar,
     AvatarSource,
@@ -10,136 +8,157 @@ from .models import (
     AvatarMemoryChunk,
     AvatarConversation,
     AvatarMessage,
+    AvatarSettings,
+    AvatarAnalytics,
 )
 
+# -----------------------
+# Inline Models
+# -----------------------
+
+class AvatarSourceInline(admin.TabularInline):
+    model = AvatarSource
+    extra = 0
+    readonly_fields = ("created_at",)
+
+
+class AvatarSettingsInline(admin.StackedInline):
+    model = AvatarSettings
+    extra = 0
+    readonly_fields = ("created_at", "updated_at")
+
+
+class AvatarMessageInline(admin.TabularInline):
+    model = AvatarMessage
+    extra = 0
+    readonly_fields = ("created_at",)
+    fields = ("role", "content", "created_at")
+
+
+# -----------------------
+# Main Avatar Admin
+# -----------------------
 
 @admin.register(Avatar)
 class AvatarAdmin(admin.ModelAdmin):
-    list_display = [
-        "handle_link", "name", "owner", "purpose", "visibility",
-        "trained_status", "total_conversations", "created_at"
+    list_display = ("name", "handle", "owner", "trained", "trained_at", "created_at")
+    search_fields = ("name", "handle", "owner__email")
+    list_filter = ("trained", "created_at")
+    readonly_fields = ("created_at", "trained_at")
+
+    inlines = [
+        AvatarSourceInline,
+        AvatarSettingsInline,
     ]
-    list_filter = ["visibility", "purpose", "tone_preset", "trained", "created_at"]
-    search_fields = ["handle", "name", "owner__email", "owner__username"]
-    readonly_fields = [
-        "trained", "trained_at", "total_conversations", "total_messages",
-        "persona_prompt", "summary_knowledge", "writing_style", "created_at", "updated_at"
-    ]
+
     fieldsets = (
-        ("Owner & Identity", {
-            "fields": ("owner", "name", "handle", "photo", "purpose")
+        ("Basic Info", {
+            "fields": ("owner", "name", "handle", "photo"),
         }),
-        ("Behavior", {
-            "fields": ("tone_preset", "custom_tone_notes", "pinned_instructions")
+        ("Personality", {
+            "fields": ("persona_prompt", "tone", "writing_style"),
         }),
-        ("Chat Settings", {
-            "fields": ("welcome_message", "suggested_questions", "collect_name", "collect_email", "calendly_link")
+        ("Training Status", {
+            "fields": ("trained", "trained_at", "summary_knowledge"),
         }),
-        ("Access & Privacy", {
-            "fields": ("visibility", "protected_code", "store_conversations", "message_retention_days")
-        }),
-        ("Training State", {
-            "fields": ("trained", "trained_at", "persona_prompt", "summary_knowledge", "writing_style"),
-            "classes": ("collapse",)
-        }),
-        ("Analytics", {
-            "fields": ("total_conversations", "total_messages", "tags"),
+        ("Timestamps", {
+            "fields": ("created_at",),
         }),
     )
 
-    def handle_link(self, obj):
-        url = f"https://whisone.com/@{obj.handle}"
-        return format_html('<a href="{}" target="_blank">@{}</a>', url, obj.handle)
-    handle_link.short_description = "Public Link"
 
-    def trained_status(self, obj):
-        if not obj.trained:
-            return format_html('<span style="color: red;">Not trained</span>')
-        return format_html('<span style="color: green;">Trained</span>')
-    trained_status.short_description = "Training"
-
+# -----------------------
+# Avatar Sources Admin
+# -----------------------
 
 @admin.register(AvatarSource)
 class AvatarSourceAdmin(admin.ModelAdmin):
-    list_display = ["avatar", "source_type", "enabled", "include_for_tone", "include_for_knowledge", "created_at"]
-    list_filter = ["source_type", "enabled", "include_for_tone"]
-    search_fields = ["avatar__handle", "avatar__name"]
+    list_display = ("avatar", "source_type", "enabled", "include_for_knowledge", "include_for_tone", "created_at")
+    list_filter = ("source_type", "enabled", "include_for_knowledge", "include_for_tone")
+    search_fields = ("avatar__name",)
+    readonly_fields = ("created_at", "updated_at")
+    fields = (
+        "avatar", "source_type", "enabled",
+        "include_for_knowledge", "include_for_tone", "metadata",
+        "created_at", "updated_at"
+    )
 
+
+# -----------------------
+# Training Jobs
+# -----------------------
 
 @admin.register(AvatarTrainingJob)
 class AvatarTrainingJobAdmin(admin.ModelAdmin):
-    list_display = ["avatar", "status", "started_at", "finished_at", "duration", "link"]
-    list_filter = ["status", "started_at"]
-    search_fields = ["avatar__handle", "avatar__name"]
-    readonly_fields = ["avatar", "status", "logs", "error_message", "started_at", "finished_at"]
+    list_display = ("avatar", "status", "created_at", "started_at", "finished_at")
+    list_filter = ("status", "created_at")
+    search_fields = ("avatar__name",)
+    readonly_fields = ("logs", "created_at", "started_at", "finished_at")
 
-    def duration(self, obj):
-        if not obj.started_at or not obj.finished_at:
-            return "-"
-        delta = obj.finished_at - obj.started_at
-        return str(delta).split(".")[0]  # remove microseconds
-    duration.short_description = "Duration"
+    fields = (
+        "avatar", "status",
+        "created_at", "started_at", "finished_at",
+        "logs",
+    )
 
-    def link(self, obj):
-        url = reverse("admin:avatars_avatartrainingjob_change", args=[obj.pk])
-        return format_html('<a href="{}">View Logs</a>', url)
-    link.short_description = ""
 
+# -----------------------
+# Memory Chunks (Embeddings)
+# -----------------------
 
 @admin.register(AvatarMemoryChunk)
 class AvatarMemoryChunkAdmin(admin.ModelAdmin):
-    list_display = ["avatar", "source_type", "text_preview", "created_at"]
-    list_filter = ["source_type", "created_at"]
-    search_fields = ["text", "avatar__handle"]
+    list_display = ("avatar", "source_type", "short_text", "created_at")
+    search_fields = ("text", "avatar__name")
+    list_filter = ("source_type",)
+    readonly_fields = ("embedding", "created_at")
 
-    def text_preview(self, obj):
-        return obj.text[:100] + "..." if len(obj.text) > 100 else obj.text
-    text_preview.short_description = "Content"
+    def short_text(self, obj):
+        return obj.text[:80] + "..." if len(obj.text) > 80 else obj.text
 
+
+# -----------------------
+# Conversations + Messages
+# -----------------------
 
 @admin.register(AvatarConversation)
 class AvatarConversationAdmin(admin.ModelAdmin):
-    list_display = [
-        "avatar", "visitor_info", "started_at", "duration", "message_count",
-        "lead_score", "converted", "taken_over_by_owner"
-    ]
-    list_filter = ["avatar__purpose", "started_at", "converted", "taken_over_by_owner"]
-    search_fields = ["visitor_id", "visitor_email", "visitor_name", "avatar__handle"]
-    readonly_fields = ["avatar", "visitor_id", "started_at", "ended_at"]
+    list_display = ("avatar", "visitor_id", "started_at", "ended_at", "takeover")
+    search_fields = ("avatar__name", "visitor_id")
+    list_filter = ("takeover", "started_at")
 
-    def visitor_info(self, obj):
-        parts = []
-        if obj.visitor_name:
-            parts.append(obj.visitor_name)
-        if obj.visitor_email:
-            parts.append(f"<{obj.visitor_email}>")
-        if not parts:
-            return obj.visitor_id[:12]
-        return " ".join(parts)
-    visitor_info.allow_tags = True
-    visitor_info.short_description = "Visitor"
+    inlines = [AvatarMessageInline]
 
-    def duration(self, obj):
-        if not obj.ended_at:
-            return "Active"
-        delta = obj.ended_at - obj.started_at
-        return str(delta).split(".")[0]
-    duration.short_description = "Duration"
-
-    def message_count(self, obj):
-        return obj.messages.count()
-    message_count.short_description = "Messages"
+    readonly_fields = ("started_at", "ended_at")
 
 
 @admin.register(AvatarMessage)
 class AvatarMessageAdmin(admin.ModelAdmin):
-    list_display = ["conversation", "role", "short_content", "created_at"]
-    list_filter = ["role", "created_at"]
-    search_fields = ["content", "conversation__avatar__handle"]
+    list_display = ("conversation", "role", "short_msg", "created_at")
+    search_fields = ("content",)
+    list_filter = ("role",)
+    readonly_fields = ("created_at",)
 
-    def short_content(self, obj):
+    def short_msg(self, obj):
         return obj.content[:80] + "..." if len(obj.content) > 80 else obj.content
-    short_content.short_description = "Message"
 
-    def has_add_permission(self, request):
-        return False  # don't let admins manually create messages
+
+# -----------------------
+# Settings
+# -----------------------
+
+@admin.register(AvatarSettings)
+class AvatarSettingsAdmin(admin.ModelAdmin):
+    list_display = ("avatar", "response_delay_ms", "visibility", "created_at")
+    search_fields = ("avatar__name",)
+    readonly_fields = ("created_at", "updated_at")
+
+
+# -----------------------
+# Analytics
+# -----------------------
+
+@admin.register(AvatarAnalytics)
+class AvatarAnalyticsAdmin(admin.ModelAdmin):
+    list_display = ("avatar", "total_visits", "total_messages", "last_interaction")
+    readonly_fields = ("avatar",)

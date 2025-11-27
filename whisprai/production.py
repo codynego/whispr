@@ -324,8 +324,8 @@ CORS_ALLOW_HEADERS = [
 
 # --- Installed Apps ---
 INSTALLED_APPS = [
-    "daphne",           # ← ASGI server
-    "channels",
+    # "daphne",           # ← ASGI server
+    # "channels",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -360,17 +360,17 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-ASGI_APPLICATION = "whisprai.asgi.application"
+# ASGI_APPLICATION = "whisprai.asgi.application"
 
 # Redis for Channels (local or production)
-CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {
-            "hosts": [("127.0.0.1", 6379)],  # ← change for production
-        },
-    },
-}
+# CHANNEL_LAYERS = {
+#     "default": {
+#         "BACKEND": "channels_redis.core.RedisChannelLayer",
+#         "CONFIG": {
+#             "hosts": [("127.0.0.1", 6379)],  # ← change for production
+#         },
+#     },
+# }
 
 ROOT_URLCONF = "whisprai.urls"
 
