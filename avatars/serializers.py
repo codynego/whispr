@@ -117,31 +117,111 @@ class AvatarMessageSerializer(serializers.ModelSerializer):
 # Optional / Advanced Models
 # ----------------------------
 
+# serializers.py (updated section only)
+
 class AvatarSourceSerializer(serializers.ModelSerializer):
     """
-    Serializer used for saving the list of sources.
-    
-    avatar is excluded from fields/validation since it's supplied by the view from the URL.
-    """
-    # 1. Use a separate field for metadata validation/input
-    # Set to required=False to allow {} or null
-    metadata = serializers.JSONField(required=False) 
+    Serializer for AvatarSource – used in bulk replace-all endpoint:
+    POST /api/avatars/{handle}/sources/
 
-    # 2. Exclude 'avatar' from fields to allow the view to inject it.
+    Expected payload (array of objects):
+    [
+      {
+        "source_type": "notes",
+        "include_for_tone": true,
+        "include_for_knowledge": true,
+        "metadata": { "ids": [1, 2, 3] }   // optional, can be {} or omitted
+      },
+      ...
+    ]
+
+    Sending an empty array [] → means "remove all sources" (handled in view).
+    """
+
+    # Make metadata optional and always default to empty dict
+    metadata = serializers.JSONField(
+        required=False,
+        default=dict,
+        allow_null=True,
+        help_text="Extra config. For item-filtered sources, use { 'ids': [...] }",
+    )
+
     class Meta:
         model = AvatarSource
         fields = [
-            "id", "source_type", "metadata", "include_for_tone", 
-            "include_for_knowledge", "created_at",
+            "id",
+            "source_type",
+            "metadata",
+            "include_for_tone",
+            "include_for_knowledge",
+            "created_at",
         ]
         read_only_fields = ["id", "created_at"]
+        # We let the view inject `avatar`, so it's not in input
 
-    def validate_source_type(self, value):
-        # Ensure the source type is one of the allowed types (optional, but good practice)
-        allowed_types = ["notes", "reminders", "todos", "uploads", "gmail", "website"]
-        if value not in allowed_types:
-            raise serializers.ValidationError("Invalid source type provided.")
+    # ──────────────────────────────────────────────────────────────
+    # Validation
+    # ──────────────────────────────────────────────────────────────
+    def validate_source_type(self, value: str) -> str:
+        allowed = {"notes", "reminders", "todos", "uploads", "gmail", "website"}
+        if value not in allowed:
+            raise serializers.ValidationError(f"Invalid source_type. Allowed: {', '.join(allowed)}")
         return value
+
+    def validate_metadata(self, value):
+        """
+        Ensure that when the source type supports item selection,
+        metadata either is missing or contains an 'ids' list (can be empty).
+        """
+        source_type = self.initial_data.get("source_type")
+
+        # Only certain sources use item filtering
+        item_filtered_sources = {"notes", "reminders", "todos", "uploads"}
+
+        if source_type in item_filtered_sources:
+            if value is None:
+                return {"ids": []}  # normalize to expected shape
+            if not isinstance(value, dict):
+                raise serializers.ValidationError("metadata must be a JSON object")
+            if "ids" not in value:
+                # Auto-fix common frontend mistake
+                return {"ids": []}
+            if not isinstance(value["ids"], list):
+                raise serializers.ValidationError("'ids' in metadata must be a list")
+            return value
+        else:
+            # For sources like gmail/website, just pass through
+            return value or {}
+
+    def validate(self, attrs):
+        """
+        Final safety net:
+        - If source is disabled for both tone and knowledge → reject unless it's just clearing
+        - But we allow it because frontend sends everything and we filter in view
+        """
+        tone = attrs.get("include_for_tone", False)
+        knowledge = attrs.get("include_for_knowledge", False)
+
+        # Allow completely disabled entries – they will be filtered out in the view
+        # But if both are True, at least one must be enabled (doesn't make sense otherwise)
+        if tone is False and knowledge is False:
+            # This is fine – it means "don't use this source"
+            pass
+
+        return attrs
+
+    # ──────────────────────────────────────────────────────────────
+    # Representation (for GET /list)
+    # ──────────────────────────────────────────────────────────────
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        # Ensure metadata is always a dict (never None) on output
+        if ret["metadata"] is None:
+            ret["metadata"] = {}
+        # For item-filtered sources, guarantee "ids" key exists
+        if instance.source_type in {"notes", "reminders", "todos", "uploads"}:
+            ret["metadata"] = {"ids": ret["metadata"].get("ids", [])}
+        return ret
 
 
 class AvatarTrainingJobSerializer(serializers.ModelSerializer):

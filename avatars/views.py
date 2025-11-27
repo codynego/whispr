@@ -80,21 +80,28 @@ class AvatarAnalyticsByHandleView(generics.RetrieveAPIView):
         avatar = get_avatar_by_handle_and_owner(handle, self.request.user)
         return get_object_or_404(AvatarAnalytics, avatar=avatar)
 
-class AvatarSourceListCreateByHandleView(generics.ListCreateAPIView):
-    """Allows listing and creating AvatarSources for a specific Avatar handle."""
+class AvatarSourceListView(generics.ListCreateAPIView):
     serializer_class = AvatarSourceSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        handle = self.kwargs.get('handle')
-        avatar = get_avatar_by_handle_and_owner(handle, self.request.user)
+        avatar = get_object_or_404(Avatar, handle=self.kwargs["avatar_handle"])
         return AvatarSource.objects.filter(avatar=avatar)
 
     def perform_create(self, serializer):
-        handle = self.kwargs.get('handle')
-        avatar = get_avatar_by_handle_and_owner(handle, self.request.user)
+        avatar = get_object_or_404(Avatar, handle=self.kwargs["avatar_handle"])
+        # Replace-all semantics: delete old sources first
+        AvatarSource.objects.filter(avatar=avatar).delete()
         serializer.save(avatar=avatar)
 
+    def create(self, request, *args, **kwargs):
+        # Allow empty payload → "clear all sources"
+        if not request.data:  # handles [], {}, None, ""
+            avatar = get_object_or_404(Avatar, handle=self.kwargs["avatar_handle"])
+            AvatarSource.objects.filter(avatar=avatar).delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+
+        return super().create(request, *args, **kwargs)
 
 # --- Public Retrieval View (Recommended for the public facing URL) ---
 
