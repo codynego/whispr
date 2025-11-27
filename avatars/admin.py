@@ -180,9 +180,9 @@ class AvatarSettingsAdmin(admin.ModelAdmin):
     response_delay_ms.admin_order_field = 'async_delay_seconds'
 
     # FIX: created_at and updated_at are now fields on the model
-    list_display = ("avatar", "response_delay_ms", "visibility", "created_at") 
+    list_display = ("avatar", "response_delay_ms", "visibility") 
     search_fields = ("avatar__name",)
-    readonly_fields = ("created_at", "updated_at")
+
 
 
 # -----------------------
