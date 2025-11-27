@@ -177,6 +177,8 @@ class AvatarSettings(models.Model):
     visibility = models.CharField(max_length=20, choices=[("private","Private"), ("protected","Protected"), ("public","Public")], default="private")
     protected_code = models.CharField(max_length=100, blank=True, null=True)
     allow_owner_takeover = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f"Settings for {self.avatar.name}"
