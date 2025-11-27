@@ -3,8 +3,9 @@ from celery import shared_task
 from openai import OpenAI
 from avatars.models import AvatarConversation, AvatarMessage
 import numpy as np
+from django.conf import settings
 
-client = OpenAI()
+client = OpenAI(settings.OPENAI_API_KEY)
 
 
 # ------------------------------
