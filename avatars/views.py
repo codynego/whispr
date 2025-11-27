@@ -34,11 +34,12 @@ def get_avatar_by_handle_public(handle):
     Visibility is typically stored as 'public' string, not True boolean.
     """
     # FIX: Changed settings__visibility=True to the correct string value 'public'
-    return get_object_or_404(
-        Avatar.objects.select_related('settings'), 
-        handle=handle, 
-        settings__visibility='public' # Use the actual choice value
-    )
+    return get_object_or_404(Avatar, handle=handle)
+    # return get_object_or_404(
+    #     Avatar.objects.select_related('settings'), 
+    #     handle=handle, 
+    #     settings__visibility='public' # Use the actual choice value
+    # )
 
 
 # ----------------------------------------------------------------------
