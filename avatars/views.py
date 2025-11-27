@@ -26,7 +26,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.shortcuts import get_object_or_404
-from .tasks import train_avatar_task
+from avatars.tasks import train_avatar_task
 from avatars.services.chat_engine import generate_avatar_reply 
 
 
