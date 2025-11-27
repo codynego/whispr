@@ -91,6 +91,8 @@ class AvatarSourceListView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         avatar = get_object_or_404(Avatar, handle=self.kwargs["handle"])
+        print("Creating source for avatar:", avatar)
+        print("Request data:", self.request.data)
         # Replace-all semantics: delete old sources first
         AvatarSource.objects.filter(avatar=avatar).delete()
         serializer.save(avatar=avatar)
@@ -98,6 +100,8 @@ class AvatarSourceListView(generics.ListCreateAPIView):
     def create(self, request, *args, **kwargs):
         # Allow empty payload → "clear all sources"
         if not request.data:  # handles [], {}, None, ""
+            print("Clearing all sources for handle:", self.kwargs["handle"])
+            print(request.data)
             avatar = get_object_or_404(Avatar, handle=self.kwargs["handle"])
             AvatarSource.objects.filter(avatar=avatar).delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
