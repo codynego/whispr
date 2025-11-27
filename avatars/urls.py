@@ -4,7 +4,7 @@ from . import views
 
 urlpatterns = [
     # ----------------------------
-    # HANDLE-BASED CONVENIENCE ROUTES (For UI components)
+    # HANDLE-BASED CONVENIENCE ROUTES (For UI components - MUST be first)
     # ----------------------------
     
     # Avatar Detail, Settings, Analytics by Handle
@@ -24,14 +24,14 @@ urlpatterns = [
     # Feature Endpoints
     # ----------------------------
     
-    # Job Status (used for both training and chat polling)
+    # Job Status (using 'id' as lookup_field in the view, not 'pk')
     path("training-jobs/<uuid:id>/status/", views.AvatarTrainingJobStatusView.as_view(), name="avatar-trainingjob-status"),
     
-    # Owner Takeover
+    # Owner Takeover (by conversation UUID)
     path("conversations/<uuid:pk>/takeover/", views.AvatarConversationTakeoverView.as_view(), name="avatar-conversation-takeover"),
     
     # ----------------------------
-    # Core UUID Endpoints (Kept for standard CRUD)
+    # Core UUID Endpoints (Standard CRUD)
     # ----------------------------
     
     path("", views.AvatarListCreateView.as_view(), name="avatar-list-create"),

@@ -1,4 +1,3 @@
-# whisone/avatars/views.py
 from rest_framework import generics, permissions
 from .models import (
     Avatar, AvatarSource, AvatarTrainingJob, AvatarMemoryChunk, 
@@ -6,7 +5,7 @@ from .models import (
 )
 from .serializers import (
     AvatarSerializer, AvatarSourceSerializer, AvatarTrainingJobSerializer, 
-    AvatarMemoryChunkSerializer, AvatarConversationSerializer, 
+    AvatarConversationSerializer, 
     AvatarMessageSerializer, AvatarAnalyticsSerializer, AvatarSettingsSerializer,
 )
 
@@ -15,24 +14,26 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.shortcuts import get_object_or_404
 from avatars.tasks import train_avatar_task 
-from avatars.services.chat_engine import generate_avatar_reply # Assuming this returns task_id now, or reply for sync
-from datetime import datetime
-from django.db.models import Q, Max # For analytics and history
+from avatars.services.chat_engine import generate_avatar_reply # Assuming this returns a Celery task ID
+from django.db.models import Q
 import uuid
 
 # --- Helper Functions ---
 def get_avatar_by_handle_and_owner(handle, user):
+    """Retrieves an Avatar by handle, ensuring the user is the owner."""
     return get_object_or_404(Avatar, handle=handle, owner=user)
 
 def get_avatar_by_handle_public(handle):
+    """Retrieves an Avatar by handle only if its settings mark it as public."""
+    # Assumes AvatarSettings is related via a one-to-one field named 'settings'
     return get_object_or_404(Avatar.objects.select_related('settings'), handle=handle, settings__visibility=True)
 
 # ----------------------------------------------------------------------
-# NEW HANDLE-BASED CONVENIENCE VIEWS (Used by the UI)
+# 1. NEW HANDLE-BASED CONVENIENCE VIEWS (Used by the Configuration UI)
 # ----------------------------------------------------------------------
 
 class AvatarRetrieveByHandleView(generics.RetrieveAPIView):
-    """Allows retrieval of Avatar details (including nested settings) by handle."""
+    """Allows retrieval of Avatar details (including nested settings/analytics) by handle."""
     serializer_class = AvatarSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -48,6 +49,7 @@ class AvatarSettingsByHandleView(generics.RetrieveUpdateAPIView):
     def get_object(self):
         handle = self.kwargs.get('handle')
         avatar = get_avatar_by_handle_and_owner(handle, self.request.user)
+        # Note: AvatarSettings should be auto-created when the Avatar is created
         return get_object_or_404(AvatarSettings, avatar=avatar)
 
 class AvatarAnalyticsByHandleView(generics.RetrieveAPIView):
@@ -58,7 +60,7 @@ class AvatarAnalyticsByHandleView(generics.RetrieveAPIView):
     def get_object(self):
         handle = self.kwargs.get('handle')
         avatar = get_avatar_by_handle_and_owner(handle, self.request.user)
-        # Assuming AvatarAnalytics is created alongside Avatar
+        # Note: AvatarAnalytics should be auto-created when the Avatar is created
         return get_object_or_404(AvatarAnalytics, avatar=avatar)
 
 class AvatarSourceListCreateByHandleView(generics.ListCreateAPIView):
@@ -75,22 +77,16 @@ class AvatarSourceListCreateByHandleView(generics.ListCreateAPIView):
         handle = self.kwargs.get('handle')
         avatar = get_avatar_by_handle_and_owner(handle, self.request.user)
         serializer.save(avatar=avatar)
-        # Assuming is_config_saved flag is set here (logic omitted)
-
 
 # ----------------------------------------------------------------------
-# CHAT/TRAIN/HISTORY VIEWS
+# 2. CHAT, TRAINING, AND HISTORY VIEWS
 # ----------------------------------------------------------------------
 
 class AvatarChatView(APIView):
-    """
-    Endpoint for visitors to chat with an Avatar.
-    Note: Modified to be ASYNC and return a task_id for polling.
-    """
+    """Endpoint for visitors to chat with an Avatar (Async request)."""
     permission_classes = [permissions.AllowAny]
 
     def post(self, request, handle):
-        # Use get_avatar_by_handle_public to ensure the avatar is public
         try:
             avatar = get_avatar_by_handle_public(handle)
         except Exception:
@@ -102,77 +98,64 @@ class AvatarChatView(APIView):
         if not message_text or not visitor_id:
             return Response({"error": "Message and visitor_id are required."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Get or create an active conversation
         conversation, _ = AvatarConversation.objects.get_or_create(
-            avatar=avatar,
-            visitor_id=visitor_id,
-            ended_at=None
+            avatar=avatar, visitor_id=visitor_id, ended_at=None
         )
 
+        # Save visitor message
         visitor_message = AvatarMessage.objects.create(
-            conversation=conversation,
-            role="visitor",
-            content=message_text
+            conversation=conversation, role="visitor", content=message_text
         )
 
-        # Trigger Celery task (ASYNC)
+        # Trigger Celery task
         task_id = generate_avatar_reply.delay(
             conversation_id=str(conversation.id),
             user_message_id=str(visitor_message.id)
         )
         
-        # NOTE: generate_avatar_reply now needs to be an async task that returns its own ID
         return Response({
             "conversation_id": str(conversation.id),
             "task_id": str(task_id), # Return the Celery task ID for polling
-        }, status=status.HTTP_202_ACCEPTED) # 202 Accepted for async job
+        }, status=status.HTTP_202_ACCEPTED)
 
 class AvatarTrainView(APIView):
-    """Triggers the asynchronous Celery training task."""
+    """Triggers the asynchronous Celery training task for an Avatar."""
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, handle):
         avatar = get_avatar_by_handle_and_owner(handle, request.user)
 
         job = AvatarTrainingJob.objects.create(
-            avatar=avatar,
-            status="pending" # Use pending/queued before task starts
+            avatar=avatar, status="pending" 
         )
 
         train_avatar_task.delay(str(job.id))
 
         return Response({
-            "job_id": str(job.id),
-            "status": job.status,
+            "job_id": str(job.id), "status": job.status,
             "message": f"Training for avatar '{avatar.name}' has been queued."
         }, status=status.HTTP_201_CREATED)
 
 class AvatarTrainingJobStatusView(generics.RetrieveAPIView):
-    """Retrieves the status of a specific training job (for polling)."""
+    """Retrieves the status of a specific training or chat job (for polling)."""
     queryset = AvatarTrainingJob.objects.all()
     serializer_class = AvatarTrainingJobSerializer
-    lookup_field = "id"
-    # Allow public chat polling with a unique job ID, but restrict detailed job access to owner
+    lookup_field = "id" # Matches the <uuid:id> in urls.py
     permission_classes = [permissions.AllowAny] 
     
-    # Override retrieve to add dummy progress for UI testing
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
         serializer = self.get_serializer(instance)
-        
         data = serializer.data
         
-        # --- Conceptual Progress Logic for UI ---
-        # This should come from Celery backend or Redis, but here for UI test:
-        if data['status'] == 'started':
-            data['progress'] = 30
-        elif data['status'] == 'processing':
-            data['progress'] = 75
-        elif data['status'] == 'success':
-            data['progress'] = 100
-        # --- End Conceptual Logic ---
-
-        # If this is a chat response task, return the last assistant message
-        if instance.task_type == 'chat_reply' and data['status'] == 'done': # Assuming AvatarTrainingJob model is reused for chat tasks
+        # Attach progress logic (conceptual)
+        if data['status'] == 'started': data['progress'] = 30
+        elif data['status'] == 'processing': data['progress'] = 75
+        elif data['status'] == 'success': data['progress'] = 100
+        
+        # If chat job is complete, return the assistant reply
+        if hasattr(instance, 'task_type') and instance.task_type == 'chat_reply' and data['status'] == 'success':
             last_message = AvatarMessage.objects.filter(conversation__avatar=instance.avatar).order_by('-created_at').first()
             if last_message and last_message.role == 'assistant':
                 data['assistant_reply'] = last_message.content
@@ -181,7 +164,7 @@ class AvatarTrainingJobStatusView(generics.RetrieveAPIView):
 
 
 class AvatarConversationHistoryView(generics.ListAPIView):
-    """Retrieves the conversation history for a visitor/avatar pair."""
+    """Retrieves the conversation history for a visitor/avatar pair, primarily for the public chat interface."""
     serializer_class = AvatarMessageSerializer
     permission_classes = [permissions.AllowAny]
 
@@ -191,20 +174,18 @@ class AvatarConversationHistoryView(generics.ListAPIView):
 
         avatar = get_object_or_404(Avatar, handle=handle)
 
-        # Get the latest conversation for this visitor_id and avatar
+        # Get the latest ongoing conversation for this pair
         conversation = AvatarConversation.objects.filter(
-            avatar=avatar,
-            visitor_id=visitor_id
+            avatar=avatar, visitor_id=visitor_id
         ).order_by('-started_at').first()
 
-        if not conversation:
-            return AvatarMessage.objects.none()
+        if not conversation: return AvatarMessage.objects.none()
 
         return AvatarMessage.objects.filter(conversation=conversation).order_by('created_at')
 
 
 class AvatarConversationTakeoverView(APIView):
-    """Allows the Avatar owner to take over a live conversation."""
+    """Allows the Avatar owner to take over a live conversation by ID."""
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
@@ -220,88 +201,126 @@ class AvatarConversationTakeoverView(APIView):
         conversation.taken_over_by_owner = True
         conversation.save(update_fields=['taken_over_by_owner'])
 
-        # Create a notification message in the conversation stream
+        # Log the takeover action in the chat history
         AvatarMessage.objects.create(
-            conversation=conversation,
-            role="owner",
-            content=f"Human owner has taken over the chat. 👋"
+            conversation=conversation, role="owner", content=f"Human owner has taken over the chat. 👋"
         )
 
         return Response({"status": "takeover_active"}, status=status.HTTP_200_OK)
 
 # ----------------------------------------------------------------------
-# ORIGINAL UUID-BASED VIEWS (Kept for completeness)
+# 3. ORIGINAL UUID-BASED VIEWS (Standard CRUD operations)
 # ----------------------------------------------------------------------
 
 class AvatarListCreateView(generics.ListCreateAPIView):
+    """List Avatars owned by the current user, or create a new one."""
     queryset = Avatar.objects.all()
     serializer_class = AvatarSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return self.queryset.filter(owner=self.request.user)
 
     def perform_create(self, serializer):
         serializer.save(owner=self.request.user)
 
 class AvatarRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    """Retrieve, Update, or Destroy an Avatar by UUID (PK)."""
     queryset = Avatar.objects.all()
     serializer_class = AvatarSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_queryset(self):
+        return self.queryset.filter(owner=self.request.user)
+
+
+class AvatarSourceListCreateView(generics.ListCreateAPIView):
+    """List all AvatarSources, or create a new one."""
+    queryset = AvatarSource.objects.all()
+    serializer_class = AvatarSourceSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    # Note: Requires client to supply 'avatar' ID in the POST request body.
+
+
 class AvatarSourceRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    """Retrieve, Update, or Destroy an AvatarSource by UUID (PK)."""
     queryset = AvatarSource.objects.all()
     serializer_class = AvatarSourceSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+
 class AvatarTrainingJobListView(generics.ListAPIView):
+    """List all AvatarTrainingJobs."""
     queryset = AvatarTrainingJob.objects.all()
     serializer_class = AvatarTrainingJobSerializer
     permission_classes = [permissions.IsAuthenticated]
+
 
 class AvatarTrainingJobDetailView(generics.RetrieveAPIView):
+    """Retrieve details of an AvatarTrainingJob by UUID (PK)."""
     queryset = AvatarTrainingJob.objects.all()
     serializer_class = AvatarTrainingJobSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+
 class AvatarMemoryChunkListView(generics.ListAPIView):
+    """List all AvatarMemoryChunks."""
     queryset = AvatarMemoryChunk.objects.all()
     serializer_class = AvatarMemoryChunkSerializer
     permission_classes = [permissions.IsAuthenticated]
+
 
 class AvatarMemoryChunkDetailView(generics.RetrieveAPIView):
+    """Retrieve details of an AvatarMemoryChunk by UUID (PK)."""
     queryset = AvatarMemoryChunk.objects.all()
     serializer_class = AvatarMemoryChunkSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+
 class AvatarConversationListCreateView(generics.ListCreateAPIView):
+    """List or Create AvatarConversations."""
     queryset = AvatarConversation.objects.all()
     serializer_class = AvatarConversationSerializer
     permission_classes = [permissions.AllowAny]
+
 
 class AvatarConversationRetrieveDestroyView(generics.RetrieveDestroyAPIView):
+    """Retrieve or Destroy an AvatarConversation by UUID (PK)."""
     queryset = AvatarConversation.objects.all()
     serializer_class = AvatarConversationSerializer
     permission_classes = [permissions.AllowAny]
 
+
 class AvatarMessageListCreateView(generics.ListCreateAPIView):
+    """List or Create AvatarMessages."""
     queryset = AvatarMessage.objects.all()
     serializer_class = AvatarMessageSerializer
     permission_classes = [permissions.AllowAny]
+
 
 class AvatarMessageRetrieveView(generics.RetrieveAPIView):
+    """Retrieve an AvatarMessage by UUID (PK)."""
     queryset = AvatarMessage.objects.all()
     serializer_class = AvatarMessageSerializer
     permission_classes = [permissions.AllowAny]
 
+
 class AvatarAnalyticsListView(generics.ListAPIView):
+    """List all AvatarAnalytics records."""
     queryset = AvatarAnalytics.objects.all()
     serializer_class = AvatarAnalyticsSerializer
     permission_classes = [permissions.IsAuthenticated]
+
 
 class AvatarAnalyticsDetailView(generics.RetrieveAPIView):
+    """Retrieve an AvatarAnalytics record by UUID (PK)."""
     queryset = AvatarAnalytics.objects.all()
     serializer_class = AvatarAnalyticsSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+
 class AvatarSettingsRetrieveUpdateView(generics.RetrieveUpdateAPIView):
+    """Retrieve or Update AvatarSettings by UUID (PK)."""
     queryset = AvatarSettings.objects.all()
     serializer_class = AvatarSettingsSerializer
     permission_classes = [permissions.IsAuthenticated]
