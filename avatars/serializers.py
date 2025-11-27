@@ -85,7 +85,8 @@ class AvatarSerializer(serializers.ModelSerializer):
         
     def get_last_training_job_id(self, obj):
         """Retrieves the ID of the most recently started training job for monitoring."""
-        last_job = obj.avatartrainingjob_set.order_by('-started_at').first()
+        # FIX APPLIED: Changed avatartrainingjob_set to the correct related_name 'training_jobs'
+        last_job = obj.training_jobs.order_by('-started_at').first()
         return str(last_job.id) if last_job else None
 
 
