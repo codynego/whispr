@@ -7,6 +7,7 @@ from .serializers import (
     AvatarSerializer, AvatarSourceSerializer, AvatarTrainingJobSerializer, 
     AvatarConversationSerializer, 
     AvatarMessageSerializer, AvatarAnalyticsSerializer, AvatarSettingsSerializer,
+    AvatarMemoryChunkSerializer
 )
 
 from rest_framework.views import APIView
