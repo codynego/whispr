@@ -5,7 +5,7 @@ from avatars.models import AvatarConversation, AvatarMessage
 import numpy as np
 from django.conf import settings
 
-client = OpenAI(settings.OPENAI_API_KEY)
+client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
 
 # ------------------------------
