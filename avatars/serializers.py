@@ -117,15 +117,44 @@ class AvatarMessageSerializer(serializers.ModelSerializer):
 # Optional / Advanced Models
 # ----------------------------
 
+from rest_framework import serializers
+from rest_framework.exceptions import ValidationError
+from .models import AvatarSource # Assuming AvatarSource is the model
+
 class AvatarSourceSerializer(serializers.ModelSerializer):
-    """Handles serialization for AvatarSource (data sources for training)."""
+    """
+    Handles serialization for AvatarSource (data sources for training).
+    
+    NOTE: The POST/PATCH view should be written to handle a list of these
+    serializers to update the entire set of sources for an avatar.
+    """
+    
+    # 1. Use a BooleanField for enabled, which should be calculated from 
+    # the incoming tone/knowledge flags to simplify the logic
+    enabled = serializers.BooleanField(read_only=True) # Will be calculated by the view logic
+
     class Meta:
         model = AvatarSource
         fields = [
             "id", "avatar", "source_type", "metadata", "include_for_tone", 
             "include_for_knowledge", "enabled", "created_at",
         ]
-        read_only_fields = ["created_at"]
+        read_only_fields = ["id", "avatar", "enabled", "created_at"]
+        
+    def validate_metadata(self, value):
+        """
+        Validate that if metadata is provided, it's a valid JSON structure 
+        (e.g., contains 'ids' for item-selectable sources).
+        """
+        # Example validation: If source_type requires specific items (e.g., notes, uploads),
+        # the metadata must contain the 'ids' key.
+        
+        # NOTE: The actual source_type is not available here, so you must rely on the view 
+        # for complex validation across fields. However, we ensure the structure is an object.
+        if value is not None and not isinstance(value, dict):
+             raise ValidationError("Metadata must be a JSON object.")
+
+        return value
 
 
 class AvatarTrainingJobSerializer(serializers.ModelSerializer):
