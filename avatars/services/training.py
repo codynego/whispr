@@ -1,5 +1,5 @@
 # whisone/avatars/training.py
-from .models import Avatar, AvatarSource, AvatarMemoryChunk, AvatarTrainingJob
+from avatars.models import Avatar, AvatarSource, AvatarMemoryChunk, AvatarTrainingJob
 from django.utils import timezone
 
 
