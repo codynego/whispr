@@ -1,4 +1,3 @@
-# whisone/avatars/models.py
 import uuid
 from django.db import models
 from django.conf import settings
@@ -120,7 +119,8 @@ class AvatarTrainingJob(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    avatar = models.ForeignKey(Avatar, on_delete=models.CASCADE, related_name="training_jobs")
+    # The related_name 'training_jobs' is correct for AvatarSerializer.get_last_training_job_id
+    avatar = models.ForeignKey(Avatar, on_delete=models.CASCADE, related_name="training_jobs") 
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="queued")
     logs = models.TextField(blank=True, null=True)
     started_at = models.DateTimeField(null=True, blank=True)
@@ -174,6 +174,7 @@ class AvatarSettings(models.Model):
     """
     avatar = models.OneToOneField(Avatar, on_delete=models.CASCADE, related_name="settings")
     async_delay_seconds = models.IntegerField(default=5)
+    # Note: Visibility choices are public, protected, private
     visibility = models.CharField(max_length=20, choices=[("private","Private"), ("protected","Protected"), ("public","Public")], default="private")
     protected_code = models.CharField(max_length=100, blank=True, null=True)
     allow_owner_takeover = models.BooleanField(default=True)
