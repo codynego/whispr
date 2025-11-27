@@ -85,6 +85,7 @@ class AvatarSourceListView(generics.ListCreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
+        print("handle:", self.kwargs["handle"])
         avatar = get_object_or_404(Avatar, handle=self.kwargs["handle"])
         return AvatarSource.objects.filter(avatar=avatar)
 
