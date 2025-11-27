@@ -85,11 +85,11 @@ class AvatarSourceListView(generics.ListCreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        avatar = get_object_or_404(Avatar, handle=self.kwargs["avatar_handle"])
+        avatar = get_object_or_404(Avatar, handle=self.kwargs["handle"])
         return AvatarSource.objects.filter(avatar=avatar)
 
     def perform_create(self, serializer):
-        avatar = get_object_or_404(Avatar, handle=self.kwargs["avatar_handle"])
+        avatar = get_object_or_404(Avatar, handle=self.kwargs["handle"])
         # Replace-all semantics: delete old sources first
         AvatarSource.objects.filter(avatar=avatar).delete()
         serializer.save(avatar=avatar)
@@ -97,7 +97,7 @@ class AvatarSourceListView(generics.ListCreateAPIView):
     def create(self, request, *args, **kwargs):
         # Allow empty payload → "clear all sources"
         if not request.data:  # handles [], {}, None, ""
-            avatar = get_object_or_404(Avatar, handle=self.kwargs["avatar_handle"])
+            avatar = get_object_or_404(Avatar, handle=self.kwargs["handle"])
             AvatarSource.objects.filter(avatar=avatar).delete()
             return Response(status=status.HTTP_204_NO_CONTENT)
 

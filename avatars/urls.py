@@ -24,7 +24,7 @@ urlpatterns = [
     path("<slug:handle>/history/", views.AvatarConversationHistoryView.as_view(), name="avatar-conversation-history"),
     
     # Sources by Handle
-    path("<slug:handle>/sources/", views.AvatarSourceListCreateByHandleView.as_view(), name="avatar-source-list-create-by-handle"),
+    path("<slug:handle>/sources/", views.AvatarSourceListCreateView.as_view(), name="avatar-source-list-create-by-handle"),
     
     # ----------------------------
     # Feature Endpoints
