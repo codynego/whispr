@@ -3,7 +3,7 @@
 from celery import shared_task
 from django.shortcuts import get_object_or_404
 from avatars.models import AvatarTrainingJob, Avatar
-from avatars.tasks.training import train_avatar
+from avatars.services.training import train_avatar
 
 
 @shared_task
