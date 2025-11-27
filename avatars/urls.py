@@ -6,7 +6,7 @@ urlpatterns = [
     # ----------------------------
     # PUBLIC ACCESS ROUTE (MUST be first to catch unauthenticated, public traffic)
     # ----------------------------
-    path("<slug:handle>/public/", views.AvatarRetrievePublicView.as_view(), name="avatar-retrieve-public"),
+    path("<str:handle>/public/", views.AvatarRetrievePublicView.as_view(), name="avatar-retrieve-public"),
     
     # ----------------------------
     # HANDLE-BASED CONVENIENCE ROUTES (For UI components - Owner/Authenticated traffic)
