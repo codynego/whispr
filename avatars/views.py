@@ -37,7 +37,7 @@ def get_avatar_by_handle_public(handle):
 class AvatarRetrieveByHandleView(generics.RetrieveAPIView):
     """Allows retrieval of Avatar details (including nested settings/analytics) by handle."""
     serializer_class = AvatarSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.AllowAny]
 
     def get_object(self):
         handle = self.kwargs.get('handle')
