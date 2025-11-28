@@ -1,4 +1,4 @@
-# unified/urls.py
+# whisone/urls.py
 
 from django.urls import path
 from .views import (
