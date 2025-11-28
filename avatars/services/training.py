@@ -75,12 +75,18 @@ def train_avatar(avatar: Avatar, job: AvatarTrainingJob):
                 # DEBUG: Log number of items retrieved for this source
                 logger.debug(f"Files: Retrieved {files.count()} files.")
                 
+                
                 for f in files:
+                    if file.embedding:
+                        embeddings = file.embedding
+                    else:
+                        embeddings = []  # Or some default/fallback
                     text = f.content
                     all_texts.append(text)
                     AvatarMemoryChunk.objects.create(
                         avatar=avatar,
                         text=text,
+                        embedding=embeddings,
                         source_type="uploads"
                     )
 
