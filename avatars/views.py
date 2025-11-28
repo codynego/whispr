@@ -88,7 +88,7 @@ class AvatarSourceListCreateView(generics.ListCreateAPIView):
     # We define get_queryset to ensure only sources for the current avatar are listed
     def get_queryset(self):
         avatar_handle = self.kwargs["handle"]
-        avatar = get_object_or_404(Avatar, handle=avatar_handle)
+        avatar = get_object_or_404(Avatar, handle=handle)
         return AvatarSource.objects.filter(avatar=avatar)
 
     def get_serializer_context(self):
@@ -314,11 +314,11 @@ class AvatarRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
         return self.queryset.filter(owner=self.request.user)
 
 
-class AvatarSourceListCreateView(generics.ListCreateAPIView):
-    """List all AvatarSources, or create a new one."""
-    queryset = AvatarSource.objects.all()
-    serializer_class = AvatarSourceSerializer
-    permission_classes = [permissions.IsAuthenticated]
+# class AvatarSourceListCreateView(generics.ListCreateAPIView):
+#     """List all AvatarSources, or create a new one."""
+#     queryset = AvatarSource.objects.all()
+#     serializer_class = AvatarSourceSerializer
+#     permission_classes = [permissions.IsAuthenticated]
 
 
 class AvatarSourceRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):

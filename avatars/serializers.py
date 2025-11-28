@@ -121,11 +121,7 @@ class AvatarMessageSerializer(serializers.ModelSerializer):
 
 # avatars/serializers.py
 
-from rest_framework import serializers
-from .models import AvatarSource
 
-# Custom ListSerializer for bulk operations (Optional but good practice for clarity)
-c# avatars/serializers.py
 
 from rest_framework import serializers
 from .models import AvatarSource
