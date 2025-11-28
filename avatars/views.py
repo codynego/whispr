@@ -99,27 +99,35 @@ class AvatarSourceListCreateView(generics.ListCreateAPIView):
         return context
 
     def create(self, request, *args, **kwargs):
-        """
-        Handles bulk creation (POST with a list).
-        It first deletes all existing sources for the avatar (implicit "update/overwrite")
-        then creates the new list of sources.
-        """
-        avatar = self.get_serializer_context()["avatar"]
-        
-        # 1. DELETE EXISTING SOURCES (Simulating an OVERWRITE/UPDATE operation)
-        # Assuming the intent is to replace the old sources with the new list.
-        AvatarSource.objects.filter(avatar=avatar).delete()
+            avatar = self.get_serializer_context()["avatar"]
+            
+            # 1. DELETE EXISTING SOURCES
+            print(f"\n--- VIEW: Deleting existing sources for Avatar: {avatar.handle} ---")
+            AvatarSource.objects.filter(avatar=avatar).delete()
+            print("Deletion complete.")
 
-        # 2. CREATE NEW SOURCES (Using many=True)
-        # By setting many=True, DRF uses the list_serializer_class for bulk handling
-        serializer = self.get_serializer(data=request.data, many=True)
-        serializer.is_valid(raise_exception=True)
-        
-        # The ListSerializer's `create` method handles the bulk save
-        self.perform_create(serializer) 
+            # 2. CREATE NEW SOURCES (Using many=True)
+            serializer = self.get_serializer(data=request.data, many=True)
+            
+            print("\n--- VIEW: Checking Serializer Validity ---")
+            
+            if serializer.is_valid():
+                print("VIEW: Serializer is valid. Proceeding to perform_create (ListSerializer.create)...")
+                # This triggers ListSerializer.create()
+                self.perform_create(serializer) 
 
-        headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+                headers = self.get_success_headers(serializer.data)
+                print("VIEW: Creation successful.")
+                return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+            else:
+                # 💡 CRITICAL DEBUG STEP: Print the detailed errors
+                print("\n!!! VIEW ERROR: Serializer validation FAILED !!!")
+                print("--- FULL SERIALIZER ERRORS ARRAY ---")
+                print(serializer.errors)
+                print("--------------------------------------")
+                
+                # Return the errors in the response so the frontend can display them
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 # --- Public Retrieval View (Recommended for the public facing URL) ---
 
@@ -314,11 +322,6 @@ class AvatarRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
         return self.queryset.filter(owner=self.request.user)
 
 
-# class AvatarSourceListCreateView(generics.ListCreateAPIView):
-#     """List all AvatarSources, or create a new one."""
-#     queryset = AvatarSource.objects.all()
-#     serializer_class = AvatarSourceSerializer
-#     permission_classes = [permissions.IsAuthenticated]
 
 
 class AvatarSourceRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
