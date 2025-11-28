@@ -125,22 +125,50 @@ from rest_framework import serializers
 from .models import AvatarSource
 
 # Custom ListSerializer for bulk operations (Optional but good practice for clarity)
+c# avatars/serializers.py
+
+from rest_framework import serializers
+from .models import AvatarSource
+
 class AvatarSourceListSerializer(serializers.ListSerializer):
     """Handles bulk creation of AvatarSource instances."""
     def create(self, validated_data):
+        print("\n--- AvatarSourceListSerializer.create START ---")
+        print(f"Validated Data (Count): {len(validated_data)}")
+        
         # We need the avatar instance, which is typically passed from the view
         # or accessed via self.context. We'll assume it's in context for now.
         avatar = self.context.get("avatar")
+        print(f"Context Avatar: {avatar}")
+        
         if not avatar:
+            print("ERROR: Avatar context is missing!")
             raise serializers.ValidationError("Avatar context must be provided for bulk creation.")
 
-        sources = [
-            AvatarSource(avatar=avatar, **item)
-            for item in validated_data
-        ]
-        return AvatarSource.objects.bulk_create(sources)
+        # Optional: Print the first few items to confirm structure
+        if validated_data:
+            print(f"First Validated Item: {validated_data[0]}")
+            
+        try:
+            # Prepare instances for bulk creation
+            sources = [
+                AvatarSource(avatar=avatar, **item)
+                for item in validated_data
+            ]
+            print(f"Prepared {len(sources)} AvatarSource instances for bulk_create.")
+            
+            # Perform the bulk creation
+            result = AvatarSource.objects.bulk_create(sources)
+            print("Bulk creation successful.")
+            return result
+        except Exception as e:
+            print(f"!!! CRITICAL ERROR during bulk_create: {e}")
+            raise e
+        finally:
+            print("--- AvatarSourceListSerializer.create END ---\n")
 
-# The main serializer remains largely the same
+
+# The main serializer
 class AvatarSourceSerializer(serializers.ModelSerializer):
     metadata = serializers.JSONField(default=dict)
 
@@ -156,22 +184,32 @@ class AvatarSourceSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "created_at"]
         
-        # 💡 IMPORTANT ADDITION: Specify the list serializer to use for bulk operations
+        # Specify the list serializer to use for bulk operations
         list_serializer_class = AvatarSourceListSerializer 
 
     def validate(self, attrs):
+        print(f"\n--- AvatarSourceSerializer.validate START (Type: {attrs.get('source_type', 'N/A')}) ---")
+        
         # Your existing validation logic is fine
         tone = attrs.get("include_for_tone", False)
         knowledge = attrs.get("include_for_knowledge", False)
+        
+        print(f"Tone: {tone}, Knowledge: {knowledge}")
+        
         if not tone and not knowledge and attrs.get("source_type"):
-            pass # allow it (means "delete this source")
+            print("Validation PASS: Source is included but flags are false (expected behavior if used for deletion).")
+            pass 
+        else:
+            print("Validation PASS: Flags are set or source_type is missing.")
+            
+        print("--- AvatarSourceSerializer.validate END ---\n")
         return attrs
 
     def create(self, validated_data):
-        # We don't need to implement a single create method here 
-        # as the ListSerializer will handle the bulk creation.
-        # If the view is called without many=True, this method would be needed.
-        # For simplicity, let's keep it simple and focus on the bulk use case.
+        # This method is only used if `many=False` is passed to the serializer.
+        print("\n--- AvatarSourceSerializer.create (SINGLE ITEM) CALLED ---")
+        print("This should generally NOT be called when using AvatarSourceListSerializer.")
+        print(f"Validated Data: {validated_data}")
         return super().create(validated_data)
 
 
