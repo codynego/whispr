@@ -77,8 +77,8 @@ def train_avatar(avatar: Avatar, job: AvatarTrainingJob):
                 
                 
                 for f in files:
-                    if file.embedding:
-                        embeddings = file.embedding
+                    if f.embedding:
+                        embeddings = f.embedding
                     else:
                         embeddings = []  # Or some default/fallback
                     text = f.content
