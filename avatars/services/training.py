@@ -41,6 +41,7 @@ def train_avatar(avatar: Avatar, job: AvatarTrainingJob):
             # Notes
             # ---------------------
             if source.source_type == "notes" and source.include_for_knowledge:
+
                 note_ids = source.metadata.get("note_ids", [])
                 print(f"Note IDs to process: {note_ids}")  # DEBUG print statement
                 from whisone.models import Note
@@ -64,9 +65,8 @@ def train_avatar(avatar: Avatar, job: AvatarTrainingJob):
             # File Uploads
             # ---------------------
             elif source.source_type == "uploads" and source.include_for_knowledge:
-                file_ids = source.metadata.get("file_ids", [])
+                file_ids = source.metadata.get("ids", [])
                 print(f"File IDs to process: {file_ids}")  # DEBUG print statement
-                file_ids = source.metadata.get("file_ids", [])
                 print(f"Fetching UploadedFiles for Avatar Owner ID: {avatar.owner.id}")  # DEBUG print statement
                 from whisone.models import UploadedFile
                 files = UploadedFile.objects.filter(id__in=file_ids, user=avatar.owner)
