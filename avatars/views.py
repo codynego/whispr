@@ -80,33 +80,46 @@ class AvatarAnalyticsByHandleView(generics.RetrieveAPIView):
         avatar = get_avatar_by_handle_and_owner(handle, self.request.user)
         return get_object_or_404(AvatarAnalytics, avatar=avatar)
 
-class AvatarSourceListView(generics.ListCreateAPIView):
-    serializer_class = AvatarSourceSerializer
-    permission_classes = [permissions.IsAuthenticated]
+# avatars/views.py
 
+class AvatarSourceListCreateView(generics.ListCreateAPIView):
+    serializer_class = AvatarSourceSerializer
+    
+    # We define get_queryset to ensure only sources for the current avatar are listed
     def get_queryset(self):
-        print("handle:", self.kwargs["handle"])
-        avatar = get_object_or_404(Avatar, handle=self.kwargs["handle"])
+        avatar_handle = self.kwargs["avatar_handle"]
+        avatar = get_object_or_404(Avatar, handle=avatar_handle)
         return AvatarSource.objects.filter(avatar=avatar)
 
-    def perform_create(self, serializer):
-        avatar = get_object_or_404(Avatar, handle=self.kwargs["handle"])
-        print("Creating source for avatar:", avatar)
-        print("Request data:", self.request.data)
-        # Replace-all semantics: delete old sources first
-        AvatarSource.objects.filter(avatar=avatar).delete()
-        serializer.save(avatar=avatar)
+    def get_serializer_context(self):
+        """Add the avatar object to the serializer context for use in ListSerializer."""
+        context = super().get_serializer_context()
+        avatar_handle = self.kwargs["avatar_handle"]
+        context["avatar"] = get_object_or_404(Avatar, handle=avatar_handle)
+        return context
 
     def create(self, request, *args, **kwargs):
-        # Allow empty payload → "clear all sources"
-        if not request.data:  # handles [], {}, None, ""
-            print("Clearing all sources for handle:", self.kwargs["handle"])
-            print(request.data)
-            avatar = get_object_or_404(Avatar, handle=self.kwargs["handle"])
-            AvatarSource.objects.filter(avatar=avatar).delete()
-            return Response(status=status.HTTP_204_NO_CONTENT)
+        """
+        Handles bulk creation (POST with a list).
+        It first deletes all existing sources for the avatar (implicit "update/overwrite")
+        then creates the new list of sources.
+        """
+        avatar = self.get_serializer_context()["avatar"]
+        
+        # 1. DELETE EXISTING SOURCES (Simulating an OVERWRITE/UPDATE operation)
+        # Assuming the intent is to replace the old sources with the new list.
+        AvatarSource.objects.filter(avatar=avatar).delete()
 
-        return super().create(request, *args, **kwargs)
+        # 2. CREATE NEW SOURCES (Using many=True)
+        # By setting many=True, DRF uses the list_serializer_class for bulk handling
+        serializer = self.get_serializer(data=request.data, many=True)
+        serializer.is_valid(raise_exception=True)
+        
+        # The ListSerializer's `create` method handles the bulk save
+        self.perform_create(serializer) 
+
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 # --- Public Retrieval View (Recommended for the public facing URL) ---
 

@@ -29,7 +29,7 @@ class AvatarSettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = AvatarSettings
         fields = [
-            # UI names
+
             "is_public", 
             "disclaimer_text", 
             "response_delay_ms", 
@@ -119,6 +119,28 @@ class AvatarMessageSerializer(serializers.ModelSerializer):
 
 # serializers.py (updated section only)
 
+# avatars/serializers.py
+
+from rest_framework import serializers
+from .models import AvatarSource
+
+# Custom ListSerializer for bulk operations (Optional but good practice for clarity)
+class AvatarSourceListSerializer(serializers.ListSerializer):
+    """Handles bulk creation of AvatarSource instances."""
+    def create(self, validated_data):
+        # We need the avatar instance, which is typically passed from the view
+        # or accessed via self.context. We'll assume it's in context for now.
+        avatar = self.context.get("avatar")
+        if not avatar:
+            raise serializers.ValidationError("Avatar context must be provided for bulk creation.")
+
+        sources = [
+            AvatarSource(avatar=avatar, **item)
+            for item in validated_data
+        ]
+        return AvatarSource.objects.bulk_create(sources)
+
+# The main serializer remains largely the same
 class AvatarSourceSerializer(serializers.ModelSerializer):
     metadata = serializers.JSONField(default=dict)
 
@@ -133,14 +155,24 @@ class AvatarSourceSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = ["id", "created_at"]
+        
+        # 💡 IMPORTANT ADDITION: Specify the list serializer to use for bulk operations
+        list_serializer_class = AvatarSourceListSerializer 
 
     def validate(self, attrs):
+        # Your existing validation logic is fine
         tone = attrs.get("include_for_tone", False)
         knowledge = attrs.get("include_for_knowledge", False)
         if not tone and not knowledge and attrs.get("source_type"):
-            # Optional: allow it (means "delete this source")
-            pass
+            pass # allow it (means "delete this source")
         return attrs
+
+    def create(self, validated_data):
+        # We don't need to implement a single create method here 
+        # as the ListSerializer will handle the bulk creation.
+        # If the view is called without many=True, this method would be needed.
+        # For simplicity, let's keep it simple and focus on the bulk use case.
+        return super().create(validated_data)
 
 
 class AvatarTrainingJobSerializer(serializers.ModelSerializer):
