@@ -95,7 +95,7 @@ RULES:
         temperature=0.8,
     )
 
-    final_reply = completion.output_text
+    final_reply = completion.choices[0].message.content
 
     # 7. Save the final avatar reply
     final_message = AvatarMessage.objects.create(
