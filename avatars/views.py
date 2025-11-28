@@ -208,40 +208,64 @@ class AvatarTrainView(APIView):
         }, status=status.HTTP_201_CREATED)
 
 class AvatarTrainingJobStatusView(generics.RetrieveAPIView):
-    """Retrieves the status of a specific training or chat job (for polling)."""
+    """
+    Retrieves the status of a specific training job, ensuring the response 
+    is formatted precisely for the frontend polling monitor.
+    
+    Endpoint: GET /api/avatars/training-jobs/<uuid:id>/status/
+    """
     queryset = AvatarTrainingJob.objects.all()
     serializer_class = AvatarTrainingJobSerializer
     lookup_field = "id" 
-    # FIX: Added permission check here. If the job is for a private avatar, only the owner should see it.
-    # However, since the chat endpoint uses this for polling (and is AllowAny), we'll keep AllowAny for now
-    # but the job creation itself should ideally link to the current conversation ID.
-    permission_classes = [permissions.AllowAny] 
+    
+    # NOTE: Set permissions based on your authentication needs.
+    # If the user must be authenticated to check status, use [permissions.IsAuthenticated].
+    permission_classes = [permissions.IsAuthenticated] 
     
     def retrieve(self, request, *args, **kwargs):
-        instance = self.get_object()
-        
-        # Security check: If the user is authenticated, ensure they are the owner OR the avatar is public.
-        # This is basic and can be refined later. For now, trust the permission_classes=[AllowAny] but refine data.
-        if request.user.is_authenticated and instance.avatar.owner != request.user:
-             # If authenticated but not owner, deny access unless avatar is public (though job visibility is tricky)
-             pass 
-        
+        try:
+            instance = self.get_object()
+        except AvatarTrainingJob.DoesNotExist:
+            return Response({"detail": "Training job not found."}, status=404)
+
+        # 1. Serialize the core data
         serializer = self.get_serializer(instance)
         data = serializer.data
         
-        # Attach progress logic (conceptual)
-        if data.get('status') == 'started': data['progress'] = 30
-        elif data.get('status') == 'processing': data['progress'] = 75
-        elif data.get('status') == 'success': data['progress'] = 100
+        # 2. Normalize Status and Initialize Progress
         
-        # If chat job is complete, return the assistant reply
-        # NOTE: 'task_type' is likely not a field on AvatarTrainingJob model, commenting out custom logic for safety.
-        # if hasattr(instance, 'task_type') and instance.task_type == 'chat_reply' and data['status'] == 'success':
-        #     last_message = AvatarMessage.objects.filter(conversation__avatar=instance.avatar).order_by('-created_at').first()
-        #     if last_message and last_message.role == 'assistant':
-        #         data['assistant_reply'] = last_message.content
+        # Assume the status field in the model uses Python-standard choices (e.g., uppercase or mixed case).
+        # We must convert it to the lowercase key the frontend STATUS_MAP expects.
+        status_key = data.get('status', 'failure').lower()
+        
+        # 3. Determine Progress based on the actual status
+        if status_key == 'pending':
+            progress = 0
+        elif status_key == 'started':
+            progress = 10  # Arbitrary starting point for the vectorization phase
+        elif status_key == 'processing':
+            # In a real system, you'd fetch the actual progress from Celery or a DB field
+            progress = data.get('progress', 50) 
+        elif status_key == 'success':
+            progress = 100
+        elif status_key == 'failure':
+            progress = 0
+        else:
+            # Handle any unexpected statuses gracefully
+            progress = 0
+            status_key = 'failure' 
 
-        return Response(data)
+        # 4. Construct the Final Response Data
+        response_data = {
+            # Ensure the status key is always a known lowercase value
+            "status": status_key, 
+            # Ensure progress is always returned
+            "progress": progress,
+            # (Optional) Return logs if status is failure
+            "logs": data.get('logs') if status_key == 'failure' else None,
+        }
+
+        return Response(response_data)
 
 
 class AvatarConversationHistoryView(generics.ListAPIView):
