@@ -469,3 +469,63 @@ class AvatarSettingsRetrieveUpdateView(generics.RetrieveUpdateAPIView):
     def get_queryset(self):
         # Only allow actions on settings for avatars the user owns
         return self.queryset.filter(avatar__owner=self.request.user)
+
+
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status, permissions
+from celery.result import AsyncResult
+from uuid import UUID
+
+class AvatarChatTaskStatusView(APIView):
+    """
+    Endpoint for the frontend to poll the status and result of a chat generation task.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request, task_id):
+        try:
+            # Validate task_id format (optional but good practice)
+            UUID(task_id)
+        except ValueError:
+            return Response({"error": "Invalid task ID format."}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Get the Celery task result object
+        task_result = AsyncResult(task_id)
+
+        # Map Celery states to friendly outcomes
+        if task_result.successful():
+            # The task has completed successfully.
+            # Assuming the task stored the final AvatarMessage ID in its result.
+            try:
+                # The task result should be the ID of the new AvatarMessage
+                message_id = task_result.result 
+                assistant_message = AvatarMessage.objects.get(id=message_id)
+                
+                return Response({
+                    "status": "SUCCESS",
+                    "assistant_reply": assistant_message.content,
+                    "message_id": str(assistant_message.id),
+                    "created_at": assistant_message.created_at,
+                }, status=status.HTTP_200_OK)
+            except Exception:
+                # Handle case where message wasn't saved correctly despite successful task
+                return Response({
+                    "status": "FAILURE",
+                    "error": "Task succeeded, but message record not found.",
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        elif task_result.failed():
+            # The task failed due to an exception.
+            return Response({
+                "status": "FAILURE",
+                "error": str(task_result.result), # Celery stores the exception as the result on failure
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        else:
+            # The task is still pending, started, or in progress.
+            return Response({
+                "status": task_result.status, # e.g., 'PENDING', 'STARTED'
+            }, status=status.HTTP_200_OK)
+
