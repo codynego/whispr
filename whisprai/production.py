@@ -372,6 +372,8 @@ MIDDLEWARE = [
 #     },
 # }
 
+
+DATA_UPLOAD_MAX_MEMORY_SIZE = 52428800
 ROOT_URLCONF = "whisprai.urls"
 
 # --- Templates ---
