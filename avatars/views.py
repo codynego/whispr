@@ -240,21 +240,21 @@ class AvatarTrainingJobStatusView(generics.RetrieveAPIView):
         status_key = data.get('status', 'failure').lower()
         
         # 3. Determine Progress based on the actual status
-        if status_key == 'pending':
+        if status_key == 'queued':
             progress = 0
-        elif status_key == 'started':
+        elif status_key == 'running':
             progress = 10  # Arbitrary starting point for the vectorization phase
         elif status_key == 'processing':
             # In a real system, you'd fetch the actual progress from Celery or a DB field
             progress = data.get('progress', 50) 
-        elif status_key == 'success':
+        elif status_key == 'completed':
             progress = 100
-        elif status_key == 'failure':
+        elif status_key == 'error' or status_key == 'failure':
             progress = 0
         else:
             # Handle any unexpected statuses gracefully
             progress = 0
-            status_key = 'failure' 
+            status_key = 'error' 
 
         # 4. Construct the Final Response Data
         response_data = {
@@ -263,7 +263,7 @@ class AvatarTrainingJobStatusView(generics.RetrieveAPIView):
             # Ensure progress is always returned
             "progress": progress,
             # (Optional) Return logs if status is failure
-            "logs": data.get('logs') if status_key == 'failure' else None,
+            "logs": data.get('logs') if status_key == 'error' else None,
         }
 
         return Response(response_data)
