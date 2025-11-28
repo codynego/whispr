@@ -89,7 +89,7 @@ RULES:
             "content": msg.content
         })
     # 6. Call OpenAI (non-stream)
-    completion = client.responses.create(
+    completion = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=messages,
         temperature=0.8,
