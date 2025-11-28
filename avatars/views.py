@@ -231,6 +231,7 @@ class AvatarTrainingJobStatusView(generics.RetrieveAPIView):
         # 1. Serialize the core data
         serializer = self.get_serializer(instance)
         data = serializer.data
+        print("Serialized Training Job Data:", data)
         
         # 2. Normalize Status and Initialize Progress
         
