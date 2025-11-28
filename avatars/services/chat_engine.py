@@ -81,7 +81,8 @@ RULES:
 
     # 5. Build message history
     messages = [{"role": "system", "content": system_prompt}]
-    for msg in conversation.messages.order_by("created_at")[-12:]:
+    recent_messages = conversation.messages.order_by("-created_at")[:12].order_by("created_at")
+    for msg in recent_messages:
         messages.append({
             "role": "user" if msg.role == "visitor" else "assistant",
             "content": msg.content
