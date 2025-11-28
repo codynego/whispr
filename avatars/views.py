@@ -485,14 +485,11 @@ class AvatarChatTaskStatusView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, task_id):
-        try:
-            # Validate task_id format (optional but good practice)
-            UUID(task_id)
-        except ValueError:
-            return Response({"error": "Invalid task ID format."}, status=status.HTTP_400_BAD_REQUEST)
-
+        task_id_str = str(task_id)
+        
         # Get the Celery task result object
-        task_result = AsyncResult(task_id)
+        task_result = AsyncResult(task_id_str)
+
 
         # Map Celery states to friendly outcomes
         if task_result.successful():
