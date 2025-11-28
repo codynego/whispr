@@ -76,7 +76,7 @@ def train_avatar(avatar: Avatar, job: AvatarTrainingJob):
                 logger.debug(f"Files: Retrieved {files.count()} files.")
                 
                 for f in files:
-                    text = f.content()  # implement extract_text in your model
+                    text = f.content
                     all_texts.append(text)
                     AvatarMemoryChunk.objects.create(
                         avatar=avatar,
