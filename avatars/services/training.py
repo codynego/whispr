@@ -25,7 +25,7 @@ def train_avatar(avatar: Avatar, job: AvatarTrainingJob):
             if source.source_type == "notes" and source.include_for_knowledge:
                 note_ids = source.metadata.get("note_ids", [])
                 from whisone.models import Note
-                notes = Note.objects.filter(id__in=note_ids, owner=avatar.owner)
+                notes = Note.objects.filter(id__in=note_ids, user=avatar.owner)
                 for note in notes:
                     text = note.content.strip()
                     all_texts.append(text)
@@ -41,7 +41,7 @@ def train_avatar(avatar: Avatar, job: AvatarTrainingJob):
             elif source.source_type == "uploads" and source.include_for_knowledge:
                 file_ids = source.metadata.get("file_ids", [])
                 from whisone.models import UploadedFile
-                files = UploadedFile.objects.filter(id__in=file_ids, owner=avatar.owner)
+                files = UploadedFile.objects.filter(id__in=file_ids, user=avatar.owner)
                 for f in files:
                     text = f.extract_text()  # implement extract_text in your model
                     all_texts.append(text)
