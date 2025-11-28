@@ -96,13 +96,14 @@ RULES:
     )
 
     final_reply = completion.choices[0].message.content
+    print(f"OpenAI response: {final_reply}")
 
     # 7. Save the final avatar reply
     final_message = AvatarMessage.objects.create(
         conversation=conversation,
         role="avatar",
         content=final_reply,
-        model_used="gpt-4o-mini",
     )
+    print(f"Generated avatar reply (ID: {final_message.id}) for conversation {conversation.id}")
 
     return final_message.id
