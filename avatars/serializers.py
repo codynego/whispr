@@ -92,7 +92,7 @@ class AvatarSerializer(serializers.ModelSerializer):
     """
     settings = AvatarSettingsSerializer(read_only=True) 
     analytics = AvatarAnalyticsSerializer(read_only=True) 
-    last_training_job_id = serializers.SerializerMethodField()
+    # last_training_job_id = serializers.SerializerMethodField()
     
     # NEW: Conversation and Message counts
     conversations_count = serializers.SerializerMethodField()
@@ -103,7 +103,7 @@ class AvatarSerializer(serializers.ModelSerializer):
         fields = [
             "id", "owner", "name", "handle", "photo", "tone", "persona_prompt",
             "trained", "trained_at", "created_at", "updated_at",
-            "last_training_job_id",
+      
             "settings", "analytics",
             "conversations_count", "messages_count",  # Added fields
         ]
@@ -112,9 +112,9 @@ class AvatarSerializer(serializers.ModelSerializer):
             "settings", "analytics", "conversations_count", "messages_count"
         ]
 
-    def get_last_training_job_id(self, obj):
-        last_job = obj.training_jobs.order_by("-created_at").first()
-        return last_job.id if last_job else None
+    # def get_last_training_job_id(self, obj):
+    #     last_job = obj.training_jobs.order_by("-created_at").first()
+    #     return last_job.id if last_job else None
 
     def get_conversations_count(self, obj):
         return AvatarConversation.objects.filter(avatar=obj).count()
