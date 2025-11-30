@@ -372,6 +372,8 @@ MIDDLEWARE = [
 #     },
 # }
 
+task_soft_time_limit = 3600
+task_time_limit = 3660
 
 DATA_UPLOAD_MAX_MEMORY_SIZE = 52428800
 ROOT_URLCONF = "whisprai.urls"
