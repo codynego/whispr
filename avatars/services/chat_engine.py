@@ -69,7 +69,7 @@ def generate_avatar_reply(conversation_id: str, user_message_id: str):
 
     # 2. Embed query
     emb = client.embeddings.create(
-        model="text-embedding-3-large",
+        model="text-embedding-3-small",
         input=user_msg.content
     )
     query_embedding = emb.data[0].embedding
