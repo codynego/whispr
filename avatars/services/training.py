@@ -54,7 +54,7 @@ def train_avatar(avatar: Avatar, job: AvatarTrainingJob):
                     dprint("  → Handling NOTES source")
                     from whisone.models import Note
 
-                    note_ids = source.metadata.get("note_ids", [])
+                    note_ids = source.metadata.get("ids", [])
                     dprint(f"    Looking for {len(note_ids)} note IDs")
                     notes = Note.objects.filter(id__in=note_ids, user=avatar.owner)
 
