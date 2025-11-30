@@ -26,13 +26,30 @@ def retrieve_relevant_chunks(avatar, query_embedding, top_k=6):
     if not chunks:
         return ""
 
-    scored = [
-        (cosine_similarity(query_embedding, c.embedding), c.text)
-        for c in chunks
-    ]
+    scored = []
+
+    for c in chunks:
+        emb_list = c.embedding  # <-- could be list OR list of lists
+
+        if not emb_list:
+            continue
+
+        # If it's a single embedding, wrap it
+        if isinstance(emb_list[0], float):
+            emb_list = [emb_list]
+
+        # compute similarity against each embedding
+        max_score = max(
+            cosine_similarity(query_embedding, emb)
+            for emb in emb_list
+        )
+
+        scored.append((max_score, c.text))
+
     scored.sort(key=lambda x: x[0], reverse=True)
 
     return "\n\n".join(text for _, text in scored[:top_k])
+
 
 
 # ==========================================================
