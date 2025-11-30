@@ -12,18 +12,23 @@ from docx import Document
 import pdfplumber
 import pytesseract
 from PIL import Image
+import traceback
+from datetime import datetime
+
 
 client = OpenAI(api_key=settings.OPENAI_API_KEY)
+
+
+def print(msg):
+    """Helper to always see debug output with timestamp"""
+    print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]}] [DEBUG] [TASK process_uploaded_file] {msg}")
 
 
 # ----------------------------
 # Chunking helper
 # ----------------------------
 def chunk_text(text, chunk_size=800, overlap=150):
-    """
-    Split long text into overlapping chunks.
-    Returns: ["chunk1", "chunk2", ...]
-    """
+    print("Starting chunk_text")
     words = text.split()
     chunks = []
     start = 0
@@ -32,8 +37,10 @@ def chunk_text(text, chunk_size=800, overlap=150):
         end = start + chunk_size
         chunk = " ".join(words[start:end])
         chunks.append(chunk)
+        print(f"Created chunk {len(chunks)} | words {start}-{min(end, len(words))} | length {len(chunk.split())} words")
         start += chunk_size - overlap
     
+    print(f"chunk_text finished → {len(chunks)} chunks")
     return chunks
 
 
@@ -41,100 +48,178 @@ def chunk_text(text, chunk_size=800, overlap=150):
 # Embedding helper
 # ----------------------------
 def embed_chunk(chunk: str):
-    response = client.embeddings.create(
-        model="text-embedding-3-small",
-        input=chunk
-    )
-    return response.data[0].embedding
+    print(f"Embedding chunk of {len(chunk.split())} words (~{len(chunk)} chars)")
+    try:
+        response = client.embeddings.create(
+            model="text-embedding-3-small",
+            input=chunk
+        )
+        embedding = response.data[0].embedding
+        print(f"Embedding successful | dim={len(embedding)}")
+        return embedding
+    except Exception as e:
+        print(f"ERROR in embed_chunk: {type(e).__name__}: {str(e)}")
+        print(traceback.format_exc())
+        raise
 
 
 # ========================================================
 # Main Task — Extract + Chunk + Embed
 # ========================================================
-@shared_task
-def process_uploaded_file(file_id):
+@shared_task(bind=True)
+def process_uploaded_file(self, file_id):
     """
     Extract text from uploaded file → chunk → embed → save.
     """
+    print(f"TASK STARTED for file_id={file_id}")
+
     try:
+        print("Fetching UploadedFile from DB...")
         uploaded_file = UploadedFile.objects.get(id=file_id)
+        print(f"Found UploadedFile: {uploaded_file.id} | name={uploaded_file.file.name} | type={uploaded_file.file_type}")
+
         file_path = uploaded_file.file.path
+        print(f"File path resolved: {file_path}")
+        if not os.path.exists(file_path):
+            print("FILE NOT FOUND ON DISK!")
+            raise FileNotFoundError(f"File does not exist: {file_path}")
+
         text = ""
+        print(f"Starting text extraction for type: {uploaded_file.file_type}")
 
         # ----------------------------------------
         # Extract text based on file type
         # ----------------------------------------
         if uploaded_file.file_type == "pdf":
+            print("Extracting PDF with pdfplumber...")
             extracted_pages = []
-            with pdfplumber.open(file_path) as pdf:
-                for page in pdf.pages:
-                    t = page.extract_text()
-                    if t:
-                        extracted_pages.append(t)
-            text = "\n".join(extracted_pages)
+            try:
+                with pdfplumber.open(file_path) as pdf:
+                    print(f"PDF opened → {len(pdf.pages)} pages")
+                    for i, page in enumerate(pdf.pages, start=1):
+                        print(f"  Processing page {i}/{len(pdf.pages)}")
+                        t = page.extract_text()
+                        if t:
+                            extracted_pages.append(t)
+                            print(f"    Page {i} extracted {len(t.split())} words")
+                        else:
+                            print(f"    Page {i} → no text")
+                text = "\n".join(extracted_pages)
+                print(f"PDF extraction complete → total {len(text.split())} words")
+            except Exception as e:
+                print(f"PDF extraction failed: {e}")
+                raise
 
         elif uploaded_file.file_type == "docx":
-            doc = Document(file_path)
-            text = "\n".join(p.text for p in doc.paragraphs if p.text)
+            print("Extracting DOCX with python-docx...")
+            try:
+                doc = Document(file_path)
+                paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+                text = "\n".join(paragraphs)
+                print(f"DOCX extracted → {len(paragraphs)} paragraphs, {len(text.split())} words")
+            except Exception as e:
+                print(f"DOCX extraction failed: {e}")
+                raise
 
         elif uploaded_file.file_type in ["txt", "csv"]:
-            with open(file_path, "r", encoding="utf-8") as f:
-                text = f.read()
+            print("Reading plain text file...")
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    text = f.read()
+                print(f"Text file read → {len(text.split())} words")
+            except Exception as e:
+                print(f"Text file read failed: {e}")
+                raise
 
         elif uploaded_file.file_type == "image":
-            img = Image.open(file_path)
-            text = pytesseract.image_to_string(img)
+            print("Running OCR with pytesseract...")
+            try:
+                img = Image.open(file_path)
+                print(f"Image opened: {img.size} | mode={img.mode}")
+                text = pytesseract.image_to_string(img)
+                print(f"OCR complete → {len(text.split())} words extracted")
+            except Exception as e:
+                print(f"OCR failed: {e}")
+                raise
 
         else:
-            # Unknown → try read as text
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                text = f.read()
+            print(f"Unknown file type '{uploaded_file.file_type}', trying as raw text...")
+            try:
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                    text = f.read()
+                print(f"Fallback text read → {len(text.split())} words")
+            except Exception as e:
+                print(f"Fallback read failed: {e}")
+                raise
 
-        # Clean
+        # Clean whitespace
         text = text.strip()
+        print(f"Final extracted text length: {len(text)} chars, {len(text.split())} words")
 
         # Store full extracted text
         uploaded_file.content = text
+        uploaded_file.save(update_fields=["content"])
+        print("Saved extracted content to DB")
 
         # If no text → still mark as processed
         if not text:
+            print("No text extracted → marking as processed with null embedding")
             uploaded_file.embedding = None
             uploaded_file.processed = True
-            uploaded_file.save(update_fields=["content", "embedding", "processed"])
-            return {
+            uploaded_file.save(update_fields=["embedding", "processed"])
+
+            result = {
                 "status": "success",
                 "file_id": file_id,
                 "words": 0,
-                "chunks": 0
+                "chunks": 0,
+                "message": "No text found"
             }
+            print(f"TASK FINISHED (empty) → {result}")
+            return result
 
         # ----------------------------------------
         # Chunk text
         # ----------------------------------------
+        print("Starting chunking...")
         chunks = chunk_text(text)
+        print(f"Chunking done → {len(chunks)} chunks created")
 
         # ----------------------------------------
         # Embed each chunk
         # ----------------------------------------
+        print("Starting embedding of all chunks...")
         embeddings = []
-        for chunk in chunks:
+        for idx, chunk in enumerate(chunks, start=1):
+            print(f"Embedding chunk {idx}/{len(chunks)}...")
             emb = embed_chunk(chunk)
             embeddings.append(emb)
 
-        # Save embeddings (list of lists)
+        print(f"All {len(embeddings)} chunks embedded successfully")
+
+        # Save embeddings
         uploaded_file.embedding = embeddings
         uploaded_file.processed = True
-        uploaded_file.save(update_fields=["content", "embedding", "processed"])
+        uploaded_file.save(update_fields=["embedding", "processed"])
+        print("Embeddings saved to DB")
 
-        return {
+        result = {
             "status": "success",
             "file_id": file_id,
             "chunks": len(chunks),
-            "words": len(text.split())
+            "words": len(text.split()),
+            "message": "Processing completed"
         }
+        print(f"TASK SUCCESSFULLY FINISHED → {result}")
+        return result
 
     except UploadedFile.DoesNotExist:
-        return {"status": "error", "message": f"File with id {file_id} not found."}
+        error_msg = f"File with id {file_id} not found in database."
+        print(f"ERROR: {error_msg}")
+        return {"status": "error", "message": error_msg}
 
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        error_msg = f"Unexpected error: {type(e).__name__}: {str(e)}"
+        print(f"FATAL ERROR: {error_msg}")
+        print(traceback.format_exc())
+        return {"status": "error", "message": error_msg, "traceback": traceback.format_exc()}
