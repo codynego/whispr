@@ -88,7 +88,7 @@ class AvatarSourceListCreateView(generics.ListCreateAPIView):
     # We define get_queryset to ensure only sources for the current avatar are listed
     def get_queryset(self):
         avatar_handle = self.kwargs["handle"]
-        avatar = get_object_or_404(Avatar, handle=handle)
+        avatar = get_object_or_404(Avatar, handle=avatar_handle)
         return AvatarSource.objects.filter(avatar=avatar)
 
     def get_serializer_context(self):
