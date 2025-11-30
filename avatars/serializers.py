@@ -65,13 +65,14 @@ class AvatarAnalyticsSerializer(serializers.ModelSerializer):
         return 1200
     
     def get_total_conversations(self, obj):
-        avatar = getattr(obj, "avatar", None)
+        # avatar = getattr(obj, "avatar", None)
+        Avatar = obj.avatar
         if avatar:
             return AvatarConversation.objects.filter(avatar=avatar).count()
         return 0
 
     def get_total_messages(self, obj):
-        avatar = getattr(obj, "avatar", None)
+        Avatar = obj.avatar
         if avatar:
             return AvatarMessage.objects.filter(conversation__avatar=avatar).count()
         return 0
