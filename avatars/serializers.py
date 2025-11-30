@@ -83,29 +83,45 @@ class AvatarAnalyticsSerializer(serializers.ModelSerializer):
 # Core Models
 # ----------------------------
 
+from rest_framework import serializers
+from avatars.models import Avatar, AvatarConversation, AvatarMessage
+
 class AvatarSerializer(serializers.ModelSerializer):
     """
-    Main Avatar serializer, nesting Settings and Analytics.
+    Main Avatar serializer, nesting Settings and Analytics, with conversation and message counts.
     """
     settings = AvatarSettingsSerializer(read_only=True) 
     analytics = AvatarAnalyticsSerializer(read_only=True) 
     last_training_job_id = serializers.SerializerMethodField()
+    
+    # NEW: Conversation and Message counts
+    conversations_count = serializers.SerializerMethodField()
+    messages_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Avatar
         fields = [
             "id", "owner", "name", "handle", "photo", "tone", "persona_prompt",
             "trained", "trained_at", "created_at", "updated_at",
-            "last_training_job_id", 
-            "settings", "analytics", 
+            "last_training_job_id",
+            "settings", "analytics",
+            "conversations_count", "messages_count",  # Added fields
         ]
-        read_only_fields = ["owner", "trained", "trained_at", "created_at", "updated_at", "settings", "analytics"]
-        
+        read_only_fields = [
+            "owner", "trained", "trained_at", "created_at", "updated_at", 
+            "settings", "analytics", "conversations_count", "messages_count"
+        ]
+
     def get_last_training_job_id(self, obj):
-        """Retrieves the ID of the most recently started training job for monitoring."""
-        # FIX APPLIED: Changed avatartrainingjob_set to the correct related_name 'training_jobs'
-        last_job = obj.training_jobs.order_by('-started_at').first()
-        return str(last_job.id) if last_job else None
+        last_job = obj.training_jobs.order_by("-created_at").first()
+        return last_job.id if last_job else None
+
+    def get_conversations_count(self, obj):
+        return AvatarConversation.objects.filter(avatar=obj).count()
+
+    def get_messages_count(self, obj):
+        return AvatarMessage.objects.filter(conversation__avatar=obj).count()
+
 
 
 class AvatarConversationSerializer(serializers.ModelSerializer):
