@@ -48,8 +48,8 @@ class AvatarAnalyticsSerializer(serializers.ModelSerializer):
     Includes computed performance metrics.
     """
     average_response_time_ms = serializers.SerializerMethodField()
-    total_conversations = serializers.SerializerMethodField()
-    total_messages = serializers.SerializerMethodField()
+    # total_conversations = serializers.SerializerMethodField()
+    # total_messages = serializers.SerializerMethodField()
     
     class Meta:
         model = AvatarAnalytics
@@ -64,18 +64,18 @@ class AvatarAnalyticsSerializer(serializers.ModelSerializer):
     def get_average_response_time_ms(self, obj):
         return 1200
     
-    def get_total_conversations(self, obj):
-        # avatar = getattr(obj, "avatar", None)
-        Avatar = obj.avatar
-        if avatar:
-            return AvatarConversation.objects.filter(avatar=avatar).count()
-        return 0
+    # def get_total_conversations(self, obj):
+    #     # avatar = getattr(obj, "avatar", None)
+    #     Avatar = obj.avatar
+    #     if avatar:
+    #         return AvatarConversation.objects.filter(avatar=avatar).count()
+    #     return 0
 
-    def get_total_messages(self, obj):
-        Avatar = obj.avatar
-        if avatar:
-            return AvatarMessage.objects.filter(conversation__avatar=avatar).count()
-        return 0
+    # def get_total_messages(self, obj):
+    #     Avatar = obj.avatar
+    #     if avatar:
+    #         return AvatarMessage.objects.filter(conversation__avatar=avatar).count()
+    #     return 0
 
 
 
