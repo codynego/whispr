@@ -61,24 +61,44 @@ class AvatarRetrieveByHandleView(generics.RetrieveAPIView):
         return get_avatar_by_handle_and_owner(handle, self.request.user)
 
 class AvatarSettingsByHandleView(generics.RetrieveUpdateAPIView):
-    """Allows retrieval and update of AvatarSettings via the Avatar handle."""
+    """Allows retrieval and update of AvatarSettings via the Avatar handle.
+    If no AvatarSettings exists for the avatar, one is created automatically."""
     serializer_class = AvatarSettingsSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
         handle = self.kwargs.get('handle')
+        # Get the avatar owned by the current user with the given handle
         avatar = get_avatar_by_handle_and_owner(handle, self.request.user)
-        return get_object_or_404(AvatarSettings, avatar=avatar)
+        
+        # Try to get existing AvatarSettings, or create one if it doesn't exist
+        settings, created = AvatarSettings.objects.get_or_create(
+            avatar=avatar,
+            defaults={'avatar': avatar}
+        )
+        return settings
 
 class AvatarAnalyticsByHandleView(generics.RetrieveAPIView):
-    """Allows retrieval of AvatarAnalytics via the Avatar handle."""
+    """Retrieve AvatarAnalytics via the Avatar handle.
+    If no analytics record exists, one is created automatically."""
     serializer_class = AvatarAnalyticsSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
         handle = self.kwargs.get('handle')
         avatar = get_avatar_by_handle_and_owner(handle, self.request.user)
-        return get_object_or_404(AvatarAnalytics, avatar=avatar)
+
+        # Create analytics record if it doesn't exist (idempotent and safe)
+        analytics, created = AvatarAnalytics.objects.get_or_create(
+            avatar=avatar,
+            defaults={
+                'total_views': 0,
+                'total_likes': 0,
+                'total_shares': 0,
+                # Add other default fields as needed
+            }
+        )
+        return analytics
 
 # avatars/views.py
 

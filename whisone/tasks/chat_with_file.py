@@ -4,79 +4,105 @@ from django.conf import settings
 from whisone.models import UploadedFile
 from whisone.utils.embedding_utils import generate_embedding
 
-# -----------------------
-# Helper: cosine similarity
-# -----------------------
+
 def cosine_similarity(vec1, vec2):
     vec1, vec2 = np.array(vec1), np.array(vec2)
-    if np.linalg.norm(vec1) == 0 or np.linalg.norm(vec2) == 0:
+    norm1, norm2 = np.linalg.norm(vec1), np.linalg.norm(vec2)
+    if norm1 == 0 or norm2 == 0:
         return 0.0
-    return float(np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2)))
+    return float(np.dot(vec1, vec2) / (norm1 * norm2))
 
-# -----------------------
-# Main chat function
-# -----------------------
+
 def chat_with_file(file: UploadedFile, user_query: str, top_k: int = 5) -> str:
     """
-    Given a file and a user query, find the most relevant chunks (or the whole file)
-    and generate an answer using OpenAI.
+    Robust chat with file that handles multiple embedding storage formats.
     """
-    chunks = file.embedding
+    raw_chunks = file.embedding  # This could be None, list of dicts, or even a single list
 
-    if not chunks:
+    if not raw_chunks:
         return "No content available to answer from this file."
 
-    # Handle single embedding case
-    if isinstance(chunks, list) and all(isinstance(x, float) for x in chunks):
-        chunks = [{"chunk": getattr(file, "content", ""), "embedding": chunks}]
+    # Normalize everything into a list of dicts: [{"chunk": str, "embedding": list[float]}]
+    chunks = []
 
-    if not isinstance(chunks, list):
-        return "Invalid file embeddings format."
+    # Case 1: Single embedding stored as a plain list (old format)
+    if isinstance(raw_chunks, list) and raw_chunks and isinstance(raw_chunks[0], float):
+        text = getattr(file, "content", "") or "No text content available."
+        chunks = [{"chunk": text, "embedding": raw_chunks}]
 
-    # Generate embedding for user query
-    query_embedding = generate_embedding(user_query)
-    print("Query embedding generated.")  # Debug print
+    # Case 2: List of embeddings (each embedding is a list)
+    elif isinstance(raw_chunks, list) and raw_chunks and isinstance(raw_chunks[0], list):
+        text = getattr(file, "content", "") or ""
+        # Assume whole file if no per-chunk text stored
+        chunks = [{"chunk": text, "embedding": emb} for emb in raw_chunks if isinstance(emb, list)]
 
-    # Rank chunks by similarity
-    ranked_chunks = []
+    # Case 3: Proper list of dicts (new/current format)
+    elif isinstance(raw_chunks, list):
+        for item in raw_chunks:
+            if isinstance(item, dict):
+                embedding = item.get("embedding") or item.get("vector")
+                text = item.get("chunk") or item.get("text") or ""
+                if isinstance(embedding, list):
+                    chunks.append({"chunk": text, "embedding": embedding})
+            elif isinstance(item, list):  # fallback: raw embedding list
+                chunks.append({"chunk": getattr(file, "content", ""), "embedding": item})
+
+    # Final safety check
+    if not chunks:
+        return "No valid embedded content found in this file."
+
+    # Generate query embedding
+    try:
+        query_embedding = generate_embedding(user_query)
+    except Exception as e:
+        return f"Failed to generate embedding for query: {e}"
+
+    # Score all chunks
+    scored_chunks = []
     for chunk in chunks:
-        emb = chunk.get("embedding")
-        text = chunk.get("chunk", "")
-        if not emb or not isinstance(emb, list):
+        emb = chunk["embedding"]
+        if not isinstance(emb, list) or len(emb) == 0:
             continue
         score = cosine_similarity(query_embedding, emb)
-        ranked_chunks.append({"chunk": text, "score": score})
-    print(f"Ranked {len(ranked_chunks)} chunks based on similarity.")  # Debug print
+        scored_chunks.append({"chunk": chunk["chunk"], "score": score})
 
-    if not ranked_chunks:
-        return "No valid content available to answer from this file."
+    if not scored_chunks:
+        return "Could not compute similarity with any content."
 
-    # Select top-k relevant chunks
-    top_chunks = sorted(ranked_chunks, key=lambda x: x["score"], reverse=True)[:top_k]
-    context_text = "\n\n".join([c["chunk"] for c in top_chunks])
-    print("Top chunks selected for context:\n", context_text)  # Debug print
+    # Get top-k
+    top_chunks = sorted(scored_chunks, key=lambda x: x["score"], reverse=True)[:top_k]
+    context_text = "\n\n".join([c["chunk"].strip() for c in top_chunks if c["chunk"].strip()])
 
+    if not context_text.strip():
+        return "No relevant text content found to answer your question."
+
+    # Build prompt
     prompt = f"""
-You are an AI assistant. Use the following file content to answer the user's question:
+You are a helpful assistant answering questions based only on the provided content from an uploaded file.
+
+Use this content to answer the question:
 
 {context_text}
 
 Question: {user_query}
 
-If the file does not contain enough information to answer the question accurately, respond:
-'I could not find sufficient information in the file to answer this.'
-Answer concisely and clearly.
-"""
-    client = OpenAI(api_key=settings.OPENAI_API_KEY)
-    # Call OpenAI LLM
+Instructions:
+- Answer concisely and accurately.
+- If the content does not contain enough information, say: "I could not find sufficient information in the file to answer this."
+- Do not make up information.
+
+Answer:
+""".strip()
+
+    # Call OpenAI
     try:
+        client = OpenAI(api_key=settings.OPENAI_API_KEY)
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
         )
         answer = response.choices[0].message.content.strip()
-        print(f"Context used for answering:\n{context_text}\n")  # Debug print
-        print(f"Answer generated:\n{answer}\n")  # Debug print
         return answer
     except Exception as e:
-        return f"Error generating answer: {e}"
+        return f"Error generating answer from AI: {str(e)}"
