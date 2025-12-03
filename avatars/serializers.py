@@ -112,9 +112,6 @@ class AvatarSerializer(serializers.ModelSerializer):
             "settings", "analytics", "conversations_count", "messages_count"
         ]
 
-    # def get_last_training_job_id(self, obj):
-    #     last_job = obj.training_jobs.order_by("-created_at").first()
-    #     return last_job.id if last_job else None
 
     def get_conversations_count(self, obj):
         return AvatarConversation.objects.filter(avatar=obj).count()

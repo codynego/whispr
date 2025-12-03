@@ -91,12 +91,6 @@ class AvatarAnalyticsByHandleView(generics.RetrieveAPIView):
         # Create analytics record if it doesn't exist (idempotent and safe)
         analytics, created = AvatarAnalytics.objects.get_or_create(
             avatar=avatar,
-            defaults={
-                'total_views': 0,
-                'total_likes': 0,
-                'total_shares': 0,
-                # Add other default fields as needed
-            }
         )
         return analytics
 
