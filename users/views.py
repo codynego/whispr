@@ -49,3 +49,43 @@ class UpdatePasswordView(APIView):
         return Response({"message": "Password updated successfully."}, status=200)
 
 
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.exceptions import TokenError
+from rest_framework.permissions import AllowAny
+
+class LogoutView(APIView):
+    # Allow unauthenticated users to hit this endpoint 
+    # (since their access token might be expired, and we only need the cookie)
+    permission_classes = [AllowAny] 
+    
+    def post(self, request):
+        # 1. Try to get the Refresh Token from the HTTP-only cookie
+        refresh_token = request.COOKIES.get('refresh_token')
+        
+        # Initialize the response object
+        response = Response({"detail": "Successfully logged out."}, status=status.HTTP_200_OK)
+
+        if refresh_token:
+            try:
+                # 2. Blacklist the token
+                token = RefreshToken(refresh_token)
+                token.blacklist()
+                
+                # 3. Clear the HTTP-only cookie
+                response.delete_cookie('refresh_token')
+                
+                return response
+                
+            except TokenError:
+                # If the token is already invalid, expired, or malformed, 
+                # we still clear the cookie for safety and report success.
+                response.delete_cookie('refresh_token')
+                return response
+        else:
+            # No refresh token found in cookies (e.g., user was never logged in)
+            # Still return 200 and ensure cookie is cleared (just in case)
+            response.delete_cookie('refresh_token')
+            return response
