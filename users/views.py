@@ -91,43 +91,55 @@ class LogoutView(APIView):
             return response
 
 
-# views.py (or wherever your login view is)
+# views.py
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
+from users.models import User  # ← your custom user model
 
 class LoginView(APIView):
+    authentication_classes = []  # ← VERY IMPORTANT: disable default auth
+    permission_classes = []      # ← allow anyone to hit login
+
     def post(self, request):
         email = request.data.get("email")
         password = request.data.get("password")
 
-        user = authenticate(email=email, password=password)
-        if not user:
-            return Response({"detail": "Invalid credentials"}, status=401)
+        if not email or not password:
+            return Response({"detail": "Email and password required"}, status=400)
 
-        refresh = RefreshToken.for_user(user)
-        
-        response = Response({
-            "access": str(refresh.access_token),
-            "user": {
-                "id": user.id,
-                "email": user.email,
-                "first_name": user.first_name,
-                "last_name": user.last_name,
-            }
-        })
+        # ← THIS IS THE CORRECT WAY when using email as login
+        try:
+            user = User.objects.get(email__iexact=email)
+        except User.DoesNotExist:
+            user = None
 
-        # THIS IS THE IMPORTANT PART — set HTTP-only refresh cookie
-        response.set_cookie(
-            key="refresh_token",           # name of the cookie
-            value=str(refresh),            # the refresh token string
-            httponly=True,                 # JS can't read it
-            secure=True,                   # only over HTTPS
-            samesite="None",               # REQUIRED for cross-site (www → api)
-            path="/",
-            max_age=60*60*24*7,            # 7 days (matches your JWT setting)
-        )
+        if user and user.check_password(password) and user.is_active:
+            refresh = RefreshToken.for_user(user)
 
-        return response
+            response = Response({
+                "access": str(refresh.access_token),
+                "user": {
+                    "id": user.id,
+                    "email": user.email,
+                    "first_name": user.first_name or "",
+                    "last_name": user.last_name or "",
+                }
+            })
+
+            response.set_cookie(
+                key="refresh_token",
+                value=str(refresh),
+                httponly=True,
+                secure=True,
+                samesite="None",
+                path="/",
+                max_age=60*60*24*7,
+            )
+            return response
+        else:
+            return Response(
+                {"detail": "Invalid email or password"},
+                status=401
+            )
