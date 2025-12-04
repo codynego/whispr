@@ -166,6 +166,12 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 20,
 }
 
+
+SESSION_COOKIE_SAMESITE = 'None'
+CSRF_COOKIE_SAMESITE = 'None'
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+
 # --- JWT ---
 from datetime import timedelta
 from decouple import config # Assuming config is imported from django-decouple
@@ -185,6 +191,10 @@ SIMPLE_JWT = {
     "ALGORITHM": "HS256",
     "SIGNING_KEY": SECRET_KEY, # Ensure SECRET_KEY is defined in your settings
     "AUTH_HEADER_TYPES": ("Bearer",),
+    "AUTH_COOKIE": "refresh_token",        # optional, just for clarity
+    "AUTH_COOKIE_SECURE": True,
+    "AUTH_COOKIE_HTTP_ONLY": True,
+    "AUTH_COOKIE_SAME_SITE": "None",
 }
 
 # --- Localization ---

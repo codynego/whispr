@@ -89,3 +89,45 @@ class LogoutView(APIView):
             # Still return 200 and ensure cookie is cleared (just in case)
             response.delete_cookie('refresh_token')
             return response
+
+
+# views.py (or wherever your login view is)
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from django.contrib.auth import authenticate
+from rest_framework_simplejwt.tokens import RefreshToken
+
+class LoginView(APIView):
+    def post(self, request):
+        email = request.data.get("email")
+        password = request.data.get("password")
+
+        user = authenticate(email=email, password=password)
+        if not user:
+            return Response({"detail": "Invalid credentials"}, status=401)
+
+        refresh = RefreshToken.for_user(user)
+        
+        response = Response({
+            "access": str(refresh.access_token),
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "first_name": user.first_name,
+                "last_name": user.last_name,
+            }
+        })
+
+        # THIS IS THE IMPORTANT PART — set HTTP-only refresh cookie
+        response.set_cookie(
+            key="refresh_token",           # name of the cookie
+            value=str(refresh),            # the refresh token string
+            httponly=True,                 # JS can't read it
+            secure=True,                   # only over HTTPS
+            samesite="None",               # REQUIRED for cross-site (www → api)
+            path="/",
+            max_age=60*60*24*7,            # 7 days (matches your JWT setting)
+        )
+
+        return response
