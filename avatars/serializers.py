@@ -15,28 +15,60 @@ from django.db.models import Max # Required for some SerializerMethodFields
 # Sub-Serializers (Used for nesting)
 # ----------------------------
 
+from rest_framework import serializers
+
 class AvatarSettingsSerializer(serializers.ModelSerializer):
     """
-    Handles serialization for AvatarSettings. 
-    Uses 'source' mapping for better UI field names.
+    Handles serialization for AvatarSettings with type casting for 'is_public'.
     """
-    # Renaming internal fields for UI clarity
-    is_public = serializers.BooleanField(source='visibility')
+    # 1. Use SerializerMethodField for read (GET) to convert model string to boolean
+    is_public = serializers.SerializerMethodField()
+    
     response_delay_ms = serializers.IntegerField(source='async_delay_seconds')
     enable_owner_takeover = serializers.BooleanField(source='allow_owner_takeover')
-    disclaimer_text = serializers.CharField(source='protected_code') # Using protected_code as a placeholder for disclaimer_text
+    disclaimer_text = serializers.CharField(source='protected_code', allow_null=True) # Ensure null is allowed if it's sent
 
     class Meta:
         model = AvatarSettings
         fields = [
-
             "is_public", 
             "disclaimer_text", 
             "response_delay_ms", 
             "enable_owner_takeover", 
         ]
-        # Allow updating all fields via the handle-based PUT/PATCH endpoint
         read_only_fields = ['avatar']
+        
+    # --- Custom Read Method (Model String -> JSON Boolean) ---
+    def get_is_public(self, obj):
+        """Converts model's visibility choice ('public' or 'private') to a boolean."""
+        # Assuming 'public' is the value for True
+        return obj.visibility == 'public' 
+
+    # --- Custom Write Method (JSON Payload -> Model Field Data) ---
+    def to_internal_value(self, data):
+        """Translates the 'is_public' boolean from the payload into the model's 'visibility' string choice."""
+        
+        # 1. Handle 'is_public' conversion
+        is_public_value = data.get('is_public')
+        if is_public_value is not None:
+            # Map the boolean value to the string choice your model expects
+            visibility_choice = 'public' if is_public_value is True else 'private'
+            data['visibility'] = visibility_choice # Add the mapped value to internal data
+            # Remove the original 'is_public' as it's not a model field
+            del data['is_public'] 
+            
+        # 2. Rename the other source fields
+        if 'response_delay_ms' in data:
+            data['async_delay_seconds'] = data.pop('response_delay_ms')
+        
+        if 'enable_owner_takeover' in data:
+            data['allow_owner_takeover'] = data.pop('enable_owner_takeover')
+
+        if 'disclaimer_text' in data:
+            data['protected_code'] = data.pop('disclaimer_text')
+
+        # Use the parent's to_internal_value method to validate and finalize the data
+        return super().to_internal_value(data)
 
 
 from rest_framework import serializers
