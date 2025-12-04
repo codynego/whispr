@@ -7,8 +7,7 @@ from .views import (
     UserDetailView, 
     CustomTokenObtainPairView, 
     UpdatePasswordView,
-    LogoutView,
-    LoginView
+    LogoutView # <-- ADD THIS IMPORT
 )
 
 from rest_framework_simplejwt.views import TokenRefreshView
@@ -28,7 +27,7 @@ class CookieTokenRefreshView(TokenRefreshView):
 
 urlpatterns = [
     path('register/', UserRegistrationView.as_view(), name='user-register'),
-    path("login/", LoginView.as_view(), name="login"),
+    path('login/', CustomTokenObtainPairView.as_view(), name='token-obtain-pair'),
     path('token/refresh/', CookieTokenRefreshView.as_view(), name='token_refresh'),
     path('profile/', UserDetailView.as_view(), name='user-profile'),
     path('update-password/', UpdatePasswordView.as_view(), name='update-password'),
