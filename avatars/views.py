@@ -1,4 +1,16 @@
-from rest_framework import generics, permissions
+import uuid
+from rest_framework import generics, permissions, status
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from django.shortcuts import get_object_or_404
+from django.db.models import Q
+from django.views.decorators.cache import cache_page
+from django.utils.decorators import method_decorator
+from rest_framework_extensions.mixins import CacheResponseMixin
+from celery.result import AsyncResult
+from uuid import UUID
+
+# Import your models, serializers, tasks, and services
 from .models import (
     Avatar, AvatarSource, AvatarTrainingJob, AvatarMemoryChunk, 
     AvatarConversation, AvatarMessage, AvatarAnalytics, AvatarSettings,
@@ -9,71 +21,58 @@ from .serializers import (
     AvatarMessageSerializer, AvatarAnalyticsSerializer, AvatarSettingsSerializer,
     AvatarMemoryChunkSerializer
 )
-
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status
-from django.shortcuts import get_object_or_404
 from avatars.tasks import train_avatar_task 
 from avatars.services.chat_engine import generate_avatar_reply
 from avatars.services.persona_polisher import polish_persona
 
-from django.db.models import Q
-import uuid
+# --- Caching Constants ---
+# Cache for public-facing data (e.g., public avatar config, history)
+PUBLIC_AVATAR_CACHE_TTL = 60 * 5  # 5 minutes
+# Cache for owner-facing configuration data
+OWNER_CONFIG_CACHE_TTL = 60 * 1  # 1 minute
 
 # --- Helper Functions ---
 def get_avatar_by_handle_and_owner(handle, user):
-    """
-    Retrieves an Avatar by handle, ensuring the user is the owner.
-    This helper is ONLY called when the user is already authenticated.
-    """
+    """Retrieves an Avatar by handle, ensuring the user is the owner."""
     return get_object_or_404(Avatar, handle=handle, owner=user)
 
 def get_avatar_by_handle_public(handle):
-    """
-    Retrieves an Avatar by handle only if its settings mark it as public.
-    Visibility is typically stored as 'public' string, not True boolean.
-    """
-    # FIX: Changed settings__visibility=True to the correct string value 'public'
-
-    # return get_object_or_404(Avatar, handle=handle)
+    """Retrieves an Avatar by handle only if its settings mark it as public."""
     return get_object_or_404(
         Avatar.objects.select_related('settings'), 
         handle=handle, 
-        settings__visibility='public' # Use the actual choice value
+        settings__visibility='public'
     )
 
-
 # ----------------------------------------------------------------------
-# 1. NEW HANDLE-BASED CONVENIENCE VIEWS (Used by the Configuration UI)
+# 1. NEW HANDLE-BASED CONVENIENCE VIEWS (Configuration UI)
 # ----------------------------------------------------------------------
 
+@method_decorator(cache_page(OWNER_CONFIG_CACHE_TTL), name='dispatch')
 class AvatarRetrieveByHandleView(generics.RetrieveAPIView):
     """
-    Allows retrieval of Avatar details (including nested settings/analytics) by handle.
-    This view is strictly for the OWNER/AUTHENTICATED user (Configuration panel).
+    Allows retrieval of Avatar details by handle. Cached for OWNER.
     """
     serializer_class = AvatarSerializer
-    # FIX: Reverted permission to IsAuthenticated to prevent TypeError with AnonymousUser
     permission_classes = [permissions.IsAuthenticated] 
 
     def get_object(self):
         handle = self.kwargs.get('handle')
-        # request.user is guaranteed to be authenticated here
         return get_avatar_by_handle_and_owner(handle, self.request.user)
 
 class AvatarSettingsByHandleView(generics.RetrieveUpdateAPIView):
-    """Allows retrieval and update of AvatarSettings via the Avatar handle.
-    If no AvatarSettings exists for the avatar, one is created automatically."""
+    """Allows retrieval and update of AvatarSettings via the Avatar handle."""
     serializer_class = AvatarSettingsSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    # Cache only the GET request
+    @method_decorator(cache_page(OWNER_CONFIG_CACHE_TTL))
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
+
     def get_object(self):
         handle = self.kwargs.get('handle')
-        # Get the avatar owned by the current user with the given handle
         avatar = get_avatar_by_handle_and_owner(handle, self.request.user)
-        
-        # Try to get existing AvatarSettings, or create one if it doesn't exist
         settings, created = AvatarSettings.objects.get_or_create(
             avatar=avatar,
             defaults={'avatar': avatar}
@@ -81,76 +80,64 @@ class AvatarSettingsByHandleView(generics.RetrieveUpdateAPIView):
         return settings
 
 class AvatarAnalyticsByHandleView(generics.RetrieveAPIView):
-    """Retrieve AvatarAnalytics via the Avatar handle.
-    If no analytics record exists, one is created automatically."""
+    """Retrieve AvatarAnalytics via the Avatar handle. Cached."""
     serializer_class = AvatarAnalyticsSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    # Cache the response
+    @method_decorator(cache_page(OWNER_CONFIG_CACHE_TTL))
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
 
     def get_object(self):
         handle = self.kwargs.get('handle')
         avatar = get_avatar_by_handle_and_owner(handle, self.request.user)
-
-        # Create analytics record if it doesn't exist (idempotent and safe)
         analytics, created = AvatarAnalytics.objects.get_or_create(
             avatar=avatar,
         )
         return analytics
 
-# avatars/views.py
-
 class AvatarSourceListCreateView(generics.ListCreateAPIView):
+    """List Avatar Sources (cached) or replace them (no caching on POST)."""
     serializer_class = AvatarSourceSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    @method_decorator(cache_page(OWNER_CONFIG_CACHE_TTL))
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
     
-    # We define get_queryset to ensure only sources for the current avatar are listed
     def get_queryset(self):
         avatar_handle = self.kwargs["handle"]
         avatar = get_object_or_404(Avatar, handle=avatar_handle)
         return AvatarSource.objects.filter(avatar=avatar)
 
     def get_serializer_context(self):
-        """Add the avatar object to the serializer context for use in ListSerializer."""
         context = super().get_serializer_context()
         avatar_handle = self.kwargs["handle"]
         context["avatar"] = get_object_or_404(Avatar, handle=avatar_handle)
         return context
 
     def create(self, request, *args, **kwargs):
-            avatar = self.get_serializer_context()["avatar"]
-            
-            # 1. DELETE EXISTING SOURCES
-            print(f"\n--- VIEW: Deleting existing sources for Avatar: {avatar.handle} ---")
-            AvatarSource.objects.filter(avatar=avatar).delete()
-            print("Deletion complete.")
+        avatar = self.get_serializer_context()["avatar"]
+        
+        # NOTE: Creation bypasses caching as it modifies the data.
+        AvatarSource.objects.filter(avatar=avatar).delete()
+        
+        serializer = self.get_serializer(data=request.data, many=True)
+        
+        if serializer.is_valid():
+            self.perform_create(serializer) 
+            headers = self.get_success_headers(serializer.data)
+            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        else:
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-            # 2. CREATE NEW SOURCES (Using many=True)
-            serializer = self.get_serializer(data=request.data, many=True)
-            
-            print("\n--- VIEW: Checking Serializer Validity ---")
-            
-            if serializer.is_valid():
-                print("VIEW: Serializer is valid. Proceeding to perform_create (ListSerializer.create)...")
-                # This triggers ListSerializer.create()
-                self.perform_create(serializer) 
+# --- Public Retrieval View ---
 
-                headers = self.get_success_headers(serializer.data)
-                print("VIEW: Creation successful.")
-                return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
-            else:
-                # 💡 CRITICAL DEBUG STEP: Print the detailed errors
-                print("\n!!! VIEW ERROR: Serializer validation FAILED !!!")
-                print("--- FULL SERIALIZER ERRORS ARRAY ---")
-                print(serializer.errors)
-                print("--------------------------------------")
-                
-                # Return the errors in the response so the frontend can display them
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-# --- Public Retrieval View (Recommended for the public facing URL) ---
-
+@method_decorator(cache_page(PUBLIC_AVATAR_CACHE_TTL), name='dispatch')
 class AvatarRetrievePublicView(generics.RetrieveAPIView):
     """
-    Allows public retrieval of Avatar details by handle, restricted to public Avatars.
-    Use this for the public chat embed/interface loading.
+    Allows public retrieval of Avatar details by handle. Highly cached.
     """
     serializer_class = AvatarSerializer
     permission_classes = [permissions.AllowAny] 
@@ -164,6 +151,8 @@ class AvatarRetrievePublicView(generics.RetrieveAPIView):
 # 2. CHAT, TRAINING, AND HISTORY VIEWS
 # ----------------------------------------------------------------------
 
+# Chat and Training views (POST requests) are not cached.
+
 class AvatarChatView(APIView):
     """Endpoint for visitors to chat with an Avatar (Async request)."""
     permission_classes = [permissions.AllowAny]
@@ -174,7 +163,6 @@ class AvatarChatView(APIView):
         except Exception:
             return Response({"error": "Avatar not found or not public."}, status=status.HTTP_404_NOT_FOUND)
 
-        # Ensure session key exists for visitor_id fallback
         if not request.session.session_key:
             request.session.save()
             
@@ -184,17 +172,14 @@ class AvatarChatView(APIView):
         if not message_text or not visitor_id:
             return Response({"error": "Message and visitor_id are required."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Get or create an active conversation
         conversation, _ = AvatarConversation.objects.get_or_create(
             avatar=avatar, visitor_id=visitor_id, ended_at=None
         )
 
-        # Save visitor message
         visitor_message = AvatarMessage.objects.create(
             conversation=conversation, role="visitor", content=message_text
         )
 
-        # Trigger Celery task
         task_id = generate_avatar_reply.delay(
             conversation_id=str(conversation.id),
             user_message_id=str(visitor_message.id)
@@ -202,7 +187,7 @@ class AvatarChatView(APIView):
         
         return Response({
             "conversation_id": str(conversation.id),
-            "task_id": str(task_id), # Return the Celery task ID for polling
+            "task_id": str(task_id),
         }, status=status.HTTP_202_ACCEPTED)
 
 class AvatarTrainView(APIView):
@@ -213,7 +198,7 @@ class AvatarTrainView(APIView):
         avatar = get_avatar_by_handle_and_owner(handle, request.user)
 
         job = AvatarTrainingJob.objects.create(
-            avatar=avatar, status="queued" # Changed status from 'pending' to 'queued' for consistency
+            avatar=avatar, status="queued"
         )
 
         train_avatar_task.delay(str(job.id))
@@ -224,18 +209,10 @@ class AvatarTrainView(APIView):
         }, status=status.HTTP_201_CREATED)
 
 class AvatarTrainingJobStatusView(generics.RetrieveAPIView):
-    """
-    Retrieves the status of a specific training job, ensuring the response 
-    is formatted precisely for the frontend polling monitor.
-    
-    Endpoint: GET /api/avatars/training-jobs/<uuid:id>/status/
-    """
+    """Retrieves the status of a training job. No caching (polling endpoint)."""
     queryset = AvatarTrainingJob.objects.all()
     serializer_class = AvatarTrainingJobSerializer
     lookup_field = "id" 
-    
-    # NOTE: Set permissions based on your authentication needs.
-    # If the user must be authenticated to check status, use [permissions.IsAuthenticated].
     permission_classes = [permissions.IsAuthenticated] 
     
     def retrieve(self, request, *args, **kwargs):
@@ -244,49 +221,38 @@ class AvatarTrainingJobStatusView(generics.RetrieveAPIView):
         except AvatarTrainingJob.DoesNotExist:
             return Response({"detail": "Training job not found."}, status=404)
 
-        # 1. Serialize the core data
         serializer = self.get_serializer(instance)
         data = serializer.data
-        print("Serialized Training Job Data:", data)
         
-        # 2. Normalize Status and Initialize Progress
-        
-        # Assume the status field in the model uses Python-standard choices (e.g., uppercase or mixed case).
-        # We must convert it to the lowercase key the frontend STATUS_MAP expects.
+        # Logic for status and progress calculation (remains unchanged)
         status_key = data.get('status', 'failure').lower()
         
-        # 3. Determine Progress based on the actual status
         if status_key == 'queued':
             progress = 0
         elif status_key == 'running':
-            progress = 10  # Arbitrary starting point for the vectorization phase
+            progress = 10
         elif status_key == 'processing':
-            # In a real system, you'd fetch the actual progress from Celery or a DB field
             progress = data.get('progress', 50) 
         elif status_key == 'completed':
             progress = 100
-        elif status_key == 'error' or status_key == 'failure':
+        elif status_key in ('error', 'failure'):
             progress = 0
         else:
-            # Handle any unexpected statuses gracefully
             progress = 0
             status_key = 'error' 
 
-        # 4. Construct the Final Response Data
         response_data = {
-            # Ensure the status key is always a known lowercase value
             "status": status_key, 
-            # Ensure progress is always returned
             "progress": progress,
-            # (Optional) Return logs if status is failure
             "logs": data.get('logs') if status_key == 'error' else None,
         }
 
         return Response(response_data)
 
 
+@method_decorator(cache_page(PUBLIC_AVATAR_CACHE_TTL), name='dispatch')
 class AvatarConversationHistoryView(generics.ListAPIView):
-    """Retrieves the conversation history for a visitor/avatar pair, primarily for the public chat interface."""
+    """Retrieves the conversation history. Cached (depends on handle/visitor_id)."""
     serializer_class = AvatarMessageSerializer
     permission_classes = [permissions.AllowAny]
 
@@ -294,16 +260,13 @@ class AvatarConversationHistoryView(generics.ListAPIView):
         handle = self.kwargs.get('handle')
         visitor_id = self.request.query_params.get('visitor_id')
 
-        # FIX: Added check for public avatar to prevent exposing private history
         try:
             avatar = get_avatar_by_handle_public(handle)
         except Exception:
-            # If not found or not public, return 404/empty queryset
             return AvatarMessage.objects.none() 
 
         if not visitor_id: return AvatarMessage.objects.none()
 
-        # Get the latest ongoing conversation for this pair
         conversation = AvatarConversation.objects.filter(
             avatar=avatar, visitor_id=visitor_id
         ).order_by('-started_at').first()
@@ -314,13 +277,12 @@ class AvatarConversationHistoryView(generics.ListAPIView):
 
 
 class AvatarConversationTakeoverView(APIView):
-    """Allows the Avatar owner to take over a live conversation by ID."""
+    """Allows the Avatar owner to take over a live conversation by ID. No caching (write action)."""
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
         conversation = get_object_or_404(AvatarConversation, pk=pk)
         
-        # Security check: ensure the authenticated user owns the avatar
         if conversation.avatar.owner != request.user:
             return Response({"error": "You do not own this conversation's avatar."}, status=status.HTTP_403_FORBIDDEN)
 
@@ -330,7 +292,6 @@ class AvatarConversationTakeoverView(APIView):
         conversation.taken_over_by_owner = True
         conversation.save(update_fields=['taken_over_by_owner'])
 
-        # Log the takeover action in the chat history
         AvatarMessage.objects.create(
             conversation=conversation, role="owner", content=f"Human owner has taken over the chat. 👋"
         )
@@ -339,196 +300,184 @@ class AvatarConversationTakeoverView(APIView):
 
 # ----------------------------------------------------------------------
 # 3. ORIGINAL UUID-BASED VIEWS (Standard CRUD operations)
+# Uses CacheResponseMixin for granular per-object caching.
 # ----------------------------------------------------------------------
 
-class AvatarListCreateView(generics.ListCreateAPIView):
-    """List Avatars owned by the current user, or create a new one."""
+class AvatarListCreateView(CacheResponseMixin, generics.ListCreateAPIView):
+    """List Avatars owned by the current user. List is cached."""
     queryset = Avatar.objects.all()
     serializer_class = AvatarSerializer
     permission_classes = [permissions.IsAuthenticated]
+    timeout = OWNER_CONFIG_CACHE_TTL 
 
     def get_queryset(self):
         return self.queryset.filter(owner=self.request.user)
 
     def perform_create(self, serializer):
         avatar = serializer.save(owner=self.request.user)
-
-        # --- Persona Polishing Here ---
         if avatar.persona_prompt:
             polished = polish_persona(f"persona_prompt: {avatar.persona_prompt} + name: {avatar.name}")
             avatar.persona_prompt = polished
             avatar.save()
 
 
-class AvatarRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
-    """Retrieve, Update, or Destroy an Avatar by UUID."""
+class AvatarRetrieveUpdateDestroyView(CacheResponseMixin, generics.RetrieveUpdateDestroyAPIView):
+    """Retrieve, Update, or Destroy an Avatar by UUID. Retrieve is cached."""
     queryset = Avatar.objects.all()
     serializer_class = AvatarSerializer
     permission_classes = [permissions.IsAuthenticated]
+    timeout = OWNER_CONFIG_CACHE_TTL 
 
     def get_queryset(self):
         return self.queryset.filter(owner=self.request.user)
 
     def perform_update(self, serializer):
         avatar = serializer.save()
-
-        # --- Persona Polishing Here ---
         if avatar.persona_prompt:
             polished = polish_persona(f"persona_prompt: {avatar.persona_prompt} + name: {avatar.name}")
             avatar.persona_prompt = polished
             avatar.save()
 
 
-
-
-class AvatarSourceRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
-    """Retrieve, Update, or Destroy an AvatarSource by UUID (PK)."""
+class AvatarSourceRetrieveUpdateDestroyView(CacheResponseMixin, generics.RetrieveUpdateDestroyAPIView):
+    """Retrieve is cached."""
     queryset = AvatarSource.objects.all()
     serializer_class = AvatarSourceSerializer
     permission_classes = [permissions.IsAuthenticated]
+    timeout = OWNER_CONFIG_CACHE_TTL
 
 
-class AvatarTrainingJobListView(generics.ListAPIView):
-    """List all AvatarTrainingJobs."""
+class AvatarTrainingJobListView(CacheResponseMixin, generics.ListAPIView):
+    """List all AvatarTrainingJobs. List is cached."""
     queryset = AvatarTrainingJob.objects.all()
     serializer_class = AvatarTrainingJobSerializer
     permission_classes = [permissions.IsAuthenticated]
+    timeout = OWNER_CONFIG_CACHE_TTL
 
     def get_queryset(self):
-        # Only show jobs for avatars the user owns
         return self.queryset.filter(avatar__owner=self.request.user)
 
 
-class AvatarTrainingJobDetailView(generics.RetrieveAPIView):
-    """Retrieve details of an AvatarTrainingJob by UUID (PK)."""
+class AvatarTrainingJobDetailView(CacheResponseMixin, generics.RetrieveAPIView):
+    """Retrieve details of an AvatarTrainingJob by UUID (PK). Retrieve is cached."""
     queryset = AvatarTrainingJob.objects.all()
     serializer_class = AvatarTrainingJobSerializer
     permission_classes = [permissions.IsAuthenticated]
+    timeout = OWNER_CONFIG_CACHE_TTL
     
     def get_queryset(self):
-        # Only allow retrieval of jobs for avatars the user owns
         return self.queryset.filter(avatar__owner=self.request.user)
 
 
-class AvatarMemoryChunkListView(generics.ListAPIView):
-    """List all AvatarMemoryChunks."""
+class AvatarMemoryChunkListView(CacheResponseMixin, generics.ListAPIView):
+    """List all AvatarMemoryChunks. List is cached."""
     queryset = AvatarMemoryChunk.objects.all()
     serializer_class = AvatarMemoryChunkSerializer
     permission_classes = [permissions.IsAuthenticated]
+    timeout = OWNER_CONFIG_CACHE_TTL
     
     def get_queryset(self):
-        # Only show chunks for avatars the user owns
         return self.queryset.filter(avatar__owner=self.request.user)
 
 
-class AvatarMemoryChunkDetailView(generics.RetrieveAPIView):
-    """Retrieve details of an AvatarMemoryChunk by UUID (PK)."""
+class AvatarMemoryChunkDetailView(CacheResponseMixin, generics.RetrieveAPIView):
+    """Retrieve details of an AvatarMemoryChunk by UUID (PK). Retrieve is cached."""
     queryset = AvatarMemoryChunk.objects.all()
     serializer_class = AvatarMemoryChunkSerializer
     permission_classes = [permissions.IsAuthenticated]
+    timeout = OWNER_CONFIG_CACHE_TTL
 
     def get_queryset(self):
-        # Only allow retrieval of chunks for avatars the user owns
         return self.queryset.filter(avatar__owner=self.request.user)
 
 
-class AvatarConversationListCreateView(generics.ListCreateAPIView):
-    """List or Create AvatarConversations."""
+# Note: AvatarConversationListCreateView and related are generally not cached 
+# unless history is highly static, as conversations change frequently. 
+# We'll cache the owner's list/retrieve views moderately.
+
+class AvatarConversationListCreateView(CacheResponseMixin, generics.ListCreateAPIView):
+    """List or Create AvatarConversations. List is cached for owner."""
     queryset = AvatarConversation.objects.all()
     serializer_class = AvatarConversationSerializer
-    permission_classes = [permissions.IsAuthenticatedOrReadOnly] # Allow list/retrieve, restrict creation if needed
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    timeout = OWNER_CONFIG_CACHE_TTL
 
     def get_queryset(self):
-        # Only show conversations for avatars the user owns
         if self.request.user.is_authenticated:
             return self.queryset.filter(avatar__owner=self.request.user).order_by('-started_at')
-        return self.queryset.none() # Hide conversations if not authenticated
+        return self.queryset.none()
 
 
-class AvatarConversationRetrieveDestroyView(generics.RetrieveDestroyAPIView):
-    """Retrieve or Destroy an AvatarConversation by UUID (PK)."""
+class AvatarConversationRetrieveDestroyView(CacheResponseMixin, generics.RetrieveDestroyAPIView):
+    """Retrieve or Destroy an AvatarConversation by UUID (PK). Retrieve is cached."""
     queryset = AvatarConversation.objects.all()
     serializer_class = AvatarConversationSerializer
     permission_classes = [permissions.IsAuthenticated]
+    timeout = OWNER_CONFIG_CACHE_TTL
     
     def get_queryset(self):
-        # Only allow actions on conversations for avatars the user owns
         return self.queryset.filter(avatar__owner=self.request.user)
 
 
+# Avatar messages and analytics views are also good candidates for caching.
 class AvatarMessageListCreateView(generics.ListCreateAPIView):
-    """List or Create AvatarMessages."""
+    """List or Create AvatarMessages. List is not cached (high volume/rapid change)."""
     queryset = AvatarMessage.objects.all()
     serializer_class = AvatarMessageSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
 
-class AvatarMessageRetrieveView(generics.RetrieveAPIView):
-    """Retrieve an AvatarMessage by UUID (PK)."""
+class AvatarMessageRetrieveView(CacheResponseMixin, generics.RetrieveAPIView):
+    """Retrieve an AvatarMessage by UUID (PK). Retrieve is cached."""
     queryset = AvatarMessage.objects.all()
     serializer_class = AvatarMessageSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    timeout = OWNER_CONFIG_CACHE_TTL
 
 
-class AvatarAnalyticsListView(generics.ListAPIView):
-    """List all AvatarAnalytics records."""
+class AvatarAnalyticsListView(CacheResponseMixin, generics.ListAPIView):
+    """List all AvatarAnalytics records. List is cached."""
     queryset = AvatarAnalytics.objects.all()
     serializer_class = AvatarAnalyticsSerializer
     permission_classes = [permissions.IsAuthenticated]
+    timeout = OWNER_CONFIG_CACHE_TTL
 
     def get_queryset(self):
-        # Only show analytics for avatars the user owns
         return self.queryset.filter(avatar__owner=self.request.user)
 
 
-class AvatarAnalyticsDetailView(generics.RetrieveAPIView):
-    """Retrieve an AvatarAnalytics record by UUID (PK)."""
+class AvatarAnalyticsDetailView(CacheResponseMixin, generics.RetrieveAPIView):
+    """Retrieve an AvatarAnalytics record by UUID (PK). Retrieve is cached."""
     queryset = AvatarAnalytics.objects.all()
     serializer_class = AvatarAnalyticsSerializer
     permission_classes = [permissions.IsAuthenticated]
+    timeout = OWNER_CONFIG_CACHE_TTL
 
     def get_queryset(self):
-        # Only allow retrieval of analytics for avatars the user owns
         return self.queryset.filter(avatar__owner=self.request.user)
 
 
-class AvatarSettingsRetrieveUpdateView(generics.RetrieveUpdateAPIView):
-    """Retrieve or Update AvatarSettings by UUID (PK)."""
+class AvatarSettingsRetrieveUpdateView(CacheResponseMixin, generics.RetrieveUpdateAPIView):
+    """Retrieve or Update AvatarSettings by UUID (PK). Retrieve is cached."""
     queryset = AvatarSettings.objects.all()
     serializer_class = AvatarSettingsSerializer
     permission_classes = [permissions.IsAuthenticated]
+    timeout = OWNER_CONFIG_CACHE_TTL
 
     def get_queryset(self):
-        # Only allow actions on settings for avatars the user owns
         return self.queryset.filter(avatar__owner=self.request.user)
 
 
-
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework import status, permissions
-from celery.result import AsyncResult
-from uuid import UUID
-
 class AvatarChatTaskStatusView(APIView):
-    """
-    Endpoint for the frontend to poll the status and result of a chat generation task.
-    """
+    """Endpoint for the frontend to poll the status and result of a chat generation task. No caching."""
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, task_id):
         task_id_str = str(task_id)
-        
-        # Get the Celery task result object
         task_result = AsyncResult(task_id_str)
 
-
-        # Map Celery states to friendly outcomes
         if task_result.successful():
-            # The task has completed successfully.
-            # Assuming the task stored the final AvatarMessage ID in its result.
             try:
-                # The task result should be the ID of the new AvatarMessage
                 message_id = task_result.result 
                 assistant_message = AvatarMessage.objects.get(id=message_id)
                 
@@ -539,22 +488,18 @@ class AvatarChatTaskStatusView(APIView):
                     "created_at": assistant_message.created_at,
                 }, status=status.HTTP_200_OK)
             except Exception:
-                # Handle case where message wasn't saved correctly despite successful task
                 return Response({
                     "status": "FAILURE",
                     "error": "Task succeeded, but message record not found.",
                 }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         elif task_result.failed():
-            # The task failed due to an exception.
             return Response({
                 "status": "FAILURE",
-                "error": str(task_result.result), # Celery stores the exception as the result on failure
+                "error": str(task_result.result),
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         else:
-            # The task is still pending, started, or in progress.
             return Response({
-                "status": task_result.status, # e.g., 'PENDING', 'STARTED'
+                "status": task_result.status,
             }, status=status.HTTP_200_OK)
-
