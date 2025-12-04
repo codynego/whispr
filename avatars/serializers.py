@@ -50,22 +50,27 @@ class AvatarSettingsSerializer(serializers.ModelSerializer):
         
         # 1. Handle 'is_public' conversion
         is_public_value = data.get('is_public')
+        print(f"\n--- AvatarSettingsSerializer.to_internal_value START ---" )
         if is_public_value is not None:
+            print(f"Original is_public: {is_public_value} (Type: {type(is_public_value)})")
             # Map the boolean value to the string choice your model expects
             visibility_choice = 'public' if is_public_value is True else 'private'
             data['visibility'] = visibility_choice # Add the mapped value to internal data
             # Remove the original 'is_public' as it's not a model field
             del data['is_public'] 
+            print(f"Mapped visibility: {visibility_choice}")
             
         # 2. Rename the other source fields
         if 'response_delay_ms' in data:
             data['async_delay_seconds'] = data.pop('response_delay_ms')
+            print(f"Mapped response_delay_ms to async_delay_seconds: {data['async_delay_seconds']}")
         
         if 'enable_owner_takeover' in data:
             data['allow_owner_takeover'] = data.pop('enable_owner_takeover')
 
         if 'disclaimer_text' in data:
             data['protected_code'] = data.pop('disclaimer_text')
+            print(f"Mapped disclaimer_text to protected_code: {data['protected_code']}")
 
         # Use the parent's to_internal_value method to validate and finalize the data
         return super().to_internal_value(data)
