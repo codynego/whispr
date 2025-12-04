@@ -352,11 +352,10 @@ class AvatarListCreateView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         avatar = serializer.save(owner=self.request.user)
-        print(f"avater persona prompt before polishing: {avatar.persona_prompt}")
 
         # --- Persona Polishing Here ---
         if avatar.persona_prompt:
-            polished = polish_persona(avatar.persona_prompt)
+            polished = polish_persona(f"persona_prompt: {avatar.persona_prompt} + name: {avatar.name}")
             avatar.persona_prompt = polished
             avatar.save()
 
@@ -375,7 +374,7 @@ class AvatarRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
 
         # --- Persona Polishing Here ---
         if avatar.persona_prompt:
-            polished = polish_persona(avatar.persona_prompt)
+            polished = polish_persona(f"persona_prompt: {avatar.persona_prompt} + name: {avatar.name}")
             avatar.persona_prompt = polished
             avatar.save()
 
