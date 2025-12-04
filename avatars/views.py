@@ -6,7 +6,7 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from django.views.decorators.cache import cache_page
 from django.utils.decorators import method_decorator
-from rest_framework_extensions.mixins import CacheResponseMixin
+# Removed: from rest_framework_extensions.mixins import CacheResponseMixin
 from celery.result import AsyncResult
 from uuid import UUID
 
@@ -26,12 +26,10 @@ from avatars.services.chat_engine import generate_avatar_reply
 from avatars.services.persona_polisher import polish_persona
 
 # --- Caching Constants ---
-# Cache for public-facing data (e.g., public avatar config, history)
 PUBLIC_AVATAR_CACHE_TTL = 60 * 5  # 5 minutes
-# Cache for owner-facing configuration data
 OWNER_CONFIG_CACHE_TTL = 60 * 1  # 1 minute
 
-# --- Helper Functions ---
+# --- Helper Functions (Unchanged) ---
 def get_avatar_by_handle_and_owner(handle, user):
     """Retrieves an Avatar by handle, ensuring the user is the owner."""
     return get_object_or_404(Avatar, handle=handle, owner=user)
@@ -48,24 +46,25 @@ def get_avatar_by_handle_public(handle):
 # 1. NEW HANDLE-BASED CONVENIENCE VIEWS (Configuration UI)
 # ----------------------------------------------------------------------
 
-@method_decorator(cache_page(OWNER_CONFIG_CACHE_TTL), name='dispatch')
+# @method_decorator(cache_page(OWNER_CONFIG_CACHE_TTL), name='dispatch') works for the entire view
 class AvatarRetrieveByHandleView(generics.RetrieveAPIView):
-    """
-    Allows retrieval of Avatar details by handle. Cached for OWNER.
-    """
+    """Retrieves Avatar details by handle. Cached for OWNER."""
     serializer_class = AvatarSerializer
     permission_classes = [permissions.IsAuthenticated] 
+
+    @method_decorator(cache_page(OWNER_CONFIG_CACHE_TTL))
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
 
     def get_object(self):
         handle = self.kwargs.get('handle')
         return get_avatar_by_handle_and_owner(handle, self.request.user)
 
 class AvatarSettingsByHandleView(generics.RetrieveUpdateAPIView):
-    """Allows retrieval and update of AvatarSettings via the Avatar handle."""
+    """Allows retrieval (cached) and update of AvatarSettings."""
     serializer_class = AvatarSettingsSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-    # Cache only the GET request
     @method_decorator(cache_page(OWNER_CONFIG_CACHE_TTL))
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
@@ -84,7 +83,6 @@ class AvatarAnalyticsByHandleView(generics.RetrieveAPIView):
     serializer_class = AvatarAnalyticsSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-    # Cache the response
     @method_decorator(cache_page(OWNER_CONFIG_CACHE_TTL))
     def get(self, request, *args, **kwargs):
         return super().get(request, *args, **kwargs)
@@ -120,7 +118,7 @@ class AvatarSourceListCreateView(generics.ListCreateAPIView):
     def create(self, request, *args, **kwargs):
         avatar = self.get_serializer_context()["avatar"]
         
-        # NOTE: Creation bypasses caching as it modifies the data.
+        # Deletion and creation are write operations, thus no caching
         AvatarSource.objects.filter(avatar=avatar).delete()
         
         serializer = self.get_serializer(data=request.data, many=True)
@@ -146,18 +144,16 @@ class AvatarRetrievePublicView(generics.RetrieveAPIView):
         handle = self.kwargs.get('handle')
         return get_avatar_by_handle_public(handle) 
 
-
 # ----------------------------------------------------------------------
-# 2. CHAT, TRAINING, AND HISTORY VIEWS
+# 2. CHAT, TRAINING, AND HISTORY VIEWS (No Caching on POST/Polling)
 # ----------------------------------------------------------------------
-
-# Chat and Training views (POST requests) are not cached.
 
 class AvatarChatView(APIView):
     """Endpoint for visitors to chat with an Avatar (Async request)."""
     permission_classes = [permissions.AllowAny]
 
     def post(self, request, handle):
+        # ... (implementation omitted for brevity, no changes needed for caching)
         try:
             avatar = get_avatar_by_handle_public(handle)
         except Exception:
@@ -195,6 +191,7 @@ class AvatarTrainView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, handle):
+        # ... (implementation omitted for brevity, no changes needed for caching)
         avatar = get_avatar_by_handle_and_owner(handle, request.user)
 
         job = AvatarTrainingJob.objects.create(
@@ -216,6 +213,7 @@ class AvatarTrainingJobStatusView(generics.RetrieveAPIView):
     permission_classes = [permissions.IsAuthenticated] 
     
     def retrieve(self, request, *args, **kwargs):
+        # ... (implementation omitted for brevity, no changes needed for caching)
         try:
             instance = self.get_object()
         except AvatarTrainingJob.DoesNotExist:
@@ -223,8 +221,6 @@ class AvatarTrainingJobStatusView(generics.RetrieveAPIView):
 
         serializer = self.get_serializer(instance)
         data = serializer.data
-        
-        # Logic for status and progress calculation (remains unchanged)
         status_key = data.get('status', 'failure').lower()
         
         if status_key == 'queued':
@@ -281,6 +277,7 @@ class AvatarConversationTakeoverView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
+        # ... (implementation omitted for brevity, no changes needed for caching)
         conversation = get_object_or_404(AvatarConversation, pk=pk)
         
         if conversation.avatar.owner != request.user:
@@ -300,15 +297,18 @@ class AvatarConversationTakeoverView(APIView):
 
 # ----------------------------------------------------------------------
 # 3. ORIGINAL UUID-BASED VIEWS (Standard CRUD operations)
-# Uses CacheResponseMixin for granular per-object caching.
+# Replaced CacheResponseMixin with @method_decorator(cache_page(...))
 # ----------------------------------------------------------------------
 
-class AvatarListCreateView(CacheResponseMixin, generics.ListCreateAPIView):
+class AvatarListCreateView(generics.ListCreateAPIView):
     """List Avatars owned by the current user. List is cached."""
     queryset = Avatar.objects.all()
     serializer_class = AvatarSerializer
     permission_classes = [permissions.IsAuthenticated]
-    timeout = OWNER_CONFIG_CACHE_TTL 
+
+    @method_decorator(cache_page(OWNER_CONFIG_CACHE_TTL))
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
 
     def get_queryset(self):
         return self.queryset.filter(owner=self.request.user)
@@ -321,12 +321,15 @@ class AvatarListCreateView(CacheResponseMixin, generics.ListCreateAPIView):
             avatar.save()
 
 
-class AvatarRetrieveUpdateDestroyView(CacheResponseMixin, generics.RetrieveUpdateDestroyAPIView):
-    """Retrieve, Update, or Destroy an Avatar by UUID. Retrieve is cached."""
+class AvatarRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    """Retrieve (cached), Update/Destroy (no cache) an Avatar by UUID."""
     queryset = Avatar.objects.all()
     serializer_class = AvatarSerializer
     permission_classes = [permissions.IsAuthenticated]
-    timeout = OWNER_CONFIG_CACHE_TTL 
+
+    @method_decorator(cache_page(OWNER_CONFIG_CACHE_TTL))
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
 
     def get_queryset(self):
         return self.queryset.filter(owner=self.request.user)
@@ -339,68 +342,82 @@ class AvatarRetrieveUpdateDestroyView(CacheResponseMixin, generics.RetrieveUpdat
             avatar.save()
 
 
-class AvatarSourceRetrieveUpdateDestroyView(CacheResponseMixin, generics.RetrieveUpdateDestroyAPIView):
-    """Retrieve is cached."""
+class AvatarSourceRetrieveUpdateDestroyView(generics.RetrieveUpdateDestroyAPIView):
+    """Retrieve (cached), Update/Destroy (no cache) an AvatarSource by UUID (PK)."""
     queryset = AvatarSource.objects.all()
     serializer_class = AvatarSourceSerializer
     permission_classes = [permissions.IsAuthenticated]
-    timeout = OWNER_CONFIG_CACHE_TTL
+    
+    @method_decorator(cache_page(OWNER_CONFIG_CACHE_TTL))
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
 
 
-class AvatarTrainingJobListView(CacheResponseMixin, generics.ListAPIView):
+class AvatarTrainingJobListView(generics.ListAPIView):
     """List all AvatarTrainingJobs. List is cached."""
     queryset = AvatarTrainingJob.objects.all()
     serializer_class = AvatarTrainingJobSerializer
     permission_classes = [permissions.IsAuthenticated]
-    timeout = OWNER_CONFIG_CACHE_TTL
+
+    @method_decorator(cache_page(OWNER_CONFIG_CACHE_TTL))
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
 
     def get_queryset(self):
         return self.queryset.filter(avatar__owner=self.request.user)
 
 
-class AvatarTrainingJobDetailView(CacheResponseMixin, generics.RetrieveAPIView):
+class AvatarTrainingJobDetailView(generics.RetrieveAPIView):
     """Retrieve details of an AvatarTrainingJob by UUID (PK). Retrieve is cached."""
     queryset = AvatarTrainingJob.objects.all()
     serializer_class = AvatarTrainingJobSerializer
     permission_classes = [permissions.IsAuthenticated]
-    timeout = OWNER_CONFIG_CACHE_TTL
+    
+    @method_decorator(cache_page(OWNER_CONFIG_CACHE_TTL))
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
     
     def get_queryset(self):
         return self.queryset.filter(avatar__owner=self.request.user)
 
 
-class AvatarMemoryChunkListView(CacheResponseMixin, generics.ListAPIView):
+class AvatarMemoryChunkListView(generics.ListAPIView):
     """List all AvatarMemoryChunks. List is cached."""
     queryset = AvatarMemoryChunk.objects.all()
     serializer_class = AvatarMemoryChunkSerializer
     permission_classes = [permissions.IsAuthenticated]
-    timeout = OWNER_CONFIG_CACHE_TTL
+    
+    @method_decorator(cache_page(OWNER_CONFIG_CACHE_TTL))
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
     
     def get_queryset(self):
         return self.queryset.filter(avatar__owner=self.request.user)
 
 
-class AvatarMemoryChunkDetailView(CacheResponseMixin, generics.RetrieveAPIView):
+class AvatarMemoryChunkDetailView(generics.RetrieveAPIView):
     """Retrieve details of an AvatarMemoryChunk by UUID (PK). Retrieve is cached."""
     queryset = AvatarMemoryChunk.objects.all()
     serializer_class = AvatarMemoryChunkSerializer
     permission_classes = [permissions.IsAuthenticated]
-    timeout = OWNER_CONFIG_CACHE_TTL
+
+    @method_decorator(cache_page(OWNER_CONFIG_CACHE_TTL))
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
 
     def get_queryset(self):
         return self.queryset.filter(avatar__owner=self.request.user)
 
 
-# Note: AvatarConversationListCreateView and related are generally not cached 
-# unless history is highly static, as conversations change frequently. 
-# We'll cache the owner's list/retrieve views moderately.
-
-class AvatarConversationListCreateView(CacheResponseMixin, generics.ListCreateAPIView):
+class AvatarConversationListCreateView(generics.ListCreateAPIView):
     """List or Create AvatarConversations. List is cached for owner."""
     queryset = AvatarConversation.objects.all()
     serializer_class = AvatarConversationSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
-    timeout = OWNER_CONFIG_CACHE_TTL
+
+    @method_decorator(cache_page(OWNER_CONFIG_CACHE_TTL))
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
 
     def get_queryset(self):
         if self.request.user.is_authenticated:
@@ -408,18 +425,20 @@ class AvatarConversationListCreateView(CacheResponseMixin, generics.ListCreateAP
         return self.queryset.none()
 
 
-class AvatarConversationRetrieveDestroyView(CacheResponseMixin, generics.RetrieveDestroyAPIView):
+class AvatarConversationRetrieveDestroyView(generics.RetrieveDestroyAPIView):
     """Retrieve or Destroy an AvatarConversation by UUID (PK). Retrieve is cached."""
     queryset = AvatarConversation.objects.all()
     serializer_class = AvatarConversationSerializer
     permission_classes = [permissions.IsAuthenticated]
-    timeout = OWNER_CONFIG_CACHE_TTL
+    
+    @method_decorator(cache_page(OWNER_CONFIG_CACHE_TTL))
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
     
     def get_queryset(self):
         return self.queryset.filter(avatar__owner=self.request.user)
 
 
-# Avatar messages and analytics views are also good candidates for caching.
 class AvatarMessageListCreateView(generics.ListCreateAPIView):
     """List or Create AvatarMessages. List is not cached (high volume/rapid change)."""
     queryset = AvatarMessage.objects.all()
@@ -427,42 +446,54 @@ class AvatarMessageListCreateView(generics.ListCreateAPIView):
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
 
-class AvatarMessageRetrieveView(CacheResponseMixin, generics.RetrieveAPIView):
+class AvatarMessageRetrieveView(generics.RetrieveAPIView):
     """Retrieve an AvatarMessage by UUID (PK). Retrieve is cached."""
     queryset = AvatarMessage.objects.all()
     serializer_class = AvatarMessageSerializer
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
-    timeout = OWNER_CONFIG_CACHE_TTL
+
+    @method_decorator(cache_page(OWNER_CONFIG_CACHE_TTL))
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
 
 
-class AvatarAnalyticsListView(CacheResponseMixin, generics.ListAPIView):
+class AvatarAnalyticsListView(generics.ListAPIView):
     """List all AvatarAnalytics records. List is cached."""
     queryset = AvatarAnalytics.objects.all()
     serializer_class = AvatarAnalyticsSerializer
     permission_classes = [permissions.IsAuthenticated]
-    timeout = OWNER_CONFIG_CACHE_TTL
+
+    @method_decorator(cache_page(OWNER_CONFIG_CACHE_TTL))
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
 
     def get_queryset(self):
         return self.queryset.filter(avatar__owner=self.request.user)
 
 
-class AvatarAnalyticsDetailView(CacheResponseMixin, generics.RetrieveAPIView):
+class AvatarAnalyticsDetailView(generics.RetrieveAPIView):
     """Retrieve an AvatarAnalytics record by UUID (PK). Retrieve is cached."""
     queryset = AvatarAnalytics.objects.all()
     serializer_class = AvatarAnalyticsSerializer
     permission_classes = [permissions.IsAuthenticated]
-    timeout = OWNER_CONFIG_CACHE_TTL
+
+    @method_decorator(cache_page(OWNER_CONFIG_CACHE_TTL))
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
 
     def get_queryset(self):
         return self.queryset.filter(avatar__owner=self.request.user)
 
 
-class AvatarSettingsRetrieveUpdateView(CacheResponseMixin, generics.RetrieveUpdateAPIView):
-    """Retrieve or Update AvatarSettings by UUID (PK). Retrieve is cached."""
+class AvatarSettingsRetrieveUpdateView(generics.RetrieveUpdateAPIView):
+    """Retrieve (cached) or Update (no cache) AvatarSettings by UUID (PK)."""
     queryset = AvatarSettings.objects.all()
     serializer_class = AvatarSettingsSerializer
     permission_classes = [permissions.IsAuthenticated]
-    timeout = OWNER_CONFIG_CACHE_TTL
+
+    @method_decorator(cache_page(OWNER_CONFIG_CACHE_TTL))
+    def get(self, request, *args, **kwargs):
+        return super().get(request, *args, **kwargs)
 
     def get_queryset(self):
         return self.queryset.filter(avatar__owner=self.request.user)
@@ -473,6 +504,7 @@ class AvatarChatTaskStatusView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, task_id):
+        # ... (implementation omitted for brevity, no changes needed for caching)
         task_id_str = str(task_id)
         task_result = AsyncResult(task_id_str)
 
