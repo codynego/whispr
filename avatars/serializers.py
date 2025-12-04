@@ -119,6 +119,62 @@ class AvatarSerializer(serializers.ModelSerializer):
     def get_messages_count(self, obj):
         return AvatarMessage.objects.filter(conversation__avatar=obj).count()
 
+# class AvatarSerializer(serializers.ModelSerializer):
+#     """
+#     Main Avatar serializer with settings, analytics, and usage counts.
+#     """
+#     settings = AvatarSettingsSerializer(read_only=True)
+#     analytics = AvatarAnalyticsSerializer(read_only=True)
+
+#     conversations_count = serializers.SerializerMethodField()
+#     messages_count = serializers.SerializerMethodField()
+
+#     # Show file IDs for knowledge files
+
+
+#     class Meta:
+#         model = Avatar
+#         fields = [
+#             "id", "owner", "name", "handle", "photo",
+
+#             # NEW fields
+#             "avatar_type",
+#             "avatar_subtype",
+#             "tone",
+#             "persona_prompt",
+#             "user_instructions",
+
+#             # capabilities
+#             "allow_tasks",
+#             "allow_memory",
+#             "allow_appointments",
+#             "allow_orders",
+
+#             "memory_depth",
+
+#             "trained", "trained_at",
+#             "created_at", "updated_at",
+
+#             "settings", "analytics",
+#             "conversations_count",
+#             "messages_count",
+#         ]
+
+#         read_only_fields = [
+#             "owner", "trained", "trained_at",
+#             "created_at", "updated_at",
+#             "settings", "analytics",
+#             "conversations_count",
+#             "messages_count",
+#             "knowledge_files",
+#         ]
+
+#     # ----------- COUNTS -----------
+#     def get_conversations_count(self, obj):
+#         return AvatarConversation.objects.filter(avatar=obj).count()
+
+#     def get_messages_count(self, obj):
+#         return AvatarMessage.objects.filter(conversation__avatar=obj).count()
 
 
 class AvatarConversationSerializer(serializers.ModelSerializer):
