@@ -13,7 +13,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # --- Security ---
 SECRET_KEY = config("SECRET_KEY")
-DEBUG = True  # Production mode
+DEBUG = False  # Production mode
 
 ALLOWED_HOSTS = [
     "whisone.app",
@@ -28,6 +28,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://www.whisone.app",
 ]
 CORS_ALLOW_CREDENTIALS = True
+
 CSRF_TRUSTED_ORIGINS = [
     "https://whisone.app",
     "https://www.whisone.app",
