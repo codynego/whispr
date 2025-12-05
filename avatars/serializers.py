@@ -133,9 +133,9 @@ class AvatarSerializer(serializers.ModelSerializer):
 
     def get_last_training_job_id(self, obj):
         # This works even with UUID primary keys
-        latest_job = obj.training_jobs.order_by('-created_at').values('id').first()
+        latest_job = obj.training_jobs.order_by('-finished_at').values('id').first()
         return latest_job['id'] if latest_job else None
-        
+
     def get_conversations_count(self, obj):
         return AvatarConversation.objects.filter(avatar=obj).count()
 
