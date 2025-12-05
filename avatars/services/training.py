@@ -54,7 +54,7 @@ def train_avatar(avatar: Avatar, job: AvatarTrainingJob):
                     dprint("  → Handling NOTES source")
                     from whisone.models import Note
 
-                    note_ids = source.metadata.get("ids", [])
+                    note_ids = source.metadata.get("item_ids", [])
                     dprint(f"    Looking for {len(note_ids)} note IDs")
                     notes = Note.objects.filter(id__in=note_ids, user=avatar.owner)
 
@@ -84,7 +84,7 @@ def train_avatar(avatar: Avatar, job: AvatarTrainingJob):
                     dprint("  → Handling UPLOADS source")
                     from whisone.models import UploadedFile
 
-                    file_ids = source.metadata.get("ids", [])
+                    file_ids = source.metadata.get("item_ids", [])
                     dprint(f"    Requested {len(file_ids)} uploaded files")
                     files = UploadedFile.objects.filter(id__in=file_ids, user=avatar.owner)
 
@@ -140,7 +140,7 @@ def train_avatar(avatar: Avatar, job: AvatarTrainingJob):
                     dprint("  → Handling WHATSAPP source")
                     from whatsapp.models import WhatsAppMessage
 
-                    chat_ids = source.metadata.get("chat_ids", [])
+                    chat_ids = source.metadata.get("item_ids", [])
                     dprint(f"    Requested {len(chat_ids)} WhatsApp messages")
                     messages = WhatsAppMessage.objects.filter(id__in=chat_ids, user=avatar.owner)
 
