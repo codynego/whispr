@@ -169,7 +169,7 @@ def train_avatar(avatar: Avatar, job: AvatarTrainingJob):
         # --------------------------------------
         dprint(f"Transaction committed. Total memory chunks created: {chunk_counter}")
 
-        avatar.persona_prompt = f"This is {avatar.name}. Persona trained from {chunk_counter} inputs."
+
         avatar.summary_knowledge = f"{chunk_counter} memory chunks stored."
         avatar.trained = True
         avatar.trained_at = timezone.now()
