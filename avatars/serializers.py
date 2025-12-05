@@ -124,11 +124,11 @@ class AvatarSerializer(serializers.ModelSerializer):
             "trained", "trained_at", "created_at", "updated_at",
       
             "settings", "analytics",
-            "conversations_count", "messages_count",  # Added fields
+            "conversations_count", "messages_count", "last_training_job_id",
         ]
         read_only_fields = [
             "owner", "trained", "trained_at", "created_at", "updated_at", 
-            "settings", "analytics", "conversations_count", "messages_count"
+            "settings", "analytics", "conversations_count", "messages_count", "last_training_job_id"
         ]
 
     def get_last_training_job_id(self, obj):
