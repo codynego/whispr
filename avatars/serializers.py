@@ -100,25 +100,7 @@ class AvatarAnalyticsSerializer(serializers.ModelSerializer):
     
     def get_average_response_time_ms(self, obj):
         return 1200
-    
-    # def get_total_conversations(self, obj):
-    #     # avatar = getattr(obj, "avatar", None)
-    #     Avatar = obj.avatar
-    #     if avatar:
-    #         return AvatarConversation.objects.filter(avatar=avatar).count()
-    #     return 0
 
-    # def get_total_messages(self, obj):
-    #     Avatar = obj.avatar
-    #     if avatar:
-    #         return AvatarMessage.objects.filter(conversation__avatar=avatar).count()
-    #     return 0
-
-
-
-# ----------------------------
-# Core Models
-# ----------------------------
 
 from rest_framework import serializers
 from avatars.models import Avatar, AvatarConversation, AvatarMessage
@@ -129,7 +111,7 @@ class AvatarSerializer(serializers.ModelSerializer):
     """
     settings = AvatarSettingsSerializer(read_only=True) 
     analytics = AvatarAnalyticsSerializer(read_only=True) 
-    # last_training_job_id = serializers.SerializerMethodField()
+    last_training_job_id = serializers.SerializerMethodField()
     
     # NEW: Conversation and Message counts
     conversations_count = serializers.SerializerMethodField()
@@ -149,6 +131,9 @@ class AvatarSerializer(serializers.ModelSerializer):
             "settings", "analytics", "conversations_count", "messages_count"
         ]
 
+    def get_last_training_job_id(self, obj):
+        last_job = obj.training_jobs.aggregate(Max('id'))['id__max']
+        return last_job
 
     def get_conversations_count(self, obj):
         return AvatarConversation.objects.filter(avatar=obj).count()
