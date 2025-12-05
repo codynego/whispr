@@ -34,6 +34,7 @@ class Reminder(BaseModel):
 # -----------------------------
 class Note(BaseModel):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    title = models.CharField(max_length=255, blank=True, null=True)
     content = models.TextField()
 
     def __str__(self):

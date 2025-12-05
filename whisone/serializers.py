@@ -17,6 +17,8 @@ class NoteSerializer(serializers.ModelSerializer):
     def get_title(self, obj):
         # 2. Return the Note's primary content field (content)
         # We truncate it slightly so the title isn't a massive blob of text
+        if obj.title:
+            return obj.title
         return obj.content[:100] if obj.content else "Untitled Note"
 
     class Meta:

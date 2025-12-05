@@ -10,8 +10,8 @@ class DailySummaryAdmin(admin.ModelAdmin):
 
 @admin.register(Note)
 class NoteAdmin(admin.ModelAdmin):
-    list_display = ('id', 'user', 'content', 'created_at')
-    search_fields = ('content', 'user__username')
+    list_display = ('id', 'user', 'title', 'content', 'created_at')
+    search_fields = ('title', 'content', 'user__username')
     readonly_fields = ('created_at', 'updated_at')
 
 @admin.register(Reminder)
