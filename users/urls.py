@@ -7,7 +7,7 @@ from .views import (
     UserDetailView, 
     UpdatePasswordView,
 )
-from .views import LoginView, LogoutView, CustomTokenRefreshView, ProfileView
+from .views import LoginView, LogoutView, CustomTokenRefreshView
 
 from rest_framework_simplejwt.views import TokenRefreshView
 from rest_framework_simplejwt.authentication import JWTAuthentication
