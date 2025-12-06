@@ -13,7 +13,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # --- Security ---
 SECRET_KEY = config("SECRET_KEY")
-DEBUG = True  # Production mode
+DEBUG = False # Production mode
 
 ALLOWED_HOSTS = [
     "whisone.app",
