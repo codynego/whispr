@@ -115,37 +115,43 @@ class LogoutView(APIView):
         response.delete_cookie("refresh_token")
         return response
 
+from django.conf import settings
+
 class CustomTokenRefreshView(TokenRefreshView):
     def post(self, request, *args, **kwargs):
-        # Get refresh token from cookie
         refresh_token = request.COOKIES.get("refresh_token")
         if not refresh_token:
             return Response({"detail": "Refresh token not found"}, status=401)
 
-        request.data["refresh"] = refresh_token
+        # Manually set the refresh token in request data
+        mutable_data = request.data.copy()
+        mutable_data["refresh"] = refresh_token
+        request._full_data = mutable_data
+
         response = super().post(request, *args, **kwargs)
 
-        # Update access token cookie
         new_access = response.data.get("access")
         if new_access:
             response.set_cookie(
                 key="access_token",
                 value=new_access,
                 httponly=True,
-                secure=not settings.DEBUG,
-                samesite="Lax",
+                secure=True,  # Always True in production
+                samesite="None",  # Match your login cookies
+                path="/",
             )
-            # Optionally rotate refresh token cookie
-            new_refresh = response.data.get("refresh")
-            if new_refresh:
-                response.set_cookie(
-                    key="refresh_token",
-                    value=new_refresh,
-                    httponly=True,
-                    secure=not settings.DEBUG,
-                    samesite="Lax",
-                    max_age=60*60*24*30,
-                )
+            
+        new_refresh = response.data.get("refresh")
+        if new_refresh:
+            response.set_cookie(
+                key="refresh_token",
+                value=new_refresh,
+                httponly=True,
+                secure=True,
+                samesite="None",  # Match your login cookies
+                path="/",
+                max_age=60*60*24*7,
+            )
 
         return response
 

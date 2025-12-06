@@ -153,7 +153,7 @@ AUTH_USER_MODEL = "users.User"
 # --- REST Framework ---
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        'users.authentication.CookieJWTAuthentication',
     ],
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
@@ -168,10 +168,10 @@ REST_FRAMEWORK = {
 }
 
 
-SESSION_COOKIE_SAMESITE = 'None'
 CSRF_COOKIE_SAMESITE = 'None'
-SESSION_COOKIE_SECURE = True
+SESSION_COOKIE_SAMESITE = 'None'
 CSRF_COOKIE_SECURE = True
+SESSION_COOKIE_SECURE = True
 
 # --- JWT ---
 from datetime import timedelta
