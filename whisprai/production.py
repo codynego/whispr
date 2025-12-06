@@ -178,21 +178,15 @@ from datetime import timedelta
 from decouple import config # Assuming config is imported from django-decouple
 
 SIMPLE_JWT = {
-    # 1. ACCESS TOKEN: Changed from default/config value (up to 60 min) to 15 minutes.
-    # Access tokens should be short-lived for security.
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15), 
-
-    # 2. REFRESH TOKEN: Increased from 1 day to 7 days.
-    # This determines how long a user can remain logged in without re-entering credentials.
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7), 
-    
-    # --- Other (Unchanged, but good security practices) ---
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
-    "ALGORITHM": "HS256",
-    "SIGNING_KEY": SECRET_KEY, # Ensure SECRET_KEY is defined in your settings
     "AUTH_HEADER_TYPES": ("Bearer",),
-    "AUTH_COOKIE": "refresh_token",        # optional, just for clarity
+    
+    # ↓↓↓ THESE TWO LINES MAKE IT READ FROM COOKIES ↓↓↓
+    "AUTH_COOKIE": "access_token",           # Cookie name for access token
+    "AUTH_COOKIE_REFRESH": "refresh_token",  # Cookie name for refresh token
     "AUTH_COOKIE_SECURE": True,
     "AUTH_COOKIE_HTTP_ONLY": True,
     "AUTH_COOKIE_SAME_SITE": "None",
