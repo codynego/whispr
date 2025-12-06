@@ -5,16 +5,16 @@ from django.utils import timezone
 from django.db import transaction
 import logging
 from datetime import datetime
+import traceback
 
-# ────────────────────── SAFE DEBUG PRINTER ──────────────────────
+# Your embedding function
+from whisone.utils.embedding_utils import generate_embedding as get_embedding
+
 def dprint(msg: str):
-    """Thread-safe debug print with timestamp – never shadows built-in print"""
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
     print(f"[{timestamp}] [DEBUG] [AVATAR TRAINING] {msg}", flush=True)
 
 logger = logging.getLogger(__name__)
-# ─────────────────────────────────────────────────────────────────────
-
 
 def normalize_embeddings(value):
     if not value:
@@ -25,6 +25,22 @@ def normalize_embeddings(value):
         return value
     return None
 
+def split_text_into_chunks(text: str, max_tokens: int = 1000, overlap: int = 100):
+    words = text.split()
+    chunks = []
+    current = []
+    current_tokens = 0
+    for word in words:
+        current.append(word)
+        current_tokens += 1
+        if current_tokens >= max_tokens:
+            chunks.append(" ".join(current))
+            current = current[-overlap:] if overlap > 0 else []
+            current_tokens = len(current)
+    if current:
+        chunks.append(" ".join(current))
+    return chunks
+
 
 def train_avatar(avatar: Avatar, job: AvatarTrainingJob):
     dprint(f"STARTING training job {job.id} for avatar @{avatar.handle} (id={avatar.id})")
@@ -32,175 +48,196 @@ def train_avatar(avatar: Avatar, job: AvatarTrainingJob):
     job.status = "running"
     job.started_at = timezone.now()
     job.save()
-    dprint("Job status → running")
 
-    all_texts = []
     chunk_counter = 0
 
     try:
         sources = AvatarSource.objects.filter(avatar=avatar, enabled=True)
-        dprint(f"Found {sources.count()} enabled sources for avatar")
+        dprint(f"Found {sources.count()} enabled sources")
 
         with transaction.atomic():
-            dprint("Entered atomic transaction")
-
             for source_idx, source in enumerate(sources, start=1):
-                dprint(f"[{source_idx}/{sources.count()}] Processing source id={source.id} | type={source.source_type} | knowledge={source.include_for_knowledge} | tone={source.include_for_tone}")
+                st = source.source_type
+                dprint(f"[{source_idx}/{sources.count()}] Processing source id={source.id} | type={st} | knowledge={source.include_for_knowledge} | tone={source.include_for_tone}")
 
-                # -------------------------
-                # NOTES
-                # -------------------------
-                if source.source_type == "notes" and source.include_for_knowledge:
-                    dprint("  → Handling NOTES source")
+                # ————————————————————————
+                # 1. RAW TEXT
+                # ————————————————————————
+                if st == "text":
+                    texts = source.metadata.get("content", "") or source.metadata.get("texts", [])
+                    if isinstance(texts, str):
+                        texts = [texts]
+                    for block in texts:
+                        text = str(block).strip()
+                        if not text:
+                            continue
+                        chunks = split_text_into_chunks(text)
+                        for chunk in chunks:
+                            embedding = None
+                            if source.include_for_knowledge:
+                                try:
+                                    embedding = normalize_embeddings(get_embedding(chunk))
+                                except Exception as e:
+                                    dprint(f"Embedding failed for text chunk: {e}")
+                            AvatarMemoryChunk.objects.create(
+                                avatar=avatar,
+                                text=chunk,
+                                source_type="text",
+                                source_id=source.id,
+                                embedding=embedding,
+                                metadata={"used_for_knowledge": source.include_for_knowledge, "used_for_tone": source.include_for_tone}
+                            )
+                            chunk_counter += 1
+
+                # ————————————————————————
+                # 2. NOTES
+                # ————————————————————————
+                elif st == "notes" and source.include_for_knowledge:
                     from whisone.models import Note
-
-                    note_ids = source.metadata.get("item_ids", [])
-                    dprint(f"    Looking for {len(note_ids)} note IDs")
-                    notes = Note.objects.filter(id__in=note_ids, user=avatar.owner)
-
-                    dprint(f"    Found {notes.count()} notes in DB")
-                    for note in notes:
+                    for note in Note.objects.filter(id__in=source.metadata.get("item_ids", []), user=avatar.owner):
                         text = (note.content or "").strip()
-                        if not text:
-                            dprint(f"    Skipping empty note id={note.id}")
-                            continue
-
-                        all_texts.append(text)
+                        if not text: continue
+                        embedding = normalize_embeddings(note.embedding) if source.include_for_knowledge else None
+                        AvatarMemoryChunk.objects.create(
+                            avatar=avatar, text=text, source_type="notes", source_id=note.id, embedding=embedding
+                        )
                         chunk_counter += 1
 
-                        embedding = normalize_embeddings(note.embedding)
-                        AvatarMemoryChunk.objects.create(
-                            avatar=avatar,
-                            text=text,
-                            source_type="notes",
-                            embedding=embedding,
-                        )
-                        dprint(f"    Created chunk #{chunk_counter} from note id={note.id} ({len(text.split())} words)")
-
-                # -------------------------
-                # FILE UPLOADS
-                # -------------------------
-                elif source.source_type == "uploads" and source.include_for_knowledge:
-                    dprint("  → Handling UPLOADS source")
+                # ————————————————————————
+                # 3. UPLOADS
+                # ————————————————————————
+                elif st == "uploads" and source.include_for_knowledge:
                     from whisone.models import UploadedFile
-
-                    file_ids = source.metadata.get("item_ids", [])
-                    dprint(f"    Requested {len(file_ids)} uploaded files")
-                    files = UploadedFile.objects.filter(id__in=file_ids, user=avatar.owner)
-
-                    dprint(f"    Retrieved {files.count()} uploaded files")
-                    for f in files:
+                    for f in UploadedFile.objects.filter(id__in=source.metadata.get("item_ids", []), user=avatar.owner):
                         text = (f.content or "").strip()
-                        if not text:
-                            dprint(f"    Skipping empty file id={f.id} ({f.file.name})")
-                            continue
-
-                        all_texts.append(text)
+                        if not text: continue
+                        embedding = normalize_embeddings(f.embedding) if source.include_for_knowledge else None
+                        AvatarMemoryChunk.objects.create(
+                            avatar=avatar, text=text, source_type="uploads", source_id=f.id, embedding=embedding
+                        )
                         chunk_counter += 1
 
-                        embedding = normalize_embeddings(f.embedding)
+                # ————————————————————————
+                # 4. REMINDERS (NEW!)
+                # ————————————————————————
+                elif st == "reminders" and (source.include_for_knowledge or source.include_for_tone):
+                    from whisone.models import Reminder  # adjust import as needed
+
+                    reminder_ids = source.metadata.get("item_ids", [])
+                    for rem in Reminder.objects.filter(id__in=reminder_ids, user=avatar.owner):
+                        parts = []
+                        if rem.title:
+                            parts.append(f"Reminder: {rem.title}")
+                        if rem.text:
+                            parts.append(rem.text)
+                        if rem.remind_at:
+                            due = rem.remind_at.strftime("%Y-%m-%d %H:%M") if rem.remind_at else "no due date"
+                            parts.append(f"Due: {due}")
+                        if rem.completed:
+                            parts.append("Status: completed")
+                        else:
+                            parts.append("Status: pending")
+
+                        text = " | ".join(parts).strip()
+                        if not text:
+                            continue
+
+                        embedding = None
+                        if source.include_for_knowledge:
+                            try:
+                                embedding = normalize_embeddings(get_embedding(text))
+                            except Exception as e:
+                                dprint(f"Failed to embed reminder {rem.id}: {e}")
+
                         AvatarMemoryChunk.objects.create(
                             avatar=avatar,
                             text=text,
-                            source_type="uploads",
+                            source_type="reminders",
+                            source_id=rem.id,
                             embedding=embedding,
+                            metadata={"completed": rem.completed, "due_date": rem.due_date.isoformat() if rem.due_date else None}
                         )
-                        dprint(f"    Created chunk #{chunk_counter} from file id={f.id} | {f.file.name} ({len(text.split())} words)")
-
-                # -------------------------
-                # MANUAL Q&A (tone)
-                # -------------------------
-                elif source.source_type == "manual" and source.include_for_tone:
-                    dprint("  → Handling MANUAL Q&A source (tone only)")
-                    qa_list = source.metadata.get("qa_pairs", [])
-                    dprint(f"    Found {len(qa_list)} Q&A pairs")
-
-                    for i, qa in enumerate(qa_list):
-                        q = qa.get("question", "").strip()
-                        a = qa.get("answer", "").strip()
-                        if not q and not a:
-                            continue
-
-                        text = f"Q: {q}\nA: {a}".strip()
-                        all_texts.append(text)
                         chunk_counter += 1
+                        dprint(f"    Added reminder chunk: {text[:100]}...")
 
-                        AvatarMemoryChunk.objects.create(
-                            avatar=avatar,
-                            text=text,
-                            source_type="manual",
-                            embedding=None,
-                        )
-                        dprint(f"    Created tone chunk #{chunk_counter} (pair {i+1})")
+                # ————————————————————————
+                # 5. TODOS (NEW!)
+                # ————————————————————————
+                elif st == "todos" and (source.include_for_knowledge or source.include_for_tone):
+                    from whisone.models import Todo  # adjust import
 
-                # -------------------------
-                # WHATSAPP
-                # -------------------------
-                elif source.source_type == "whatsapp" and source.include_for_knowledge:
-                    dprint("  → Handling WHATSAPP source")
-                    from whatsapp.models import WhatsAppMessage
+                    todo_ids = source.metadata.get("item_ids", [])
+                    for todo in Todo.objects.filter(id__in=todo_ids, user=avatar.owner):
+                        parts = []
+                        if todo.title:
+                            parts.append(f"Todo: {todo.title}")
+                        if todo.task:
+                            parts.append(todo.task)
+                        # if todo.due_date:
+                        #     due = todo.due_date.strftime("%Y-%m-%d")
+                        #     parts.append(f"Due: {due}")
+                        status = "completed" if todo.done else "pending"
+                        parts.append(f"Status: {status}")
 
-                    chat_ids = source.metadata.get("item_ids", [])
-                    dprint(f"    Requested {len(chat_ids)} WhatsApp messages")
-                    messages = WhatsAppMessage.objects.filter(id__in=chat_ids, user=avatar.owner)
-
-                    dprint(f"    Retrieved {messages.count()} messages")
-                    for msg in messages:
-                        text = (msg.content or "").strip()
+                        text = " | ".join(parts).strip()
                         if not text:
                             continue
 
-                        all_texts.append(text)
-                        chunk_counter += 1
+                        embedding = None
+                        if source.include_for_knowledge:
+                            try:
+                                embedding = normalize_embeddings(get_embedding(text))
+                            except Exception as e:
+                                dprint(f"Failed to embed todo {todo.id}: {e}")
 
                         AvatarMemoryChunk.objects.create(
                             avatar=avatar,
                             text=text,
-                            source_type="whatsapp",
-                            embedding=None,
+                            source_type="todos",
+                            source_id=todo.id,
+                            embedding=embedding,
+                            metadata={"completed": todo.completed, "due_date": todo.due_date.isoformat() if todo.due_date else None}
                         )
-                        dprint(f"    Created WhatsApp chunk #{chunk_counter} (msg id={msg.id})")
-
-                else:
-                    dprint(f"  → Source skipped (disabled or not selected for knowledge/tone)")
-
-        # --------------------------------------
-        # Finalize avatar
-        # --------------------------------------
-        dprint(f"Transaction committed. Total memory chunks created: {chunk_counter}")
+                        chunk_counter += 1
+                        dprint(f"    Added todo chunk: {text[:100]}...")
 
 
-        avatar.summary_knowledge = f"{chunk_counter} memory chunks stored."
+                # ————————————————————————
+                # 7. WHATSAPP
+                # ————————————————————————
+                elif st == "whatsapp" and source.include_for_knowledge:
+                    from whatsapp.models import WhatsAppMessage
+                    for msg in WhatsAppMessage.objects.filter(id__in=source.metadata.get("item_ids", []), user=avatar.owner):
+                        text = (msg.content or "").strip()
+                        if not text: continue
+                        AvatarMemoryChunk.objects.create(
+                            avatar=avatar, text=text, source_type="whatsapp", source_id=msg.id, embedding=None
+                        )
+                        chunk_counter += 1
+
+        # ——— Finalize ———
+        avatar.summary_knowledge = f"{chunk_counter} memory chunks (notes, files, text, reminders, todos, etc.)"
         avatar.trained = True
         avatar.trained_at = timezone.now()
         avatar.save()
-        dprint("Avatar marked as trained and saved")
 
-        # --------------------------------------
-        # Finish job
-        # --------------------------------------
         job.status = "completed"
         job.finished_at = timezone.now()
-        job.add_log(f"Training completed successfully: {chunk_counter} chunks processed.")
+        job.add_log(f"Training completed: {chunk_counter} chunks processed.")
         job.save()
 
         dprint(f"SUCCESS → Training job {job.id} finished with {chunk_counter} chunks")
-        logger.info(f"Avatar training completed: @{avatar.handle} → {chunk_counter} chunks")
+        logger.info(f"Avatar @{avatar.handle} trained successfully → {chunk_counter} chunks")
 
     except Exception as e:
-        dprint(f"FATAL ERROR in training job {job.id}: {type(e).__name__}: {str(e)}")
-        dprint("".join(traceback.format_exc().splitlines()[-10:]))  # last 10 lines of traceback
-
-        logger.error(
-            f"Training job {job.id} failed for @{avatar.handle}",
-            exc_info=True
-        )
+        tb = "".join(traceback.format_exc().splitlines()[-10:])
+        dprint(f"ERROR in training job {job.id}: {e}\n{tb}")
+        logger.error(f"Training failed for @{avatar.handle}", exc_info=True)
 
         job.status = "error"
         job.finished_at = timezone.now()
-        job.add_log(f"Error: {str(e)}")
+        job.add_log(f"Training failed: {str(e)}")
         job.save()
 
         avatar.trained = False
         avatar.save(update_fields=["trained"])
-        dprint("Job marked as error, avatar.trained = False")
