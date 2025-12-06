@@ -69,17 +69,18 @@ def set_jwt_cookies(response, access_token, refresh_token):
         key="access_token",
         value=access_token,
         httponly=True,
-        secure=not settings.DEBUG,  # False in dev
-        samesite="Lax",
-        max_age=60*60*24*30,
+        secure=True,           # Must be True in production
+        samesite="None",       # Required for cross-origin (www → api)
+        path="/",
     )
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=not settings.DEBUG,
-        samesite="Lax",
-        max_age=60*60*24*30,
+        secure=True,
+        samesite="None",       # Same here
+        path="/",
+        max_age=60*60*24*7,
     )
     return response
 
