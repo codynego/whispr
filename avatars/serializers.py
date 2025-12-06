@@ -220,6 +220,18 @@ class AvatarSourceListSerializer(serializers.ListSerializer):
 # The main serializer
 class AvatarSourceSerializer(serializers.ModelSerializer):
     metadata = serializers.JSONField(default=dict)
+    
+    # Explicitly define the boolean fields with default=True and required=False
+    include_for_tone = serializers.BooleanField(
+        default=True,
+        required=False,
+        allow_null=True  # Optional: allows null if sent explicitly
+    )
+    include_for_knowledge = serializers.BooleanField(
+        default=True,
+        required=False,
+        allow_null=True
+    )
 
     class Meta:
         model = AvatarSource
@@ -232,30 +244,28 @@ class AvatarSourceSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = ["id", "created_at"]
-        
-        # Specify the list serializer to use for bulk operations
-        list_serializer_class = AvatarSourceListSerializer 
+        list_serializer_class = AvatarSourceListSerializer
 
     def validate(self, attrs):
         print(f"\n--- AvatarSourceSerializer.validate START (Type: {attrs.get('source_type', 'N/A')}) ---")
         
-        # Your existing validation logic is fine
-        tone = attrs.get("include_for_tone", False)
-        knowledge = attrs.get("include_for_knowledge", False)
+        tone = attrs.get("include_for_tone", True)       # Safe fallback
+        knowledge = attrs.get("include_for_knowledge", True)  # Safe fallback
         
         print(f"Tone: {tone}, Knowledge: {knowledge}")
         
-        if not tone and not knowledge and attrs.get("source_type"):
-            print("Validation PASS: Source is included but flags are false (expected behavior if used for deletion).")
-            pass 
-        else:
-            print("Validation PASS: Flags are set or source_type is missing.")
-            
+        # Optional: you can still allow both false only if it's intended for deletion or cleanup
+        if not tone and not knowledge:
+            source_type = attrs.get("source_type")
+            if source_type is not None:
+                print("WARNING: Both flags are False but source_type is present. Allowing only if intended for exclusion.")
+            else:
+                print("Both flags False and no source_type — likely deletion/soft-disable.")
+        
         print("--- AvatarSourceSerializer.validate END ---\n")
         return attrs
 
     def create(self, validated_data):
-        # This method is only used if `many=False` is passed to the serializer.
         print("\n--- AvatarSourceSerializer.create (SINGLE ITEM) CALLED ---")
         print("This should generally NOT be called when using AvatarSourceListSerializer.")
         print(f"Validated Data: {validated_data}")
