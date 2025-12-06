@@ -118,18 +118,21 @@ class AvatarSourceListCreateView(generics.ListCreateAPIView):
     def create(self, request, *args, **kwargs):
         avatar = self.get_serializer_context()["avatar"]
         
-        # Deletion and creation are write operations, thus no caching
+        # Replace all sources for this avatar
         AvatarSource.objects.filter(avatar=avatar).delete()
         
-        serializer = self.get_serializer(data=request.data, many=True)
+        # CRITICAL FIX: Pass context so ListSerializer can access avatar!
+        serializer = self.get_serializer(
+            data=request.data,
+            many=True,
+            context=self.get_serializer_context()  # This line was missing context!
+        )
         
-        if serializer.is_valid():
-            self.perform_create(serializer) 
-            headers = self.get_success_headers(serializer.data)
-            return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
-        else:
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+        serializer.is_valid(raise_exception=True)  # Cleaner error handling
+        self.perform_create(serializer)
+        
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 # --- Public Retrieval View ---
 
 @method_decorator(cache_page(PUBLIC_AVATAR_CACHE_TTL), name='dispatch')
