@@ -240,7 +240,7 @@ class AvatarSourceSerializer(serializers.ModelSerializer):
             "include_for_knowledge",
             "created_at",
         ]
-        read_only_fields = ["id", "created_at"]
+        read_only_fields = ["id", "created_at", "include_for_tone", "include_for_knowledge"]
         list_serializer_class = AvatarSourceListSerializer
 
     def validate(self, attrs):
