@@ -49,52 +49,116 @@ class UpdatePasswordView(APIView):
         return Response({"message": "Password updated successfully."}, status=200)
 
 
-from rest_framework.views import APIView
-from rest_framework.response import Response
+
+
+
+
+
+# users/views.py
 from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.exceptions import TokenError
-from rest_framework.permissions import AllowAny
+from rest_framework_simplejwt.views import TokenRefreshView
+
+# Helper to set cookies
+def set_jwt_cookies(response, access_token, refresh_token):
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        secure=not settings.DEBUG,  # False in dev
+        samesite="Lax",
+        max_age=60*60*24*30,
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=not settings.DEBUG,
+        samesite="Lax",
+        max_age=60*60*24*30,
+    )
+    return response
+
+class LoginView(APIView):
+    def post(self, request):
+        email = request.data.get("email")
+        password = request.data.get("password")
+        user = authenticate(email=email, password=password)
+        if not user:
+            return Response({"detail": "Invalid credentials"}, status=401)
+
+        refresh = RefreshToken.for_user(user)
+        access_token = str(refresh.access_token)
+        refresh_token = str(refresh)
+
+        response = Response({"detail": "Logged in"}, status=200)
+        return set_jwt_cookies(response, access_token, refresh_token)
 
 class LogoutView(APIView):
-    # Allow unauthenticated users to hit this endpoint 
-    # (since their access token might be expired, and we only need the cookie)
-    permission_classes = [AllowAny] 
-    
+    permission_classes = [IsAuthenticated]
+
     def post(self, request):
-        # 1. Try to get the Refresh Token from the HTTP-only cookie
-        refresh_token = request.COOKIES.get('refresh_token')
-        
-        # Initialize the response object
-        response = Response({"detail": "Successfully logged out."}, status=status.HTTP_200_OK)
+        try:
+            refresh_token = request.COOKIES.get("refresh_token")
+            token = RefreshToken(refresh_token)
+            token.blacklist()  # Revoke it
+        except:
+            pass
 
-        if refresh_token:
-            try:
-                # 2. Blacklist the token
-                token = RefreshToken(refresh_token)
-                token.blacklist()
-                
-                # 3. Clear the HTTP-only cookie
-                response.delete_cookie('refresh_token')
-                
-                return response
-                
-            except TokenError:
-                # If the token is already invalid, expired, or malformed, 
-                # we still clear the cookie for safety and report success.
-                response.delete_cookie('refresh_token')
-                return response
-        else:
-            # No refresh token found in cookies (e.g., user was never logged in)
-            # Still return 200 and ensure cookie is cleared (just in case)
-            response.delete_cookie('refresh_token')
-            return response
+        response = Response({"detail": "Logged out"}, status=200)
+        response.delete_cookie("access_token")
+        response.delete_cookie("refresh_token")
+        return response
 
+class CustomTokenRefreshView(TokenRefreshView):
+    def post(self, request, *args, **kwargs):
+        # Get refresh token from cookie
+        refresh_token = request.COOKIES.get("refresh_token")
+        if not refresh_token:
+            return Response({"detail": "Refresh token not found"}, status=401)
 
-class ProfileView(generics.RetrieveAPIView):
-    """Get user profile details"""
-    serializer_class = UserSerializer
-    permission_classes = [permissions.IsAuthenticated]
-    
-    def get_object(self):
-        return self.request.user
+        request.data["refresh"] = refresh_token
+        response = super().post(request, *args, **kwargs)
+
+        # Update access token cookie
+        new_access = response.data.get("access")
+        if new_access:
+            response.set_cookie(
+                key="access_token",
+                value=new_access,
+                httponly=True,
+                secure=not settings.DEBUG,
+                samesite="Lax",
+            )
+            # Optionally rotate refresh token cookie
+            new_refresh = response.data.get("refresh")
+            if new_refresh:
+                response.set_cookie(
+                    key="refresh_token",
+                    value=new_refresh,
+                    httponly=True,
+                    secure=not settings.DEBUG,
+                    samesite="Lax",
+                    max_age=60*60*24*30,
+                )
+
+        return response
+
+# Profile view
+class ProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        data = {
+            "id": user.id,
+            "email": user.email,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "whatsapp": user.whatsapp,
+        }
+        return Response(data)
