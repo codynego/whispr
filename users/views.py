@@ -86,6 +86,7 @@ def set_jwt_cookies(response, access_token, refresh_token):
 
 class LoginView(APIView):
     permission_classes = [permissions.AllowAny]
+    authentication_classes = []
     
     def post(self, request):
         email = request.data.get("email")
