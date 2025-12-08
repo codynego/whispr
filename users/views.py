@@ -92,6 +92,7 @@ class LoginView(APIView):
         password = request.data.get("password")
         user = authenticate(email=email, password=password)
         if not user:
+            print("user not found", email, password)
             return Response({"detail": "Invalid credentials"}, status=401)
 
         refresh = RefreshToken.for_user(user)
