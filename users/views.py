@@ -90,7 +90,7 @@ class LoginView(APIView):
     def post(self, request):
         email = request.data.get("email")
         password = request.data.get("password")
-        user = authenticate(email=email, password=password)
+        user = authenticate(request, username=email, password=password)
         if not user:
             print("user not found", email, password)
             return Response({"detail": "Invalid credentials"}, status=401)
@@ -101,6 +101,9 @@ class LoginView(APIView):
 
         response = Response({"detail": "Logged in"}, status=200)
         return set_jwt_cookies(response, access_token, refresh_token)
+
+
+        
 
 class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
