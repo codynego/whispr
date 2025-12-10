@@ -23,14 +23,10 @@ class AvatarSettingsSerializer(serializers.ModelSerializer):
     for the 'is_public' <-> 'visibility' field.
     """
     
-    # Define 'is_public' as a BooleanField without a source. 
-    # Its logic will be handled manually in to_internal_value and get_is_public.
-    is_public = serializers.SerializerMethodField()
-    
-    # These fields correctly use 'source' for automatic mapping
+    is_public = serializers.BooleanField(write_only=True, required=False)
     response_delay_ms = serializers.IntegerField(source='async_delay_seconds')
     enable_owner_takeover = serializers.BooleanField(source='allow_owner_takeover')
-    disclaimer_text = serializers.CharField(source='protected_code', allow_null=True)
+    disclaimer_text = serializers.CharField(source='protected_code', allow_null=True, required=False)
 
     class Meta:
         model = AvatarSettings
@@ -40,41 +36,35 @@ class AvatarSettingsSerializer(serializers.ModelSerializer):
             "response_delay_ms", 
             "enable_owner_takeover", 
         ]
-        # We must include the actual model field 'visibility' here to allow it to be 
-        # saved, but we'll exclude it from the final output/input validation flow.
-        extra_kwargs = {'visibility': {'write_only': True}} # Ensure visibility is not shown on GET
-        
-    # --- Custom Read Method (Model String -> JSON Boolean) ---
-    def get_is_public(self, obj):
-        """Converts model's visibility choice ('public', 'protected', 'private') to a boolean for GET requests."""
-        # Only 'public' should return True for 'is_public'.
-        return obj.visibility == 'public'
+    
+    def to_representation(self, instance):
+        """Converts model's visibility to is_public boolean for GET requests."""
+        data = super().to_representation(instance)
+        data['is_public'] = instance.visibility == 'public'
+        return data
 
-    # --- Custom Write Method (JSON Payload -> Model Field Data) ---
     def to_internal_value(self, data):
-        """Translates the 'is_public' boolean from the payload into the model's 'visibility' string choice."""
+        """Translates 'is_public' boolean to 'visibility' string choice."""
+        # Make a copy to avoid modifying the original
+        data = data.copy()
         
-        # 1. Manually handle 'is_public' since it's a SerializerMethodField for reading
-        #    but we want to use the key for writing.
         if 'is_public' in data:
-            is_public_value = data.pop('is_public') 
+            is_public_value = data.pop('is_public')
             
-            # Map the boolean to the string choice your model expects
+            # Map boolean to visibility choice
             if is_public_value is True:
-                visibility_choice = 'public'
+                data['visibility'] = 'public'
             elif is_public_value is False:
-                # Assuming False maps to 'private'. If you want it to default to 'protected' 
-                # when not 'public', adjust this logic.
-                visibility_choice = 'private'
-            else:
-                 visibility_choice = None # or raise ValidationError
-
-            if visibility_choice is not None:
-                data['visibility'] = visibility_choice
-        return super().to_internal_value(data)
-
-    def update(self, instance, validated_data):
-        return super().update(instance, validated_data)
+                data['visibility'] = 'private'
+        
+        # Call parent's to_internal_value with the modified data
+        internal_data = super().to_internal_value(data)
+        
+        # Add visibility to validated data if it was set
+        if 'visibility' in data:
+            internal_data['visibility'] = data['visibility']
+            
+        return internal_data
 
 
 from rest_framework import serializers
