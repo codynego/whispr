@@ -23,8 +23,6 @@ class NoteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Note
-        # FIX: The field 'title' must be explicitly listed in 'fields' 
-        # when using SerializerMethodField.
         fields = ['id', 'user', 'content', 'created_at', 'updated_at', 'title']
         read_only_fields = ['id', 'user', 'created_at', 'updated_at', 'title']
 
