@@ -13,5 +13,4 @@ def send_welcome_on_signup(sender, instance, created, **kwargs):
     Sends the Day-0 welcome message as soon as a new user is created.
     """
     if created:
-        # Trigger asynchronous welcome message
         trigger_welcome(instance.id)
