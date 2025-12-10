@@ -146,6 +146,7 @@ class AvatarMemoryChunk(models.Model):
     chunk_id = models.UUIDField(default=uuid.uuid4, editable=False)
     text = models.TextField()
     source_type = models.CharField(max_length=50)
+    source_id = models.CharField(max_length=200, null=True, blank=True)
     embedding = models.JSONField(null=True, blank=True)  # optional if using vector DB
     created_at = models.DateTimeField(auto_now_add=True)
 
