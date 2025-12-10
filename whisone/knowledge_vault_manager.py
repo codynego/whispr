@@ -77,6 +77,7 @@ class KnowledgeVaultManager:
 
         text_search = self._build_text_search(summary, entities, relationships)
         memory_id = str(uuid.uuid4())
+        print(f"Ingesting memory {memory_id} for user {self.user.id}")
 
         entry = KnowledgeVaultEntry.objects.create(
             user=self.user,
@@ -87,6 +88,7 @@ class KnowledgeVaultManager:
             text_search=text_search,
             timestamp=timezone.now()
         )
+        print(f"Ingested memory {memory_id} for user {self.user.id}")
 
         # Queue async embedding generation
         generate_embedding_task.delay(str(entry.id))
