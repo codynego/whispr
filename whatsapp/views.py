@@ -110,7 +110,7 @@ def webhook(request):
                         "Hey! 👋 I’m Whisone — your intelligent second brain.\n\n"
                         "It looks like you aren’t registered yet.\n\n"
                         "Create your account in *8 seconds* to start saving notes, files, reminders and more:\n"
-                        "https://whisone.com/signup"
+                        "https://whisone.com/auth/register"
                     )
                     send_whatsapp_message_task.delay(
                         to_number=sender_number,
