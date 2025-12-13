@@ -143,6 +143,15 @@ def process_user_message(user_id: int, message: str, whatsapp_mode: bool = False
                 content=f"An error occurred while chatting with {avatar.name}: {e}"
             )
             return f"Avatar error."
+    else:
+        response_text = "you are chatting with whisone"
+        if whatsapp_mode:
+            send_whatsapp_text.delay(
+                user_id=user.id,
+                text=response_text
+                )
+        else:
+            return response_text
 
 
     # -------------------------------------------------------------------------
