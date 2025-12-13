@@ -4,6 +4,7 @@ from openai import OpenAI
 from avatars.models import AvatarConversation, AvatarMessage
 import numpy as np
 from django.conf import settings
+from whatsapp.tasks import send_whatsapp_message_task
 
 client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
@@ -56,8 +57,9 @@ def retrieve_relevant_chunks(avatar, query_embedding, top_k=6):
 # MAIN FUNCTION — Generate the avatar’s response
 # ==========================================================
 @shared_task
-def generate_avatar_reply(conversation_id: str, user_message_id: str):
-
+def generate_avatar_reply(conversation_id: str, user_message_id: str, whatsapp_mode: bool = False) -> str:
+    user = AvatarConversation.objects.get(id=conversation_id).user
+    sender_number = user.whatsapp if user else None
     # 1. Load objects
     conversation = (
         AvatarConversation.objects
@@ -153,6 +155,12 @@ Your purpose is to realistically represent **{avatar.name}** — not to be a gen
         role="avatar",
         content=final_reply,
     )
-    print(f"Generated avatar reply (ID: {final_message.id}) for conversation {conversation.id}")
+
+    if whatsapp_mode:
+        send_whatsapp_message_task.delay(
+            to_number=sender_number,
+            message=final_reply
+        )
+
 
     return final_message.id
