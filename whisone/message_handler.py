@@ -74,15 +74,33 @@ def process_user_message(user_id: int, message: str, whatsapp_mode: bool = False
                     content=response_text
                 )
                 print(f"✨ Switched user to chat with Avatar: {avatar.name}")
-                return response_text # Exit the task after handling the command
+                if whatsapp_mode:
+                    send_whatsapp_text.delay(
+                        user_id=user.id,
+                        text=response_text
+                        )
+                else:
+                    return response_text
             else:
                 response_text = f"Avatar with handle '{handle}' not found or is inaccessible."
                 AssistantMessage.objects.create(user=user, role="assistant", content=response_text)
-                return response_text
+                if whatsapp_mode:
+                    send_whatsapp_text.delay(
+                        user_id=user.id,
+                        text=response_text
+                        )
+                else:   
+                    return response_text
         except IndexError:
             response_text = "Usage: switch [avatar_handle]"
             AssistantMessage.objects.create(user=user, role="assistant", content=response_text)
-            return response_text
+            if whatsapp_mode:
+                send_whatsapp_text.delay(
+                    user_id=user.id,
+                    text=response_text
+                    )
+            else:
+                return response_text
             
     # --- B. CHAT WITH AVATAR CONTEXT ---
     if user.current_avatar != "whisone":
@@ -91,8 +109,13 @@ def process_user_message(user_id: int, message: str, whatsapp_mode: bool = False
         if not avatar:
             response_text = f"Avatar with handle '{avatar_handle}' not found or is inaccessible."
             AssistantMessage.objects.create(user=user, role="assistant", content=response_text)
-            return response_text
-        print(f"💬 User is currently chatting with Avatar: {avatar.name}")
+            if whatsapp_mode:
+                send_whatsapp_text.delay(
+                    user_id=user.id,
+                    text=response_text
+                    )
+            else:
+                return response_text
         
         try:
             conversation = get_or_create_avatar_conversation(user, avatar)
@@ -219,7 +242,7 @@ def process_user_message(user_id: int, message: str, whatsapp_mode: bool = False
     if whatsapp_mode:
         send_whatsapp_text.delay(
             user_id=user.id,
-            text=final_reply
+            text=response_text
             )
 
     return response_text
