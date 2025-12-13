@@ -121,6 +121,7 @@ def webhook(request):
                 # ------------------------------------------------------
                 # USER EXISTS → CHECK FIRST INTERACTION
                 # ------------------------------------------------------
+                print("user first interaction", user.first_interaction_time)
                 if user.first_interaction_time is None:
                     user.first_interaction_time = timezone.now()
                     user.save(update_fields=["first_interaction_time"])
@@ -128,7 +129,9 @@ def webhook(request):
                     welcome_msg = (
                         "Welcome back! 🎉\n\n"
                         "Your second brain is now activated.\n"
-                        "You can send *notes, reminders, ideas, files*, and I’ll store them automatically."
+                        "You can send *notes, reminders, ideas, files*, and I’ll store them automatically.\n"
+                        "to access your dashboard: please login\n"
+                        "https://whisone.com/auth/login"
                     )
                     send_whatsapp_message_task.delay(
                         to_number=sender_number,
