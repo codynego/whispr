@@ -122,9 +122,9 @@ def webhook(request):
                 # ------------------------------------------------------
                 # USER EXISTS → CHECK FIRST INTERACTION
                 # ------------------------------------------------------
-                print("user first interaction", user.first_interaction_time)
                 if user.first_interaction_time is None:
                     user.first_interaction_time = timezone.now()
+                    user.is_active = True
                     user.save(update_fields=["first_interaction_time"])
 
                     welcome_msg = (
