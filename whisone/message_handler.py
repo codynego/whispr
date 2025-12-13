@@ -79,7 +79,7 @@ def process_user_message(user_id: int, message: str):
                 AssistantMessage.objects.create(user=user, role="assistant", content=response_text)
                 return response_text
         except IndexError:
-            response_text = "Usage: /switch [avatar_handle]"
+            response_text = "Usage: switch [avatar_handle]"
             AssistantMessage.objects.create(user=user, role="assistant", content=response_text)
             return response_text
             

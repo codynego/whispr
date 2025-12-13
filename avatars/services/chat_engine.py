@@ -4,7 +4,7 @@ from openai import OpenAI
 from avatars.models import AvatarConversation, AvatarMessage
 import numpy as np
 from django.conf import settings
-from whatsapp.tasks import send_whatsapp_message_task
+from whatsapp.tasks import send_whatsapp_text
 
 client = OpenAI(api_key=settings.OPENAI_API_KEY)
 
