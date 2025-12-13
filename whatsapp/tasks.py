@@ -223,6 +223,7 @@ def send_whatsapp_text(user_id: int, text: str, alert_type: str = 'generic') -> 
 
 
         # Send asynchronously
+        print("Queuing WhatsApp message for user ID:", user_id, "Message:", text)
         send_whatsapp_message_task.delay(user_id=user_id, message=text)
 
         logger.info(f"Queued WhatsApp message for user {user_id} → {user.whatsapp}")
