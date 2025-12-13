@@ -21,49 +21,6 @@ User = get_user_model()
 
 logger = logging.getLogger(__name__)
 
-# def process_whatsapp_message(message_instance):
-#     """
-#     Takes a WhatsAppMessage instance, sends its text to Gemini,
-#     and returns the AI-generated response.
-#     """
-#     try:
-#         payload_dict = message_instance
-
-#         text_body = payload_dict['entry'][0]['changes'][0]['value']['messages'][0]['text']['body']
-#         sender_number = payload_dict['entry'][0]['changes'][0]['value']['messages'][0]['from']
-#         # Construct prompt from incoming message
-
-#         user_query = text_body
-#         print("User query:", user_query)
-#         user = User.objects.get(whatsapp=sender_number)
-#         handler = MessageHandler(user=user)
-#         print("Handling message with MessageHandler for user ID:", user.id)
-#         ai_response = handler.handle(message=user_query)
-
-#         response_text = ai_response["reply"]
-#         print("Gemini response:", response_text)
-#         print("Received Gemini response:", ai_response)
-
-
-#         # Save AI response as a new WhatsAppMessage (optional)
-#         try:
-#             response_message = WhatsAppMessage.objects.create(
-#                 user=user,
-#                 to_number=sender_number,
-#                 message=response_text,
-#                 alert_type='auto_reply'
-#             )
-
-#         except Exception as e:
-#             print("Error creating response WhatsAppMessage:", str(e))
-#             logger.error(f"Error creating response WhatsAppMessage: {str(e)}")
-#             return None
-#         return response_message
-
-#     except Exception as e:
-#         logger.error(f"Error processing WhatsApp message {message_instance.id}: {str(e)}")
-#         return None
-
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=10)
 def send_whatsapp_message_task(self, task_id = None, message_id=None, message=None, user_id=None, to_number=None):
@@ -72,6 +29,7 @@ def send_whatsapp_message_task(self, task_id = None, message_id=None, message=No
     """
     
     try:
+        print("send_whatsapp_message_task called with:")
         print("Sending WhatsApp message ID:", message_id, "Message:", message)
         # message = WhatsAppMessage.objects.get(id=message_id)
         user = User.objects.get(id=user_id) if user_id else None

@@ -107,7 +107,7 @@ def process_user_message(user_id: int, message: str):
             task_id = generate_avatar_reply.delay(
                 conversation_id=str(conversation.id),
                 user_message_id=str(visitor_message.id),
-                whatsapp_mode=False  # Set to True if this is from WhatsApp
+                whatsapp_mode=True
             )
             return f"Avatar processing (Task ID: {task_id})"
 
