@@ -103,7 +103,7 @@ def process_user_message(user_id: int, message: str, whatsapp_mode: bool = False
                 return response_text
             
     # --- B. CHAT WITH AVATAR CONTEXT ---
-    if user.current_avatar != "whisone":
+    if user.current_avatar != "whisone" and message.startswith("switch"):
         avatar_handle = user.current_avatar
         avatar = Avatar.objects.filter(handle=avatar_handle).first()
         if not avatar:
