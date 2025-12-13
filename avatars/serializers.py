@@ -111,7 +111,7 @@ class AvatarSerializer(serializers.ModelSerializer):
     class Meta:
         model = Avatar
         fields = [
-            "id", "owner", "name", "handle", "photo", "tone", "persona_prompt",
+            "id", "owner", "name", "handle", "photo", "tone", "description","persona_prompt",
             "trained", "trained_at", "created_at", "updated_at",
       
             "settings", "analytics",
@@ -134,14 +134,27 @@ class AvatarSerializer(serializers.ModelSerializer):
         return AvatarMessage.objects.filter(conversation__avatar=obj).count()
 
 
+
 class AvatarConversationSerializer(serializers.ModelSerializer):
     """Handles serialization for AvatarConversation."""
+    
+    # Include user email if available
+    user_email = serializers.CharField(source='user.email', read_only=True)
+
     class Meta:
         model = AvatarConversation
         fields = [
-            "id", "avatar", "visitor_id", "started_at", "ended_at", "taken_over_by_owner",
+            "id",
+            "avatar",
+            "visitor_id",
+            "user",
+            "started_at",
+            "ended_at",
+            "taken_over_by_owner",
+            "prompted_login",
         ]
         read_only_fields = ["started_at", "ended_at"]
+
 
 
 class AvatarMessageSerializer(serializers.ModelSerializer):

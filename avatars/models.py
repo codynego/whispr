@@ -26,6 +26,7 @@ class Avatar(models.Model):
     handle = models.SlugField(max_length=120, unique=True)
     photo = models.ImageField(upload_to="avatars/photos/", null=True, blank=True)
     tone = models.CharField(max_length=30, choices=TONE_CHOICES, default="casual")
+    description = models.TextField(blank=True, null=True)
     persona_prompt = models.TextField(blank=True, null=True)
     trained = models.BooleanField(default=False)
     trained_at = models.DateTimeField(null=True, blank=True)
@@ -45,19 +46,46 @@ class Avatar(models.Model):
 
 
 
+import uuid
+from django.db import models
+from django.conf import settings
+from django.utils import timezone
+
 class AvatarConversation(models.Model):
     """
-    Tracks a visitor chat session with an avatar
+    Tracks a visitor chat session with an avatar.
+    Supports both unauthenticated visitors (visitor_id) and authenticated users.
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    avatar = models.ForeignKey(Avatar, on_delete=models.CASCADE, related_name="conversations")
-    visitor_id = models.CharField(max_length=200)  # hashed IP / session ID
+    avatar = models.ForeignKey('Avatar', on_delete=models.CASCADE, related_name="conversations")
+    
+    # Either visitor_id (for unauthenticated users) or user (for signed-up users)
+    visitor_id = models.CharField(max_length=200, blank=True, null=True)  # hashed IP / session ID
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name="avatar_conversations"
+    )
+    
     started_at = models.DateTimeField(auto_now_add=True)
     ended_at = models.DateTimeField(null=True, blank=True)
     taken_over_by_owner = models.BooleanField(default=False)
 
+    # Optional: track if user has been prompted to sign up/login
+    prompted_login = models.BooleanField(default=False)
+
     def __str__(self):
-        return f"Conversation {self.id} with {self.avatar.handle}"
+        if self.user:
+            return f"Conversation {self.id} with {self.avatar.handle} (user: {self.user.email})"
+        return f"Conversation {self.id} with {self.avatar.handle} (visitor: {self.visitor_id})"
+
+    def end_conversation(self):
+        """Mark conversation as ended"""
+        self.ended_at = timezone.now()
+        self.save()
+
 
 
 class AvatarMessage(models.Model):

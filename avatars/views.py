@@ -157,38 +157,61 @@ class AvatarChatView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request, handle):
-        # ... (implementation omitted for brevity, no changes needed for caching)
         try:
             avatar = get_avatar_by_handle_public(handle)
         except Exception:
             return Response({"error": "Avatar not found or not public."}, status=status.HTTP_404_NOT_FOUND)
 
+        # Ensure session exists
         if not request.session.session_key:
             request.session.save()
-            
         visitor_id = request.data.get("visitor_id") or request.session.session_key
         message_text = request.data.get("message")
 
         if not message_text or not visitor_id:
             return Response({"error": "Message and visitor_id are required."}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Track whether user is logged in
+        user = request.user if request.user.is_authenticated else None
+        print("user", user)
+
+        # Create or get conversation
         conversation, _ = AvatarConversation.objects.get_or_create(
-            avatar=avatar, visitor_id=visitor_id, ended_at=None
+            avatar=avatar,
+            visitor_id=visitor_id,
+            ended_at=None,
+            defaults={"user": user}
         )
 
+        # If user is authenticated but conversation had no user, assign
+        if user and conversation.user is None:
+            conversation.user = user
+            conversation.save()
+
+        # Optionally flag for login prompt if visitor is unauthenticated
+        prompted_login = False
+        if not user:
+            prompted_login = True
+            conversation.prompted_login = True
+            conversation.save()
+
+        # Save visitor message
         visitor_message = AvatarMessage.objects.create(
             conversation=conversation, role="visitor", content=message_text
         )
 
+        # Trigger async response generation
         task_id = generate_avatar_reply.delay(
             conversation_id=str(conversation.id),
             user_message_id=str(visitor_message.id)
         )
-        
+
         return Response({
             "conversation_id": str(conversation.id),
             "task_id": str(task_id),
+            "prompted_login": prompted_login
         }, status=status.HTTP_202_ACCEPTED)
+
 
 class AvatarTrainView(APIView):
     """Triggers the asynchronous Celery training task for an Avatar."""
