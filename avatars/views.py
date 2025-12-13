@@ -180,7 +180,7 @@ class AvatarChatView(APIView):
             avatar=avatar,
             visitor_id=visitor_id,
             ended_at=None,
-            defaults={"user": user}
+            defaults={"user": user, 'prompted_login': False}
         )
 
         # If user is authenticated but conversation had no user, assign
