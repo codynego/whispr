@@ -16,7 +16,7 @@ from .file_command_handler import handle_file_command
 # Assuming AvatarConversation and AvatarMessage are available (from your context)
 from avatars.models import Avatar, AvatarConversation, AvatarMessage
 # Assuming this is the existing async task for Avatar replies (from your context)
-from .tasks import generate_avatar_reply 
+from avatars.services.chat_engine import generate_avatar_reply 
 from .models import Integration
 from assistant.models import AssistantMessage # I assume this is for general assistant chat
 
