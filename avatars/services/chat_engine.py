@@ -159,7 +159,7 @@ Your purpose is to realistically represent **{avatar.name}** — not to be a gen
     if whatsapp_mode:
         send_whatsapp_message_task.delay(
             to_number=sender_number,
-            message=final_message
+            message=final_reply
         )
 
 
