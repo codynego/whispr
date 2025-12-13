@@ -44,7 +44,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     
     first_name = models.CharField(max_length=150, blank=True)
     last_name = models.CharField(max_length=150, blank=True)
-    default_avatar = models.CharField(max_length=100, blank=True, null=True, default="whisone")
+    current_avatar = models.CharField(max_length=100, blank=True, null=True, default="whisone")
 
     first_interaction_time = models.DateTimeField(blank=True, null=True)
     

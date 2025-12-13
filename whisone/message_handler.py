@@ -84,8 +84,13 @@ def process_user_message(user_id: int, message: str):
             return response_text
             
     # --- B. CHAT WITH AVATAR CONTEXT ---
-    if user.current_avatar:
-        avatar = user.current_avatar
+    if user.current_avatar is not "whisone":
+        avatar_handle = user.current_avatar
+        avatar = Avatar.objects.filter(handle=avatar_handle).first()
+        if not avatar:
+            response_text = f"Avatar with handle '{avatar_handle}' not found or is inaccessible."
+            AssistantMessage.objects.create(user=user, role="assistant", content=response_text)
+            return response_text
         print(f"💬 User is currently chatting with Avatar: {avatar.name}")
         
         try:
