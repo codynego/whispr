@@ -173,7 +173,7 @@ class AvatarChatView(APIView):
 
         # Track whether user is logged in
         user = request.user if request.user.is_authenticated else None
-        print("user", user)
+        print("user", user, request.user)
 
         # Create or get conversation
         conversation, _ = AvatarConversation.objects.get_or_create(
