@@ -157,15 +157,9 @@ def webhook(request):
                         content=msg_text
                     )
 
-                    chain(
-                        process_user_message.s(user.id, msg_text),
-                        send_whatsapp_message_task.s(
-                            user_id=user.id,
-                            message_id=None,
-                            message=None,
-                            to_number=sender_number
-                        )
-                    ).apply_async()
+
+                    process_user_message.delay(user.id, msg_text, whatsapp_mode=True),
+
 
                 # ------------------------------------------------------
                 # DOCUMENT UPLOAD HANDLING

@@ -19,6 +19,7 @@ from avatars.models import Avatar, AvatarConversation, AvatarMessage
 from avatars.services.chat_engine import generate_avatar_reply 
 from .models import Integration
 from assistant.models import AssistantMessage # I assume this is for general assistant chat
+from whatsapp.tasks import send_whatsapp_text
 
 User = get_user_model()
 
@@ -35,7 +36,7 @@ def get_or_create_avatar_conversation(user, avatar):
     return conversation
 
 @shared_task
-def process_user_message(user_id: int, message: str):
+def process_user_message(user_id: int, message: str, whatsapp_mode: bool = False) -> str:
     print(f"📩 Processing message for user {user_id}: {message}")
 
     try:
@@ -109,7 +110,7 @@ def process_user_message(user_id: int, message: str):
                 user_message_id=str(visitor_message.id),
                 whatsapp_mode=True
             )
-            return f"Avatar processing (Task ID: {task_id})"
+            return "processing_avatar_reply"
 
         except Exception as e:
             print(f"Error processing Avatar message: {e}")
@@ -215,5 +216,10 @@ def process_user_message(user_id: int, message: str):
         role="assistant",
         content=response_text
     )
+    if whatsapp_mode:
+        send_whatsapp_text.delay(
+            user_id=user.id,
+            text=final_reply
+            )
 
     return response_text
