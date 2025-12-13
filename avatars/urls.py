@@ -6,6 +6,7 @@ urlpatterns = [
     # ----------------------------
     # PUBLIC ACCESS ROUTE (MUST be first to catch unauthenticated, public traffic)
     # ----------------------------
+    path('check/handle/', views.AvatarCheckHandleAPIView.as_view(), name='avatar-check-handle'),
     path("<slug:handle>/public/", views.AvatarRetrievePublicView.as_view(), name="avatar-retrieve-public"),
     path("chat-tasks/<uuid:task_id>/status/", views.AvatarChatTaskStatusView.as_view(), name="avatar-chat-task-status"),
     # ----------------------------
@@ -42,7 +43,7 @@ urlpatterns = [
     
     path("", views.AvatarListCreateView.as_view(), name="avatar-list-create"),
     path("profile/<uuid:pk>/", views.AvatarRetrieveUpdateDestroyView.as_view(), name="avatar-detail"),
-    path('check-handle/', views.AvatarCheckHandleAPIView.as_view(), name='avatar-check-handle'),
+
 
     #path("sources/", views.AvatarSourceListCreateView.as_view(), name="avatar-source-list-create"),
     path("sources/<uuid:pk>/", views.AvatarSourceRetrieveUpdateDestroyView.as_view(), name="avatar-source-detail"),
