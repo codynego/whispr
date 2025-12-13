@@ -58,7 +58,7 @@ def process_user_message(user_id: int, message: str):
 
             if avatar:
                 # 1. Update the user's current chat context
-                user.current_avatar = avatar
+                user.current_avatar = handle
                 user.save(update_fields=['current_avatar'])
                 
                 # 2. Get/Create the conversation record
