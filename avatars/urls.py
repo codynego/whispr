@@ -42,6 +42,7 @@ urlpatterns = [
     
     path("", views.AvatarListCreateView.as_view(), name="avatar-list-create"),
     path("profile/<uuid:pk>/", views.AvatarRetrieveUpdateDestroyView.as_view(), name="avatar-detail"),
+    path('check-handle/', views.AvatarCheckHandleAPIView.as_view(), name='avatar-check-handle'),
 
     #path("sources/", views.AvatarSourceListCreateView.as_view(), name="avatar-source-list-create"),
     path("sources/<uuid:pk>/", views.AvatarSourceRetrieveUpdateDestroyView.as_view(), name="avatar-source-detail"),

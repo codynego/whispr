@@ -562,3 +562,23 @@ class AvatarChatTaskStatusView(APIView):
             return Response({
                 "status": task_result.status,
             }, status=status.HTTP_200_OK)
+
+
+class AvatarCheckHandleAPIView(APIView):
+    """
+    Checks if an avatar handle is already taken (case-insensitive) for UX purposes.
+    GET /avatars/check-handle/?handle=test_name
+    """
+    permission_classes = [permissions.IsAuthenticated] # Requires a logged-in user to prevent anonymous spam
+
+    def get(self, request, format=None):
+        handle = request.query_params.get('handle', '').strip()
+        
+        if not handle:
+            return Response({"error": "The 'handle' query parameter is required."}, status=status.HTTP_400_BAD_REQUEST)
+            
+        # Check if any Avatar with this handle exists (case-insensitive match)
+        # Using .filter().exists() is efficient
+        is_available = not Avatar.objects.filter(handle__iexact=handle).exists()
+
+        return Response({"is_available": is_available, "handle": handle}, status=status.HTTP_200_OK)
