@@ -103,7 +103,7 @@ def process_user_message(user_id: int, message: str, whatsapp_mode: bool = False
                 return response_text
             
     # --- B. CHAT WITH AVATAR CONTEXT ---
-    if user.current_avatar != "whisone" and message.startswith("switch"):
+    if user.current_avatar != "whisone":
         avatar_handle = user.current_avatar
         avatar = Avatar.objects.filter(handle=avatar_handle).first()
         if not avatar:
@@ -143,15 +143,7 @@ def process_user_message(user_id: int, message: str, whatsapp_mode: bool = False
                 content=f"An error occurred while chatting with {avatar.name}: {e}"
             )
             return f"Avatar error."
-    elif user.current_avatar == "whisone" and message.startswith("switch"):
-        response_text = "you are chatting with whisone"
-        if whatsapp_mode:
-            send_whatsapp_text.delay(
-                user_id=user.id,
-                text=response_text
-                )
-        else:
-            return response_text
+
 
 
     # -------------------------------------------------------------------------
