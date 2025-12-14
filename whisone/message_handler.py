@@ -143,7 +143,7 @@ def process_user_message(user_id: int, message: str, whatsapp_mode: bool = False
                 content=f"An error occurred while chatting with {avatar.name}: {e}"
             )
             return f"Avatar error."
-    else:
+    elif user.current_avatar == "whisone" and message.startswith("switch"):
         response_text = "you are chatting with whisone"
         if whatsapp_mode:
             send_whatsapp_text.delay(
@@ -158,7 +158,6 @@ def process_user_message(user_id: int, message: str, whatsapp_mode: bool = False
     # If the flow reaches here, it means the user is chatting with the default Assistant.
     # The original Assistant logic proceeds below.
     # -------------------------------------------------------------------------
-    print("🤖 Processing message with default Assistant logic.")
 
     # -------------------------------------------------------------------------
     # 1️⃣ Load integrations
