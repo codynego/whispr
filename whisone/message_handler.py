@@ -50,7 +50,7 @@ def process_user_message(user_id: int, message: str, whatsapp_mode: bool = False
     # -----------------------------
 
     # --- A. SWITCH COMMAND ---
-    if message.startswith("switch"):
+    if message.startswith("/switch"):
         # Format: /switch [handle]
         try:
             # Extract the avatar handle from the message (e.g., from "/switch genius_avatar")
@@ -92,7 +92,7 @@ def process_user_message(user_id: int, message: str, whatsapp_mode: bool = False
                 else:   
                     return response_text
         except IndexError:
-            response_text = "Usage: switch [avatar_handle]"
+            response_text = "Usage: /switch [avatar_handle]"
             AssistantMessage.objects.create(user=user, role="assistant", content=response_text)
             if whatsapp_mode:
                 send_whatsapp_text.delay(
@@ -103,7 +103,7 @@ def process_user_message(user_id: int, message: str, whatsapp_mode: bool = False
                 return response_text
             
     # --- B. CHAT WITH AVATAR CONTEXT ---
-    if user.current_avatar != "whisone":
+    if user.current_avatar != "whisone" and message.startswith("/switch") is False:
         avatar_handle = user.current_avatar
         avatar = Avatar.objects.filter(handle=avatar_handle).first()
         if not avatar:
@@ -144,8 +144,7 @@ def process_user_message(user_id: int, message: str, whatsapp_mode: bool = False
             )
             return f"Avatar error."
 
-
-
+    print("💡 Proceeding with default Assistant flow.")
     # -------------------------------------------------------------------------
     # If the flow reaches here, it means the user is chatting with the default Assistant.
     # The original Assistant logic proceeds below.
