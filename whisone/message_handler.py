@@ -79,6 +79,7 @@ def process_user_message(user_id: int, message: str, whatsapp_mode: bool = False
                         user_id=user.id,
                         text=response_text
                         )
+                    return None
                 else:
                     return response_text
             else:
@@ -89,6 +90,7 @@ def process_user_message(user_id: int, message: str, whatsapp_mode: bool = False
                         user_id=user.id,
                         text=response_text
                         )
+                    return None
                 else:   
                     return response_text
         except IndexError:
@@ -99,6 +101,7 @@ def process_user_message(user_id: int, message: str, whatsapp_mode: bool = False
                     user_id=user.id,
                     text=response_text
                     )
+                return None
             else:
                 return response_text
             
