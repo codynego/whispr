@@ -13,9 +13,7 @@ from .services.calendar_service import GoogleCalendarService
 from .memory_ingestor import MemoryIngestor
 from .memory_querier import KVQueryManager
 from .file_command_handler import handle_file_command
-# Assuming AvatarConversation and AvatarMessage are available (from your context)
 from avatars.models import Avatar, AvatarConversation, AvatarMessage
-# Assuming this is the existing async task for Avatar replies (from your context)
 from avatars.services.chat_engine import generate_avatar_reply 
 from .models import Integration
 from assistant.models import AssistantMessage # I assume this is for general assistant chat
@@ -65,15 +63,20 @@ def process_user_message(user_id: int, message: str, whatsapp_mode: bool = False
                 # 2. Get/Create the conversation record
                 get_or_create_avatar_conversation(user, avatar)
 
-                response_text = f"You are now chatting with **{avatar.name}**."
-                
-                # Send the response back to the user via AssistantMessage
-                AssistantMessage.objects.create(
-                    user=user,
-                    role="assistant",
-                    content=response_text
-                )
-                print(f"✨ Switched user to chat with Avatar: {avatar.name}")
+                response_text = f"You are now chatting with *{avatar.name}*."
+                if whatsapp_mode:
+                    send_whatsapp_text.delay(
+                        user_id=user.id,
+                        text=response_text
+                        )
+                    return None
+                else:
+                    return response_text
+            elif handle == "whisone":
+                # Switch back to default Assistant
+                user.current_avatar = "whisone"
+                user.save(update_fields=['current_avatar'])
+                response_text = "You are now chatting with *WhisOne Assistant*."
                 if whatsapp_mode:
                     send_whatsapp_text.delay(
                         user_id=user.id,
@@ -139,15 +142,12 @@ def process_user_message(user_id: int, message: str, whatsapp_mode: bool = False
             return "processing_avatar_reply"
 
         except Exception as e:
-            print(f"Error processing Avatar message: {e}")
             AssistantMessage.objects.create(
                 user=user, 
                 role="assistant", 
                 content=f"An error occurred while chatting with {avatar.name}: {e}"
             )
             return f"Avatar error."
-
-    print("💡 Proceeding with default Assistant flow.")
     # -------------------------------------------------------------------------
     # If the flow reaches here, it means the user is chatting with the default Assistant.
     # The original Assistant logic proceeds below.
