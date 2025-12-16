@@ -35,119 +35,119 @@ def get_or_create_avatar_conversation(user, avatar):
 
 @shared_task
 def process_user_message(user_id: int, message: str, whatsapp_mode: bool = False) -> str:
-    print(f"📩 Processing message for user {user_id}: {message}")
+    # print(f"📩 Processing message for user {user_id}: {message}")
 
-    try:
-        user = User.objects.get(id=user_id)
-    except User.DoesNotExist:
-        print(f"User with ID {user_id} not found.")
-        return
+    # try:
+    #     user = User.objects.get(id=user_id)
+    # except User.DoesNotExist:
+    #     print(f"User with ID {user_id} not found.")
+    #     return
 
-    # -----------------------------
-    # 0️⃣ COMMAND & CONTEXT CHECK
-    # -----------------------------
+    # # -----------------------------
+    # # 0️⃣ COMMAND & CONTEXT CHECK
+    # # -----------------------------
 
-    # --- A. SWITCH COMMAND ---
-    if message.startswith("/switch"):
-        # Format: /switch [handle]
-        try:
-            # Extract the avatar handle from the message (e.g., from "/switch genius_avatar")
-            handle = message.split()[1].lower()
-            avatar = Avatar.objects.filter(handle=handle).first()
+    # # --- A. SWITCH COMMAND ---
+    # if message.startswith("/switch"):
+    #     # Format: /switch [handle]
+    #     try:
+    #         # Extract the avatar handle from the message (e.g., from "/switch genius_avatar")
+    #         handle = message.split()[1].lower()
+    #         avatar = Avatar.objects.filter(handle=handle).first()
 
-            if avatar:
-                # 1. Update the user's current chat context
-                user.current_avatar = handle
-                user.save(update_fields=['current_avatar'])
+    #         if avatar:
+    #             # 1. Update the user's current chat context
+    #             user.current_avatar = handle
+    #             user.save(update_fields=['current_avatar'])
                 
-                # 2. Get/Create the conversation record
-                get_or_create_avatar_conversation(user, avatar)
+    #             # 2. Get/Create the conversation record
+    #             get_or_create_avatar_conversation(user, avatar)
 
-                response_text = f"You are now chatting with *{avatar.name}*."
-                if whatsapp_mode:
-                    send_whatsapp_text.delay(
-                        user_id=user.id,
-                        text=response_text
-                        )
-                    return None
-                else:
-                    return response_text
-            elif handle == "whisone":
-                # Switch back to default Assistant
-                user.current_avatar = "whisone"
-                user.save(update_fields=['current_avatar'])
-                response_text = "You are now chatting with *WhisOne Assistant*."
-                if whatsapp_mode:
-                    send_whatsapp_text.delay(
-                        user_id=user.id,
-                        text=response_text
-                        )
-                    return None
-                else:
-                    return response_text
-            else:
-                response_text = f"Avatar with handle '{handle}' not found or is inaccessible."
-                AssistantMessage.objects.create(user=user, role="assistant", content=response_text)
-                if whatsapp_mode:
-                    send_whatsapp_text.delay(
-                        user_id=user.id,
-                        text=response_text
-                        )
-                    return None
-                else:   
-                    return response_text
-        except IndexError:
-            response_text = "Usage: /switch [avatar_handle]"
-            AssistantMessage.objects.create(user=user, role="assistant", content=response_text)
-            if whatsapp_mode:
-                send_whatsapp_text.delay(
-                    user_id=user.id,
-                    text=response_text
-                    )
-                return None
-            else:
-                return response_text
+    #             response_text = f"You are now chatting with *{avatar.name}*."
+    #             if whatsapp_mode:
+    #                 send_whatsapp_text.delay(
+    #                     user_id=user.id,
+    #                     text=response_text
+    #                     )
+    #                 return None
+    #             else:
+    #                 return response_text
+    #         elif handle == "whisone":
+    #             # Switch back to default Assistant
+    #             user.current_avatar = "whisone"
+    #             user.save(update_fields=['current_avatar'])
+    #             response_text = "You are now chatting with *WhisOne Assistant*."
+    #             if whatsapp_mode:
+    #                 send_whatsapp_text.delay(
+    #                     user_id=user.id,
+    #                     text=response_text
+    #                     )
+    #                 return None
+    #             else:
+    #                 return response_text
+    #         else:
+    #             response_text = f"Avatar with handle '{handle}' not found or is inaccessible."
+    #             AssistantMessage.objects.create(user=user, role="assistant", content=response_text)
+    #             if whatsapp_mode:
+    #                 send_whatsapp_text.delay(
+    #                     user_id=user.id,
+    #                     text=response_text
+    #                     )
+    #                 return None
+    #             else:   
+    #                 return response_text
+    #     except IndexError:
+    #         response_text = "Usage: /switch [avatar_handle]"
+    #         AssistantMessage.objects.create(user=user, role="assistant", content=response_text)
+    #         if whatsapp_mode:
+    #             send_whatsapp_text.delay(
+    #                 user_id=user.id,
+    #                 text=response_text
+    #                 )
+    #             return None
+    #         else:
+    #             return response_text
             
-    # --- B. CHAT WITH AVATAR CONTEXT ---
-    if user.current_avatar != "whisone" and message.startswith("/switch") is False:
-        avatar_handle = user.current_avatar
-        avatar = Avatar.objects.filter(handle=avatar_handle).first()
-        if not avatar:
-            response_text = f"Avatar with handle '{avatar_handle}' not found or is inaccessible."
-            AssistantMessage.objects.create(user=user, role="assistant", content=response_text)
-            if whatsapp_mode:
-                send_whatsapp_text.delay(
-                    user_id=user.id,
-                    text=response_text
-                    )
-            else:
-                return response_text
+    # # --- B. CHAT WITH AVATAR CONTEXT ---
+    # if user.current_avatar != "whisone" and message.startswith("/switch") is False:
+    #     avatar_handle = user.current_avatar
+    #     avatar = Avatar.objects.filter(handle=avatar_handle).first()
+    #     if not avatar:
+    #         response_text = f"Avatar with handle '{avatar_handle}' not found or is inaccessible."
+    #         AssistantMessage.objects.create(user=user, role="assistant", content=response_text)
+    #         if whatsapp_mode:
+    #             send_whatsapp_text.delay(
+    #                 user_id=user.id,
+    #                 text=response_text
+    #                 )
+    #         else:
+    #             return response_text
         
-        try:
-            conversation = get_or_create_avatar_conversation(user, avatar)
+    #     try:
+    #         conversation = get_or_create_avatar_conversation(user, avatar)
 
-            # 1. Save visitor message (user's message)
-            visitor_message = AvatarMessage.objects.create(
-                conversation=conversation, 
-                role="visitor", 
-                content=message
-            )
+    #         # 1. Save visitor message (user's message)
+    #         visitor_message = AvatarMessage.objects.create(
+    #             conversation=conversation, 
+    #             role="visitor", 
+    #             content=message
+    #         )
 
-            # 2. Trigger async response generation for the Avatar
-            task_id = generate_avatar_reply.delay(
-                conversation_id=str(conversation.id),
-                user_message_id=str(visitor_message.id),
-                whatsapp_mode=True
-            )
-            return "processing_avatar_reply"
+    #         # 2. Trigger async response generation for the Avatar
+    #         task_id = generate_avatar_reply.delay(
+    #             conversation_id=str(conversation.id),
+    #             user_message_id=str(visitor_message.id),
+    #             whatsapp_mode=True
+    #         )
+    #         return "processing_avatar_reply"
 
-        except Exception as e:
-            AssistantMessage.objects.create(
-                user=user, 
-                role="assistant", 
-                content=f"An error occurred while chatting with {avatar.name}: {e}"
-            )
-            return f"Avatar error."
+    #     except Exception as e:
+    #         AssistantMessage.objects.create(
+    #             user=user, 
+    #             role="assistant", 
+    #             content=f"An error occurred while chatting with {avatar.name}: {e}"
+    #         )
+    #         return f"Avatar error."
     # -------------------------------------------------------------------------
     # If the flow reaches here, it means the user is chatting with the default Assistant.
     # The original Assistant logic proceeds below.
