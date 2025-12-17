@@ -37,11 +37,11 @@ def get_or_create_avatar_conversation(user, avatar):
 def process_user_message(user_id: int, message: str, whatsapp_mode: bool = False) -> str:
     # print(f"📩 Processing message for user {user_id}: {message}")
 
-    # try:
-    #     user = User.objects.get(id=user_id)
-    # except User.DoesNotExist:
-    #     print(f"User with ID {user_id} not found.")
-    #     return
+    try:
+        user = User.objects.get(id=user_id)
+    except User.DoesNotExist:
+        print(f"User with ID {user_id} not found.")
+        return
 
     # # -----------------------------
     # # 0️⃣ COMMAND & CONTEXT CHECK
