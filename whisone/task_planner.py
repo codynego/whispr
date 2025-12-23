@@ -88,6 +88,7 @@ class TaskPlanner:
                 max_tokens=1000,
             )
             content = response.choices[0].message.content.strip()
+            print("[TaskPlanner] LLM raw response:", content)
 
             # Clean common JSON wrappers
             if content.startswith("```json"):
