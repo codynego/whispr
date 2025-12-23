@@ -32,7 +32,7 @@ def handle_memory(user_id: int, message: str):
     extractor = MemoryExtractor(api_key=settings.OPENAI_API_KEY)
     ingestor = MemoryIngestor(user=user)
 
-    extractor_output = extractor.extract(content=message, source_type="user_message")
+    extractor_output = extractor.extract(content=message)
     print("[handle_memory] Extracted memory:", extractor_output)
 
     memory_list = [
