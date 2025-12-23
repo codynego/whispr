@@ -95,6 +95,7 @@ def process_user_message(user_id: int, message: str, whatsapp_mode: bool = False
     # --- Task Planning & Frame Building ---
     planner = TaskPlanner(api_key=settings.OPENAI_API_KEY)
     raw_task_plan = planner.plan_tasks(user=user, user_message=message)
+    print("[process_user_message] Planned tasks:", raw_task_plan)
 
     frame_builder = TaskFrameBuilder(user=user, resolver=resolver, calendar_service=calendar_service)
     task_frames = [
