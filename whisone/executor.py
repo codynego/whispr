@@ -42,7 +42,7 @@ class Executor:
         self.calendar_service = GoogleCalendarService(**calendar_creds) if calendar_creds else None
 
         # Knowledge Vault
-        self.vault_manager = KVQueryManager(user)
+        self.vault_manager = MemoryQueryManager(user)
 
     # -------------------------
     # UTILITY FUNCTIONS
