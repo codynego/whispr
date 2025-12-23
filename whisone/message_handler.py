@@ -25,6 +25,15 @@ def handle_memory(user_id: int, message: str):
     """
     try:
         user = User.objects.get(id=user_id)
+        previous_messages_qs = (
+            AssistantMessage.objects
+            .filter(user=user, role="user")
+            .order_by("-created_at")[:2]
+        )
+        # Reverse to maintain chronological order (oldest first)
+        previous_contents = [msg.content for msg in reversed(previous_messages_qs)]
+        previous_content_text = "\n".join(previous_contents) if previous_contents else None
+
     except User.DoesNotExist:
         print(f"[handle_memory] User {user_id} not found.")
         return
@@ -32,7 +41,7 @@ def handle_memory(user_id: int, message: str):
     extractor = MemoryExtractor(api_key=settings.OPENAI_API_KEY)
     ingestor = MemoryIngestor(user=user)
 
-    extractor_output = extractor.extract(content=message)
+    extractor_output = extractor.extract(content=message, previous_content=previous_content_text)
     print("[handle_memory] Extracted memory:", extractor_output)
 
     # Ensure we have a dict, not a list

@@ -22,6 +22,7 @@ class MemoryExtractor:
     def extract(
         self,
         content: str,
+        previous_content: Optional[str] = None,
         source: str = "manual",
         timestamp: Optional[datetime] = None
     ) -> Dict[str, Any]:
@@ -31,7 +32,7 @@ class MemoryExtractor:
         """
         timestamp = timestamp or datetime.utcnow()
 
-        structured = self._call_llm_extract(content)
+        structured = self._call_llm_extract(content, previous_content)
 
         return {
             "raw_text": content,
@@ -48,8 +49,13 @@ class MemoryExtractor:
     # ------------------------
     # Internal helper
     # ------------------------
+    def _call_llm_extract(self, content: str, previous_content: Optional[str] = None) -> Dict[str, Any]:
+        # Combine previous context if available
+        combined_content = ""
+        if previous_content:
+            combined_content = f"Previous messages for context:\n{previous_content}\n\n"
+        combined_content += f"Current message:\n{content}"
 
-    def _call_llm_extract(self, content: str) -> Dict[str, Any]:
         prompt = (
             "You are Whisone, an intelligent life-memory extraction system.\n\n"
             "Your task is to extract ONE structured memory from the user's message.\n\n"
@@ -79,20 +85,14 @@ class MemoryExtractor:
             '    "recurring": true\n'
             "  }\n"
             "}\n\n"
-            f"User content:\n{content}\n"
+            f"User messages (with recent context):\n{combined_content}\n"
         )
 
         response = self.client.chat.completions.create(
             model=self.model,
             messages=[
-                {
-                    "role": "system",
-                    "content": "You extract structured personal memories."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
+                {"role": "system", "content": "You extract structured personal memories."},
+                {"role": "user", "content": prompt}
             ],
             temperature=0.2,
             max_tokens=500
