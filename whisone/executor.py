@@ -15,7 +15,7 @@ from .services.reminder_service import ReminderService
 from .services.todo_service import TodoService
 from .task_frame_builder import TaskFrameBuilder
 # from .knowledge_vault_manager import KnowledgeVaultManager
-from .memory_querier import KVQueryManager
+from .memory_querier import MemoryQueryManager
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
