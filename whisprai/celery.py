@@ -56,7 +56,3 @@ app.conf.beat_schedule = {
 # Suppress tokenizer warnings (for HF models in tasks)
 os.environ.setdefault('TOKENIZERS_PARALLELISM', 'false')
 
-# Debug task for testing
-@app.task(bind=True)
-def debug_task(self):
-    print(f'Request: {self.request!r}')
