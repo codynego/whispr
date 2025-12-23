@@ -21,7 +21,7 @@ User = get_user_model()
 def handle_memory(user_id: int, message: str):
     """
     Async memory ingestion task.
-    Extracts entities from user message and saves them as Memory objects.
+    Extracts memory from user message and saves it as a Memory object.
     """
     try:
         user = User.objects.get(id=user_id)
@@ -35,27 +35,26 @@ def handle_memory(user_id: int, message: str):
     extractor_output = extractor.extract(content=message)
     print("[handle_memory] Extracted memory:", extractor_output)
 
-    memory_list = [
-        {
-            "raw_text": ent.get("name") or extractor_output["summary"],
-            "summary": extractor_output["summary"],
-            "memory_type": "task" if ent.get("type") in ["goal", "task", "action"] else ent.get("type", "unknown"),
-            "emotion": ent.get("facts", {}).get("emotion"),
-            "importance": 0.5,
-            "context": {
-                "source_type": "user_message",
-                "entity_type": ent.get("type"),
-                "facts": ent.get("facts")
-            },
-        }
-        for ent in extractor_output.get("entities", [])
-    ]
+    # Ensure we have a dict, not a list
+    if not isinstance(extractor_output, dict):
+        print("[handle_memory] Extractor output not a dict, skipping ingestion.")
+        return
 
-    if memory_list:
-        ingestor.ingest(memory_list)
-        print(f"[handle_memory] Ingested {len(memory_list)} memories.")
-    else:
-        print("[handle_memory] No entities to ingest.")
+    # Build memory dict
+    memory_data = {
+        "raw_text": extractor_output.get("raw_text") or extractor_output.get("summary") or message,
+        "summary": extractor_output.get("summary") or extractor_output.get("raw_text") or message,
+        "memory_type": extractor_output.get("memory_type", "general"),
+        "emotion": extractor_output.get("emotion"),
+        "sentiment": extractor_output.get("sentiment"),
+        "importance": extractor_output.get("importance", 0.5),
+        "context": extractor_output.get("context", {"source_type": "user_message"}),
+    }
+
+    # Ingest single memory dict
+    ingestor.ingest(memory_data)
+    print("[handle_memory] Memory ingested successfully.")
+
 
 
 @shared_task

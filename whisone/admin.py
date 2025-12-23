@@ -66,156 +66,46 @@ class AutomationRuleAdmin(admin.ModelAdmin):
     )
 
 
-
 from django.contrib import admin
-from django.utils.html import format_html
-import json
-from .models import KnowledgeVaultEntry
+from .models import Memory
 
-
-@admin.register(KnowledgeVaultEntry)
-class KnowledgeVaultEntryAdmin(admin.ModelAdmin):
+@admin.register(Memory)
+class MemoryAdmin(admin.ModelAdmin):
     list_display = (
-        "memory_id",
+        "id",
         "user",
+        "memory_type",
+        "emotion",
+        "sentiment",
+        "importance",
         "summary_snippet",
-        "formatted_entities",
-        "timestamp",
+        "created_at",
+        "updated_at",
     )
+    list_filter = ("memory_type", "emotion", "user", "created_at")
+    search_fields = ("summary", "raw_text", "context")
+    readonly_fields = ("embedding", "created_at", "updated_at")
+    ordering = ("-created_at",)
 
-    list_filter = (
-        "user",
-        "timestamp",
-        "last_accessed",
-    )
-
-    search_fields = (
-        "memory_id",
-        "user__username",
-        "user__email",
-        "summary",
-        "text_search",
-    )
-
-    readonly_fields = (
-        "memory_id",
-        "timestamp",
-        "last_accessed",
-        "pretty_entities",
-        "pretty_relationships",
-        "embedding",
-        "text_search",
-    )
-
-    fieldsets = (
-        ("Memory Info", {
-            "fields": ("memory_id", "user", "summary", "timestamp", "last_accessed")
-        }),
-        ("Structured Entities", {
-            "fields": ("pretty_entities",)
-        }),
-        ("Relationships", {
-            "fields": ("pretty_relationships",)
-        }),
-        ("Search & Embeddings", {
-            "fields": ("text_search", "embedding"),
-            "classes": ("collapse",),  # collapsible UI section
-        }),
-    )
-
-    # ------------------------
-    # DISPLAY HELPERS
-    # ------------------------
+    # Short snippet of summary for list display
     def summary_snippet(self, obj):
-        if not obj.summary:
-            return ""
-        return (obj.summary[:50] + "...") if len(obj.summary) > 50 else obj.summary
+        return obj.summary[:50] + ("..." if len(obj.summary) > 50 else "")
     summary_snippet.short_description = "Summary"
 
-    def formatted_entities(self, obj):
-        """One-line entity categories for quick overview."""
-        if not obj.entities:
-            return "-"
-        keys = ", ".join(obj.entities.keys())
-        return keys
-    formatted_entities.short_description = "Entity Types"
+    # Optional: collapsible context JSON
+    fieldsets = (
+        (None, {
+            "fields": ("user", "memory_type", "raw_text", "summary", "emotion", "sentiment", "importance")
+        }),
+        ("Context & Embedding", {
+            "fields": ("context", "embedding"),
+            "classes": ("collapse",),
+        }),
+        ("Timestamps", {
+            "fields": ("created_at", "updated_at"),
+        }),
+    )
 
-    def pretty_entities(self, obj):
-        """Pretty-print JSON."""
-        if not obj.entities:
-            return "-"
-        return format_html(
-            "<pre style='white-space:pre-wrap'>{}</pre>",
-            json.dumps(obj.entities, indent=2)
-        )
-    pretty_entities.short_description = "Entities"
-
-    def pretty_relationships(self, obj):
-        if not obj.relationships:
-            return "-"
-        return format_html(
-            "<pre style='white-space:pre-wrap'>{}</pre>",
-            json.dumps(obj.relationships, indent=2)
-        )
-    pretty_relationships.short_description = "Relationships"
-
-    # ------------------------
-    # PERMISSIONS
-    # ------------------------
-    def has_add_permission(self, request):
-        return True
-
-    def has_change_permission(self, request, obj=None):
-        return True
-
-    def has_delete_permission(self, request, obj=None):
-        return True
-
-
-
-from django.contrib import admin
-from .models import Entity, Fact, Relationship
-
-# Inline for Facts
-
-class FactInline(admin.TabularInline):
-    model = Fact
-    extra = 1
-    readonly_fields = ("created_at", "updated_at")
-    show_change_link = True
-
-    # Inline for Relationships where this entity is the source
-
-class RelationshipInline(admin.TabularInline):
-    model = Relationship
-    fk_name = "source"
-    extra = 1
-    readonly_fields = ("created_at",)
-    show_change_link = True
-
-@admin.register(Entity)
-class EntityAdmin(admin.ModelAdmin):
-    list_display = ("name", "type", "user", "created_at", "updated_at")
-    search_fields = ("name", "type", "user__email")
-    list_filter = ("type", "created_at", "updated_at")
-    inlines = [FactInline, RelationshipInline]
-
-@admin.register(Fact)
-class FactAdmin(admin.ModelAdmin):
-    list_display = ("key", "value", "confidence", "entity", "entity_user", "created_at", "updated_at")
-    search_fields = ("key", "value", "entity__name", "entity__user__email")
-    list_filter = ("key", "confidence", "created_at", "updated_at")
-
-    def entity_user(self, obj):
-        return obj.entity.user
-    entity_user.short_description = "User"
-
-
-@admin.register(Relationship)
-class RelationshipAdmin(admin.ModelAdmin):
-    list_display = ("source", "relation_type", "target", "user", "created_at")
-    search_fields = ("source__name", "target__name", "relation_type", "user__email")
-    list_filter = ("relation_type", "created_at")
 
 
 
