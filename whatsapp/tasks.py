@@ -29,8 +29,6 @@ def send_whatsapp_message_task(self, task_id = None, message_id=None, message=No
     """
     
     try:
-        print("send_whatsapp_message_task called with:")
-        print("Sending WhatsApp message ID:", message_id, "Message:", message)
         # message = WhatsAppMessage.objects.get(id=message_id)
         user = User.objects.get(id=user_id) if user_id else None
 
@@ -38,7 +36,6 @@ def send_whatsapp_message_task(self, task_id = None, message_id=None, message=No
             message = message
 
         elif message_id is None and message is None:
-            print("No message_id or message provided, fetching latest message")
             try:
                 # Fetch the last message based on creation time (or ID if incrementing)
                 message = AssistantMessage.objects.latest('created_at')  # Make sure you have a 'created_at' field
@@ -77,7 +74,6 @@ def send_whatsapp_message_task(self, task_id = None, message_id=None, message=No
             'type': 'text',
             'text': {'body': message},
         }
-        print("WhatsApp API payload:", payload)
         
         response = requests.post(url, headers=headers, json=payload)
         
@@ -181,7 +177,6 @@ def send_whatsapp_text(user_id: int, text: str, alert_type: str = 'generic') -> 
 
 
         # Send asynchronously
-        print("Queuing WhatsApp message for user ID:", user_id, "Message:", text)
         send_whatsapp_message_task.delay(user_id=user_id, message=text)
 
         logger.info(f"Queued WhatsApp message for user {user_id} → {user.whatsapp}")

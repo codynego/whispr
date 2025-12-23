@@ -95,9 +95,12 @@ class TaskPlanner:
             if content.endswith("```"):
                 content = content[:-3]
             content = content.strip()
+            print("[TaskPlanner] LLM response content:", content)
 
             actions = json.loads(content)
+            print("[TaskPlanner] Parsed actions:", actions)
             return actions if isinstance(actions, list) else []
+            print("[TaskPlanner] Parsed actions:", actions)
         except Exception as e:
             print(f"LLM failed: {e}")
             return []
