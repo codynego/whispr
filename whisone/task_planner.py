@@ -112,7 +112,6 @@ class TaskPlanner:
 
         normalized = []
 
-        # Universal field corrections
         fixes = {
             "create_todo": {"text": "task", "title": "task", "todo": "task", "content": "task"},
             "update_todo": {"text": "task", "title": "task", "status": "done", "complete": "done"},
@@ -129,38 +128,44 @@ class TaskPlanner:
             intent = item.get("intent", action or "Unknown intent")
             confidence = float(item.get("confidence", 0.8))
 
-            # === CRITICAL FIXES ===
+            # -----------------------------
+            # PARAM FIXES (existing logic)
+            # -----------------------------
             if action in fixes:
                 mapping = fixes[action]
                 for wrong_key, correct_key in mapping.items():
                     if wrong_key in params:
                         value = params.pop(wrong_key)
-
-                        # Special: convert any "completed" signal to boolean
                         if correct_key in ("done", "completed"):
                             truthy = {"true", "yes", "done", "completed", "finished", True, 1}
                             value = str(value).strip().lower() in truthy
-
                         params[correct_key] = value
 
-            # === Ensure required fields exist (last resort) ===
-            if action == "create_todo" and "task" not in params and params:
-                # Grab any text-like field
-                for key in ("text", "title", "content", "todo"):
-                    if key in params:
-                        params["task"] = params.pop(key)
-                        break
-
-            # === Datetime normalization ===
+            # -----------------------------
+            # Datetime normalization
+            # -----------------------------
             for key in ("remind_at", "start_time", "due_date"):
                 if key in params and params[key]:
                     params[key] = self._normalize_datetime(params[key])
+
+            # -----------------------------
+            # MEMORY METADATA (NEW)
+            # -----------------------------
+            memory = item.get("memory", {}) or {}
+
+            memory_type = memory.get("memory_type") or self._infer_memory_type(action)
+            emotion = memory.get("emotion")
+            importance = float(memory.get("importance", 0.5))
 
             normalized.append({
                 "action": action,
                 "params": params,
                 "intent": intent,
                 "confidence": confidence,
+                # 🔥 Memory-ready fields
+                "memory_type": memory_type,
+                "emotion": emotion,
+                "memory_importance": importance,
             })
 
         return normalized
@@ -193,3 +198,13 @@ class TaskPlanner:
             dt = dt.replace(year=now.year + 1)
 
         return dt.isoformat()
+
+    def _infer_memory_type(self, action: str) -> str:
+        if not action:
+            return "reflection"
+        if "todo" in action or "reminder" in action:
+            return "task"
+        if "event" in action:
+            return "event"
+        return "reflection"
+

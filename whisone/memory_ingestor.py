@@ -1,136 +1,105 @@
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional, List
 from django.db import transaction
 from django.utils import timezone
-from .models import Entity, Fact, Relationship
+from .models import Memory
+import openai
+from django.conf import settings
 import numpy as np
-from difflib import SequenceMatcher
+
 
 class MemoryIngestor:
     """
-    Ingests structured memory dicts into Entity-Fact-Relationship KV.
-    Supports:
-    - Auto-update of existing entities/facts
-    - Fact merging based on confidence
-    - Relationship creation without duplicates
-    - temp_id resolution
-    - Name-based similarity matching to update existing entities
+    Saves structured Memory objects.
+    Supports ingestion of single memory or list of memories (e.g., tasks).
     """
 
+    DUPLICATE_SIM_THRESHOLD = 0.88
 
-    EMBEDDING_SIM_THRESHOLD = 0.85  
-    NAME_SIM_THRESHOLD = 0.7 
+    def __init__(self, user):
+        self.user = user
+        self.client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
 
-    def __init__(self, user):  
-        self.user = user  
+    # ------------------------
+    # Public ingestion method
+    # ------------------------
+    def ingest(
+        self,
+        memory_data: Dict[str, Any] | List[Dict[str, Any]],
+        allow_merge: bool = True,
+    ) -> List[Memory]:
+        """
+        Ingest a single memory dict or a list of memory dicts.
+        Returns list of Memory objects created or updated.
+        """
+        if isinstance(memory_data, dict):
+            memory_data = [memory_data]
 
-    def ingest(self, memory: Dict[str, Any], use_embedding_match: bool = False) -> Dict[str, Any]:  
-        temp_id_map = {}  
-        entities_data = memory.get("entities", [])  
-        relationships_data = memory.get("relationships", [])  
-        summary = memory.get("summary", "")  
-        stored_entities = []  
+        stored_memories = []
 
-        with transaction.atomic():  
-            # -----------------------  
-            # 1. Process Entities  
-            # -----------------------  
-            for ent_data in entities_data:  
-                temp_id = ent_data.get("temp_id")  
-                name = ent_data.get("name")  
-                type_ = ent_data.get("type", "unknown")  
-                embedding = ent_data.get("embedding") if use_embedding_match else None  
+        for mem in memory_data:
+            embedding = self._embed(mem["raw_text"])
 
-                entity = self._get_or_create_entity(name, type_, embedding)  
-                temp_id_map[temp_id] = entity  
-                stored_entities.append(entity)  
+            with transaction.atomic():
+                if allow_merge:
+                    existing = self._find_similar_memory(embedding)
+                    if existing:
+                        stored_memories.append(self._merge(existing, mem, embedding))
+                        continue
 
-                # -----------------------  
-                # 2. Merge Facts  
-                # -----------------------  
-                facts = ent_data.get("facts", {})  
-                for key, val_dict in facts.items():  
-                    value = val_dict.get("value")  
-                    confidence = float(val_dict.get("confidence", 1.0))  
+                memory = Memory.objects.create(
+                    user=self.user,
+                    raw_text=mem["raw_text"],
+                    summary=mem["summary"],
+                    memory_type=mem["memory_type"],
+                    emotion=mem.get("emotion"),
+                    sentiment=mem.get("sentiment"),
+                    importance=mem.get("importance", 0.5),
+                    context=mem.get("context", {}),
+                    embedding=embedding,
+                )
+                stored_memories.append(memory)
 
-                    fact_obj, created = Fact.objects.get_or_create(  
-                        entity=entity,  
-                        key=key,  
-                        defaults={"value": value, "confidence": confidence}  
-                    )  
-                    if not created:  
-                        if fact_obj.value != value or confidence > fact_obj.confidence:  
-                            fact_obj.value = value  
-                            fact_obj.confidence = confidence  
-                            fact_obj.save(update_fields=["value", "confidence", "updated_at"])  
+        return stored_memories
 
-            # -----------------------  
-            # 3. Process Relationships  
-            # -----------------------  
-            for rel in relationships_data:  
-                from_temp = rel.get("from")  
-                to_temp = rel.get("to")  
-                relation_type = rel.get("relation_type", "related")  
+    # ------------------------
+    # Helpers
+    # ------------------------
+    def _embed(self, text: str):
+        response = self.client.embeddings.create(
+            model="text-embedding-3-small",
+            input=text,
+        )
+        return response.data[0].embedding
 
-                source = temp_id_map.get(from_temp)  
-                target = temp_id_map.get(to_temp)  
+    def _find_similar_memory(self, embedding) -> Optional[Memory]:
+        memories = Memory.objects.filter(user=self.user).exclude(embedding=None)
 
-                if source and target:  
-                    Relationship.objects.get_or_create(  
-                        user=self.user,  
-                        source=source,  
-                        target=target,  
-                        relation_type=relation_type  
-                    )  
+        for mem in memories:
+            sim = self._cosine_similarity(mem.embedding, embedding)
+            if sim >= self.DUPLICATE_SIM_THRESHOLD:
+                return mem
 
-        return {  
-            "stored_entities": [e.id for e in stored_entities],  
-            "relationships_created": len(relationships_data),  
-            "summary": summary  
-        }  
+        return None
 
-    # -----------------------  
-    # Utility: get or create entity with fuzzy matching  
-    # -----------------------  
-    def _get_or_create_entity(self, name: str, type_: str, embedding: Optional[List[float]] = None) -> Entity:  
-        # 1. Exact match by name/type  
-        try:  
-            entity = Entity.objects.get(user=self.user, name=name, type=type_)  
-            if embedding and entity.embedding != embedding:  
-                entity.embedding = embedding  
-                entity.save(update_fields=["embedding", "updated_at"])  
-            return entity  
-        except Entity.DoesNotExist:  
-            pass  
+    def _merge(
+        self,
+        memory: Memory,
+        new_data: Dict[str, Any],
+        embedding,
+    ) -> Memory:
+        memory.summary = new_data["summary"]
+        memory.emotion = new_data.get("emotion") or memory.emotion
+        memory.sentiment = new_data.get("sentiment") or memory.sentiment
+        memory.importance = max(memory.importance, new_data.get("importance", 0.5))
+        memory.context.update(new_data.get("context", {}))
+        memory.embedding = embedding
+        memory.updated_at = timezone.now()
+        memory.save()
+        return memory
 
-        # 2. Name similarity check  
-        candidates = Entity.objects.filter(user=self.user, type=type_)  
-        for e in candidates:  
-            ratio = SequenceMatcher(None, e.name.lower(), name.lower()).ratio()  
-            if ratio >= self.NAME_SIM_THRESHOLD:  
-                # Update embedding if provided  
-                if embedding:  
-                    e.embedding = embedding  
-                    e.save(update_fields=["embedding", "updated_at"])  
-                return e  
-
-        # 3. Optional: embedding similarity check  
-        if embedding:  
-            for e in candidates:  
-                if e.embedding:  
-                    sim = self._cosine_similarity(e.embedding, embedding)  
-                    if sim > self.EMBEDDING_SIM_THRESHOLD:  
-                        e.embedding = embedding  
-                        e.save(update_fields=["embedding", "updated_at"])  
-                        return e  
-
-        # 4. Create new entity  
-        entity = Entity.objects.create(user=self.user, name=name, type=type_, embedding=embedding)  
-        return entity  
-
-    @staticmethod  
-    def _cosine_similarity(a: List[float], b: List[float]) -> float:  
-        a, b = np.array(a), np.array(b)  
-        if np.linalg.norm(a) == 0 or np.linalg.norm(b) == 0:  
-            return 0.0  
-        return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))  
-
+    @staticmethod
+    def _cosine_similarity(a, b) -> float:
+        a, b = np.array(a), np.array(b)
+        if np.linalg.norm(a) == 0 or np.linalg.norm(b) == 0:
+            return 0.0
+        return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))

@@ -1,19 +1,23 @@
 from typing import List, Dict, Any, Optional
 from django.utils import timezone
-from django.db.models import Q
-from .models import Entity, Fact, Relationship
+from .models import Memory
 import openai
 import numpy as np
+from django.conf import settings
 
-class KVQueryManager:
+
+class MemoryQueryManager:
     """
-    Hybrid query manager for Entity-Fact-Relationship KV.
-    Combines structured filtering and semantic search for LLM context retrieval.
+    Hybrid memory query manager.
+    Combines structured filters + semantic similarity.
+    Can leverage task_plan to extract memory_types and emotions for smarter queries.
     """
 
+    SEMANTIC_THRESHOLD = 0.75
 
     def __init__(self, user):
         self.user = user
+        self.client = openai.OpenAI(api_key=settings.OPENAI_API_KEY)
 
     # -------------------------
     # Main query method
@@ -21,133 +25,108 @@ class KVQueryManager:
     def query(
         self,
         keyword: Optional[str] = None,
-        entity_types: Optional[List[str]] = None,
-        entity_names: Optional[List[str]] = None,
-        fact_filters: Optional[List[Dict[str, Any]]] = None,
-        relationship_filters: Optional[List[Dict[str, Any]]] = None,
-        time_filters: Optional[List[Dict[str, Any]]] = None,
+        memory_types: Optional[List[str]] = None,
+        emotions: Optional[List[str]] = None,
+        min_importance: Optional[float] = None,
+        time_after=None,
+        time_before=None,
+        task_plan: Optional[List[Dict[str, Any]]] = None,
         limit: int = 5,
-        use_semantic: bool = True
+        use_semantic: bool = True,
     ) -> List[Dict[str, Any]]:
 
-        entities = Entity.objects.filter(user=self.user)
+        # --- Extract memory_types and emotions from task_plan ---
+        if task_plan:
+            plan_types = {t.get("params", {}).get("memory_type") for t in task_plan if t.get("params", {}).get("memory_type")}
+            plan_emotions = {t.get("params", {}).get("emotion") for t in task_plan if t.get("params", {}).get("emotion")}
+            if plan_types:
+                memory_types = list(set(memory_types or []) | plan_types)
+            if plan_emotions:
+                emotions = list(set(emotions or []) | plan_emotions)
+
+        memories = Memory.objects.filter(user=self.user)
 
         # -------------------------
-        # 1. Filter by entity type/name
+        # 1. Structured filters
         # -------------------------
-        if entity_types:
-            entities = entities.filter(type__in=entity_types)
-        if entity_names:
-            entities = entities.filter(name__in=entity_names)
+        if memory_types:
+            memories = memories.filter(memory_type__in=memory_types)
+
+        if emotions:
+            memories = memories.filter(emotion__in=emotions)
+
+        if min_importance is not None:
+            memories = memories.filter(importance__gte=min_importance)
+
+        if time_after:
+            memories = memories.filter(created_at__gte=time_after)
+
+        if time_before:
+            memories = memories.filter(created_at__lte=time_before)
+
+        memories = list(memories)
 
         # -------------------------
-        # 2. Filter by fact key/value or time
+        # 2. Semantic search
         # -------------------------
-        if fact_filters:
-            for f in fact_filters:
-                key, value = f.get("key"), f.get("value")
-                entities = entities.filter(facts__key=key, facts__value=value)
-
-        if time_filters:
-            for tf in time_filters:
-                key, after, before = tf.get("key"), tf.get("after"), tf.get("before")
-                q = Q()
-                if after:
-                    q &= Q(facts__key=key, facts__value__gte=after)
-                if before:
-                    q &= Q(facts__key=key, facts__value__lte=before)
-                entities = entities.filter(q)
-
-        entities = list(entities)
-
-        # -------------------------
-        # 3. Filter by relationships
-        # -------------------------
-        if relationship_filters:
-            for rf in relationship_filters:
-                relation_type = rf.get("relation_type")
-                target_name = rf.get("target_name")
-                rel_query = Relationship.objects.filter(
-                    user=self.user,
-                    relation_type=relation_type,
-                    source__in=entities
-                )
-                if target_name:
-                    rel_query = rel_query.filter(target__name=target_name)
-                source_ids = rel_query.values_list("source_id", flat=True)
-                entities = [e for e in entities if e.id in source_ids]
-
-        # -------------------------
-        # 4. Semantic search
-        # -------------------------
-        if keyword and use_semantic and entities:
-            client = openai.OpenAI()
+        if keyword and use_semantic and memories:
             try:
-                response = client.embeddings.create(
+                emb = self.client.embeddings.create(
                     model="text-embedding-3-small",
-                    input=keyword
+                    input=keyword,
                 )
-                query_embedding = response.data[0].embedding
+                query_embedding = emb.data[0].embedding
             except Exception:
                 query_embedding = None
 
             if query_embedding:
-                def cosine(a, b):
-                    a, b = np.array(a), np.array(b)
-                    if np.linalg.norm(a) == 0 or np.linalg.norm(b) == 0:
-                        return 0.0
-                    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+                scored = []
+                for mem in memories:
+                    if not mem.embedding:
+                        continue
+                    sim = self._cosine(query_embedding, mem.embedding)
+                    if sim >= self.SEMANTIC_THRESHOLD:
+                        scored.append((sim, mem))
 
-                scored_entities = []
-                for ent in entities:
-                    text_vec = ent.embedding
-                    if not text_vec:
-                        fact_values = [f.value for f in ent.facts.all()]
-                        text_for_embedding = (ent.name or "") + " " + " ".join(fact_values)
-                        try:
-                            emb_resp = client.embeddings.create(
-                                model="text-embedding-3-small",
-                                input=text_for_embedding
-                            )
-                            text_vec = emb_resp.data[0].embedding
-                            ent.embedding = text_vec
-                            ent.save(update_fields=["embedding"])
-                        except Exception:
-                            continue
-                    sim = cosine(query_embedding, text_vec)
-                    scored_entities.append((sim, ent))
-                scored_entities.sort(key=lambda x: x[0], reverse=True)
-                entities = [e for sim, e in scored_entities[:limit]]
+                # Sort by similarity + importance
+                scored.sort(key=lambda x: (x[0], x[1].importance), reverse=True)
+                memories = [m for _, m in scored[:limit]]
             else:
-                entities = entities[:limit]
+                memories = memories[:limit]
         else:
-            entities = entities[:limit]
+            memories = memories[:limit]
 
         # -------------------------
-        # 5. Build result dicts
+        # 3. Build results
         # -------------------------
-        results = []
         now = timezone.now()
-        for ent in entities:
-            facts_dict = {f.key: {"value": f.value, "confidence": f.confidence} for f in ent.facts.all()}
-            relationships = []
-            for rel in ent.source_rels.all():
-                relationships.append({
-                    "relation_type": rel.relation_type,
-                    "target_id": str(rel.target.id),
-                    "target_name": rel.target.name
-                })
-            ent.last_accessed = now
-            ent.save(update_fields=["updated_at"])
+        results = []
+
+        for mem in memories:
+            mem.updated_at = now
+            mem.save(update_fields=["updated_at"])
+
             results.append({
-                "entity_id": str(ent.id),
-                "name": ent.name,
-                "type": ent.type,
-                "facts": facts_dict,
-                "relationships": relationships,
-                "created_at": ent.created_at.isoformat(),
-                "updated_at": ent.updated_at.isoformat()
+                "memory_id": str(mem.id),
+                "summary": mem.summary,
+                "raw_text": mem.raw_text,
+                "memory_type": mem.memory_type,
+                "emotion": mem.emotion,
+                "sentiment": mem.sentiment,
+                "importance": mem.importance,
+                "context": mem.context,
+                "created_at": mem.created_at.isoformat(),
+                "updated_at": mem.updated_at.isoformat(),
             })
 
         return results
 
+    # -------------------------
+    # Utils
+    # -------------------------
+    @staticmethod
+    def _cosine(a, b) -> float:
+        a, b = np.array(a), np.array(b)
+        if np.linalg.norm(a) == 0 or np.linalg.norm(b) == 0:
+            return 0.0
+        return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))

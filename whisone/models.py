@@ -226,6 +226,59 @@ class Relationship(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 
+import uuid
+from django.db import models
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+
+
+class Memory(models.Model):
+    MEMORY_TYPES = [
+        ("emotional", "Emotional"),
+        ("goal", "Goal"),
+        ("learning", "Learning"),
+        ("task", "Task"),
+        ("event", "Life Event"),
+        ("reflection", "Reflection"),
+        ("relationship", "Relationship"),
+    ]
+
+    id = models.UUIDField(
+        primary_key=True, default=uuid.uuid4, editable=False
+    )
+
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name="memories"
+    )
+
+    # Core content
+    raw_text = models.TextField()
+    summary = models.TextField()
+
+    # Classification
+    memory_type = models.CharField(
+        max_length=20, choices=MEMORY_TYPES
+    )
+
+    emotion = models.CharField(
+        max_length=50, null=True, blank=True
+    )
+    sentiment = models.FloatField(
+        null=True, blank=True
+    )  # range: -1 → 1
+
+    importance = models.FloatField(default=0.5)  # 0 → 1
+    context = models.JSONField(default=dict)
+
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    embedding = models.JSONField(blank=True, null=True)  # AI embedding of the content
+
+    def __str__(self):
+        return f"{self.memory_type} | {self.summary[:50]}"
+
 
 
 from django.db import models
