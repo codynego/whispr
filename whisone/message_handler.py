@@ -9,7 +9,7 @@ from .memory_extractor import MemoryExtractor
 from .memory_ingestor import MemoryIngestor
 from .natural_resolver import NaturalResolver
 from .services.calendar_service import GoogleCalendarService
-from .memory_querier import KVQueryManager
+from .memory_querier import MemoryQueryManager
 from assistant.models import AssistantMessage
 from .models import Integration
 from whatsapp.tasks import send_whatsapp_text
@@ -105,7 +105,7 @@ def process_user_message(user_id: int, message: str, whatsapp_mode: bool = False
     executor_results = executor.execute_task_frames(ready_tasks)
 
     # --- Query Memory (can now include already ingested memories) ---
-    querier = KVQueryManager(user=user)
+    querier = MemoryQueryManager(user=user)
     kv_context = querier.query(
     keyword=message,
     task_plan=raw_task_plan,  # Pass the planned tasks
