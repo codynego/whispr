@@ -154,6 +154,7 @@ def generate_summary_and_send(previous_result, user_id):
 
 @shared_task
 def run_daily_summary():
+    initial_result = {}
     users = User.objects.filter(is_active=True)
     if not users.exists():
         return "No active users"
@@ -161,7 +162,7 @@ def run_daily_summary():
     jobs = []
     for user in users:
         workflow = chain(
-            fetch_daily_todos.s(user_id=user.id),
+            fetch_daily_todos.s(previous_result=initial_result, user_id=user.id),
             fetch_daily_reminders.s(user_id=user.id),
             fetch_daily_notes.s(user_id=user.id),
             generate_summary_and_send.s(user_id=user.id),
