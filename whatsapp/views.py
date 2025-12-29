@@ -111,7 +111,7 @@ def webhook(request):
                         "Hey! 👋 I’m Whisone — your intelligent second brain.\n\n"
                         "It looks like you aren’t registered yet.\n\n"
                         "Create your account in *8 seconds* to start saving notes, files, reminders and more:\n"
-                        "https://whisone.com/auth/register"
+                        "https://www.whisone.com/auth/register"
                     )
                     send_whatsapp_message_task.delay(
                         to_number=sender_number,
@@ -132,7 +132,7 @@ def webhook(request):
                         "Your second brain is now activated.\n"
                         "You can send *notes, reminders, ideas, files*, and I’ll store them automatically.\n"
                         "to access your dashboard: please login\n"
-                        "https://whisone.com/auth/login"
+                        "https://www.whisone.com/auth/login"
                     )
                     send_whatsapp_message_task.delay(
                         to_number=sender_number,
