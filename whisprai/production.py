@@ -218,6 +218,7 @@ CELERY_ENABLE_UTC = True
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60
 
+
 # settings.py (or celery.py if you define CELERY_BEAT_SCHEDULE there)
 import os
 from celery.schedules import crontab
