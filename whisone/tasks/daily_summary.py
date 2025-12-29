@@ -130,6 +130,8 @@ def generate_summary_and_send(previous_result, user_id):
         summary_text = generate_overall_daily_summary(user=user, data=data)
         print("Generated summary text:", summary_text)
         clean_text = clean_for_whatsapp(summary_text)
+        print("Cleaned summary text for WhatsApp:", clean_text)
+
 
         # Save to database
         today = date.today()
