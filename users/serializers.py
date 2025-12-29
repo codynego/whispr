@@ -29,16 +29,33 @@ class UserCreateSerializer(serializers.ModelSerializer):
             'email', 'password', 'password_confirm', 'whatsapp',
             'first_name', 'last_name'
         )
-    
+        extra_kwargs = {
+            'whatsapp': {'required': True},
+            'first_name': {'required': True},
+            'last_name': {'required': False},  # or True, depending on your needs
+        }
+
     def validate(self, attrs):
         if attrs['password'] != attrs['password_confirm']:
             raise serializers.ValidationError({'password': 'Passwords do not match'})
+        
+
         validate_password(attrs['password'])
         return attrs
     
     def create(self, validated_data):
-        validated_data.pop('password_confirm')
-        user = User.objects.create_user(**validated_data)
+        password = validated_data.pop('password')
+        validated_data.pop('password_confirm', None)  # safe pop
+        
+        # Create user with proper password handling
+        user = User.objects.create_user(
+            password=password,  
+            **validated_data     
+        )
+        
+        user.is_active = True
+        user.save(update_fields=['is_active'])
+        
         return user
 
 
