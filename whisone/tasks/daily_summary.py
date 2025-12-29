@@ -160,13 +160,11 @@ def run_daily_summary():
 
     jobs = []
     for user in users:
-        initial_data = {"todos": None, "reminders": None, "notes": None}
-
         workflow = chain(
-            fetch_daily_todos.s(initial_result, user.id),
-            fetch_daily_reminders.s(user.id),
-            fetch_daily_notes.s(user.id),
-            generate_summary_and_send.s(user.id),
+            fetch_daily_todos.s(user_id=user.id),
+            fetch_daily_reminders.s(user_id=user.id),
+            fetch_daily_notes.s(user_id=user.id),
+            generate_summary_and_send.s(user_id=user.id),
         )
         jobs.append(workflow)
 
