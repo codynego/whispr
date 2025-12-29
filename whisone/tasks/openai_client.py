@@ -42,6 +42,7 @@ def generate_overall_daily_summary(user, data: Dict[str, Any]) -> str:
     """
     Generate an overall daily summary in a natural, human-readable style.
     """
+    print("Generating overall daily summary with data:", data)
     todos = data.get("todos") or {"overdue": [], "today": []}
     reminders = data.get("reminders") or []
     notes = data.get("notes") or []
@@ -61,7 +62,7 @@ def generate_overall_daily_summary(user, data: Dict[str, Any]) -> str:
         temperature=0.5,
         max_tokens=1000,
     )
-
+    print("OpenAI response:", response)
     return response.choices[0].message.content.strip()
 
 

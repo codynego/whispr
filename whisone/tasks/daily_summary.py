@@ -105,7 +105,7 @@ def fetch_daily_notes(previous_result, user_id):
     try:
         user = User.objects.get(id=user_id)
         service = NoteService(user=user)
-        notes_qs = service.get_recent_notes(limit=10).values('id', 'content', 'updated_at')
+        notes_qs = service.get_recent_notes().values('id', 'content', 'updated_at')
         previous_result["notes"] = safe_serialize(notes_qs)
         return previous_result
     except Exception as exc:
@@ -128,6 +128,7 @@ def generate_summary_and_send(previous_result, user_id):
 
         # Generate a human-readable overall summary
         summary_text = generate_overall_daily_summary(user=user, data=data)
+        print("Generated summary text:", summary_text)
         clean_text = clean_for_whatsapp(summary_text)
 
         # Save to database
