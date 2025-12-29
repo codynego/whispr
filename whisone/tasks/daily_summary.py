@@ -21,97 +21,40 @@ User = get_user_model()
 def clean_for_whatsapp(text: str) -> str:
     """
     Clean GPT summary for WhatsApp:
-    - Add a friendly header
-    - Use single * for bold
-    - Add emojis for sections
-    - Format bullets nicely
-    - Handle empty or light days gracefully
-    - Ensure clean, readable output
+    - Preserve the full natural, beautiful narrative from GPT
+    - Remove any unnecessary markdown artifacts (** → *, etc.)
+    - Keep it as pure, flowing text
+    - Add a simple, friendly header only
+    - Add a gentle positive note on quiet days
+    - No section headers, no forced structure
     """
     if not text or not text.strip():
-        return "🌅 *Morning Briefing*\n\nNo updates today — enjoy a calm and peaceful start to your day! You're doing great. 🌿"
+        return "Morning Briefing\n\nIt's a calm start to the day with no pending updates. Enjoy the peace and take it easy — you're doing great!"
 
-    lines = [line.rstrip() for line in text.split("\n")]
-    result = []
-    seen_header = False
+    # Clean markdown bold/italic artifacts
+    cleaned = text.replace("**", "").replace("__", "").replace("***", "").strip()
 
-    # Expanded header mapping with variations GPT might use
-    header_map = {
-        "tasks": "✅ *Tasks & Todos*",
-        "todos": "✅ *Tasks & Todos*",
-        "task": "✅ *Tasks & Todos*",
-        "todo": "✅ *Tasks & Todos*",
-        "reminders": "⏰ *Reminders*",
-        "reminder": "⏰ *Reminders*",
-        "notes": "🗒️ *Notes*",
-        "note": "🗒️ *Notes*",
-        "highlights": "💡 *Past Highlights*",
-        "past highlights": "💡 *Past Highlights*",
-        "reflection": "💭 *Reflection*",
-        "summary": "📊 *Daily Summary*",
-        "today": "☀️ *Today's Overview*",
-    }
+    # Split into lines, remove empty ones, rejoin into natural paragraphs
+    lines = [line.strip() for line in cleaned.split("\n") if line.strip()]
+    body = "\n\n".join(lines)
 
-    # Add header
-    result.append("🌅 *Morning Briefing*\n")
+    # Detect if it's a quiet/empty day to add a warm closing note
+    lower_body = body.lower()
+    is_quiet = (
+        "no overdue" in lower_body or
+        "no tasks" in lower_body or
+        "no reminders" in lower_body or
+        "clear" in lower_body or
+        "breather" in lower_body or
+        "quiet" in lower_body
+    )
 
-    for line in lines:
-        stripped = line.strip().lower()
-        original_stripped = line.strip()
+    result = ["Morning Briefing\n", body]
 
-        # Skip empty lines and markdown separators
-        if not original_stripped or original_stripped in ["*", "**", "***", "----", "---", "•"]:
-            continue
+    if is_quiet:
+        result.append("\nA peaceful day ahead — perfect for rest, reflection, or whatever inspires you today.")
 
-        # Detect and replace section headers
-        header_replaced = False
-        for key, replacement in header_map.items():
-            if key in stripped or (original_stripped.startswith(key) and len(original_stripped.split()) == 1):
-                # Use the nicely formatted version
-                clean_line = replacement
-                result.append(clean_line)
-                seen_header = True
-                header_replaced = True
-                break
-
-        if header_replaced:
-            continue
-
-        # Clean bold markdown: **text** → *text*
-        clean_line = line.replace("**", "*").replace("***", "*")
-
-        # Handle list items
-        if original_stripped.startswith("- ") or original_stripped.startswith("• "):
-            item = original_stripped[2:].strip()
-            # If item has bold, keep it
-            if item.startswith("*") and item.endswith("*"):
-                clean_line = f"• {item}"
-            else:
-                # Lightly bold short items or keep natural
-                clean_line = f"• {item}"
-        elif original_stripped.startswith("-"):
-            clean_line = f"• {original_stripped[1:].strip()}"
-
-        # Remove leftover markdown artifacts
-        clean_line = clean_line.replace("**", "").strip()
-
-        # Avoid adding duplicate empty lines
-        if clean_line:
-            result.append(clean_line)
-
-    # Join and clean up spacing
-    final = "\n".join(result)
-
-    # Normalize paragraph spacing
-    paragraphs = [p.strip() for p in final.split("\n\n") if p.strip()]
-    final = "\n\n".join(paragraphs)
-
-    # If after cleaning we have almost nothing, add a gentle positive note
-    if len(final.split("\n")) <= 2 or "no overdue" in final.lower() or "no tasks" in final.lower():
-        if "no overdue" in text.lower() or "no tasks" in text.lower() or "no reminders" in text.lower():
-            final += "\n\n🌿 A quiet day — perfect for rest, reflection, or tackling something new on your own terms."
-
-    return final.strip() + "\n"
+    return "\n".join(result).strip() + "\n"
 
 
 def safe_serialize(data):
