@@ -231,7 +231,7 @@ CELERY_BEAT_SCHEDULE = {
     },
     "daily-summary-9am": {
         "task": "whisone.tasks.daily_summary.run_daily_summary",
-        "schedule": crontab(hour=19, minute=3),  # every day at 7:02 PM
+        "schedule": crontab(hour=8, minute=0),  # every day at 7:02 PM
     }
 }
 
